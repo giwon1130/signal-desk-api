@@ -6,11 +6,13 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.LocalDateTime
+import java.time.Month
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 import java.util.concurrent.CompletableFuture
 
 @Service
@@ -355,16 +357,64 @@ class MarketOverviewService(
                 regularEnd = LocalTime.of(15, 30),
                 afterEnd = null,
             ),
-            resolveSession(
+            resolveUsSession(usNow),
+        )
+    }
+
+    private fun resolveUsSession(localNow: ZonedDateTime): MarketSessionStatus {
+        val date = localNow.toLocalDate()
+        val time = localNow.toLocalTime()
+        val isWeekend = localNow.dayOfWeek in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
+        val holiday = findUsHoliday(date)
+        val earlyClose = findUsEarlyClose(date)
+
+        if (isWeekend) {
+            return closedSession("US", "미국", localNow, "주말 휴장")
+        }
+        if (holiday != null) {
+            return closedSession("US", "미국", localNow, "${holiday.description} 휴장")
+        }
+
+        val regularStart = LocalTime.of(9, 30)
+        val regularEnd = earlyClose?.closeTime ?: LocalTime.of(16, 0)
+        val preStart = LocalTime.of(4, 0)
+        val afterEnd = if (earlyClose != null) null else LocalTime.of(20, 0)
+
+        return when {
+            time >= preStart && time < regularStart -> MarketSessionStatus(
                 market = "US",
                 label = "미국",
-                localNow = usNow,
-                preStart = LocalTime.of(4, 0),
-                regularStart = LocalTime.of(9, 30),
-                regularEnd = LocalTime.of(16, 0),
-                afterEnd = LocalTime.of(20, 0),
-            ),
-        )
+                phase = "PRE_MARKET",
+                status = "장전",
+                isOpen = false,
+                localTime = localNow.format(DateTimeFormatter.ofPattern("MM/dd HH:mm")),
+                note = if (earlyClose != null) "${earlyClose.description} (정규장 13:00 조기종료)" else "프리마켓 진행 중",
+            )
+            time >= regularStart && time < regularEnd -> MarketSessionStatus(
+                market = "US",
+                label = "미국",
+                phase = "REGULAR",
+                status = "정규장",
+                isOpen = true,
+                localTime = localNow.format(DateTimeFormatter.ofPattern("MM/dd HH:mm")),
+                note = if (earlyClose != null) "${earlyClose.description} 조기종료일 정규장 진행 중" else "정규장 진행 중",
+            )
+            afterEnd != null && time >= regularEnd && time < afterEnd -> MarketSessionStatus(
+                market = "US",
+                label = "미국",
+                phase = "AFTER_HOURS",
+                status = "장후",
+                isOpen = false,
+                localTime = localNow.format(DateTimeFormatter.ofPattern("MM/dd HH:mm")),
+                note = "애프터마켓 진행 중",
+            )
+            else -> closedSession(
+                market = "US",
+                label = "미국",
+                localNow = localNow,
+                reason = if (earlyClose != null) "${earlyClose.description} 조기종료(13:00) 후 마감" else "정규장 종료",
+            )
+        }
     }
 
     private fun resolveSession(
@@ -425,6 +475,116 @@ class MarketOverviewService(
             note = note,
         )
     }
+
+    private fun closedSession(
+        market: String,
+        label: String,
+        localNow: ZonedDateTime,
+        reason: String,
+    ): MarketSessionStatus {
+        return MarketSessionStatus(
+            market = market,
+            label = label,
+            phase = "CLOSED",
+            status = if (reason.contains("휴장")) "휴장" else "마감",
+            isOpen = false,
+            localTime = localNow.format(DateTimeFormatter.ofPattern("MM/dd HH:mm")),
+            note = reason,
+        )
+    }
+
+    private fun findUsHoliday(date: LocalDate): UsMarketSpecialDay? {
+        val year = date.year
+        val holidays = setOf(
+            observedDate(LocalDate.of(year, Month.JANUARY, 1)),
+            nthWeekdayOfMonth(year, Month.JANUARY, DayOfWeek.MONDAY, 3), // Martin Luther King Jr. Day
+            nthWeekdayOfMonth(year, Month.FEBRUARY, DayOfWeek.MONDAY, 3), // Presidents' Day
+            easterSunday(year).minusDays(2), // Good Friday
+            lastWeekdayOfMonth(year, Month.MAY, DayOfWeek.MONDAY), // Memorial Day
+            observedDate(LocalDate.of(year, Month.JUNE, 19)), // Juneteenth
+            observedDate(LocalDate.of(year, Month.JULY, 4)), // Independence Day
+            firstWeekdayOfMonth(year, Month.SEPTEMBER, DayOfWeek.MONDAY), // Labor Day
+            nthWeekdayOfMonth(year, Month.NOVEMBER, DayOfWeek.THURSDAY, 4), // Thanksgiving
+            observedDate(LocalDate.of(year, Month.DECEMBER, 25)), // Christmas
+        )
+
+        return if (date in holidays) {
+            UsMarketSpecialDay(date, "미국 정규 휴장일")
+        } else {
+            null
+        }
+    }
+
+    private fun findUsEarlyClose(date: LocalDate): UsMarketEarlyClose? {
+        val year = date.year
+        val thanksgiving = nthWeekdayOfMonth(year, Month.NOVEMBER, DayOfWeek.THURSDAY, 4)
+        val dayAfterThanksgiving = thanksgiving.plusDays(1)
+        val christmasEve = LocalDate.of(year, Month.DECEMBER, 24)
+        val independenceEve = LocalDate.of(year, Month.JULY, 3)
+
+        val earlyCloseDates = buildList {
+            if (dayAfterThanksgiving.dayOfWeek == DayOfWeek.FRIDAY) {
+                add(UsMarketEarlyClose(dayAfterThanksgiving, "추수감사절 다음 날", LocalTime.of(13, 0)))
+            }
+            if (christmasEve.dayOfWeek !in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)) {
+                add(UsMarketEarlyClose(christmasEve, "크리스마스 이브", LocalTime.of(13, 0)))
+            }
+            if (independenceEve.dayOfWeek !in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY) && findUsHoliday(independenceEve) == null) {
+                add(UsMarketEarlyClose(independenceEve, "독립기념일 전일", LocalTime.of(13, 0)))
+            }
+        }
+        return earlyCloseDates.firstOrNull { it.date == date }
+    }
+
+    private fun observedDate(date: LocalDate): LocalDate {
+        return when (date.dayOfWeek) {
+            DayOfWeek.SATURDAY -> date.minusDays(1)
+            DayOfWeek.SUNDAY -> date.plusDays(1)
+            else -> date
+        }
+    }
+
+    private fun firstWeekdayOfMonth(year: Int, month: Month, dayOfWeek: DayOfWeek): LocalDate {
+        return LocalDate.of(year, month, 1).with(TemporalAdjusters.firstInMonth(dayOfWeek))
+    }
+
+    private fun nthWeekdayOfMonth(year: Int, month: Month, dayOfWeek: DayOfWeek, nth: Int): LocalDate {
+        return LocalDate.of(year, month, 1).with(TemporalAdjusters.dayOfWeekInMonth(nth, dayOfWeek))
+    }
+
+    private fun lastWeekdayOfMonth(year: Int, month: Month, dayOfWeek: DayOfWeek): LocalDate {
+        return LocalDate.of(year, month, 1).with(TemporalAdjusters.lastInMonth(dayOfWeek))
+    }
+
+    private fun easterSunday(year: Int): LocalDate {
+        // Gregorian calendar (Meeus/Jones/Butcher algorithm)
+        val a = year % 19
+        val b = year / 100
+        val c = year % 100
+        val d = b / 4
+        val e = b % 4
+        val f = (b + 8) / 25
+        val g = (b - f + 1) / 3
+        val h = (19 * a + b - d - g + 15) % 30
+        val i = c / 4
+        val k = c % 4
+        val l = (32 + 2 * e + 2 * i - h - k) % 7
+        val m = (a + 11 * h + 22 * l) / 451
+        val month = (h + l - 7 * m + 114) / 31
+        val day = ((h + l - 7 * m + 114) % 31) + 1
+        return LocalDate.of(year, month, day)
+    }
+
+    data class UsMarketSpecialDay(
+        val date: LocalDate,
+        val description: String,
+    )
+
+    data class UsMarketEarlyClose(
+        val date: LocalDate,
+        val description: String,
+        val closeTime: LocalTime,
+    )
 
     private fun getCachedNews(): CachedNewsSection {
         val cached = cachedNews

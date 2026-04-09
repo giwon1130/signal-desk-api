@@ -7,6 +7,7 @@
 - 미국 시장: `FRED` 지수 + `CBOE VIX`
 - 한국/미국 장 상태 계산
 - 정규장/장전/장후/휴장
+- 미국장 휴장/조기종료(반일장) 캘린더 반영
 - 차트 응답에 OHLC/거래량 포함
 - 뉴스: `Google News RSS`
 - 한국 종목 현재가 일부: `Naver Finance Realtime`
