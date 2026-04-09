@@ -1,0 +1,24 @@
+server:
+  port: 8091
+
+spring:
+  application:
+    name: signal-desk-api
+
+signal-desk:
+  integrations:
+    krx:
+      enabled: true
+      base-url: https://data.krx.co.kr
+    naver:
+      enabled: true
+      base-url: https://polling.finance.naver.com
+    cboe:
+      enabled: true
+      vix-url: https://cdn.cboe.com/api/global/delayed_quotes/options/_VIX.json
+    fred:
+      enabled: true
+      base-url: https://fred.stlouisfed.org/graph/fredgraph.csv
+    google-news:
+      enabled: true
+      base-url: https://news.google.com/rss/search
