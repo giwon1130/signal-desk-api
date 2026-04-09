@@ -2,10 +2,15 @@ package com.giwon.signaldesk.features.market.application
 
 import com.giwon.signaldesk.features.workspace.application.SignalDeskWorkspaceStore
 import org.springframework.stereotype.Service
+import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.LocalDateTime
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.CompletableFuture
 
 @Service
@@ -39,6 +44,7 @@ class MarketOverviewService(
             marketStatus = core.marketStatus,
             summary = core.summary,
             marketSummary = core.marketSummary,
+            marketSessions = core.marketSessions,
             koreaMarket = core.koreaMarket,
             usMarket = core.usMarket,
             news = news,
@@ -58,6 +64,7 @@ class MarketOverviewService(
             marketStatus = core.marketStatus,
             summary = core.summary,
             marketSummary = core.marketSummary,
+            marketSessions = core.marketSessions,
             briefing = core.briefing,
             sourceNotes = core.sourceNotes,
             workspaceCounts = buildWorkspaceCounts(),
@@ -281,10 +288,11 @@ class MarketOverviewService(
             val koreaMarket = koreaMarketBase.copy(
                 leadingStocks = refreshKoreanLeadingStocks(koreaMarketBase.leadingStocks, koreanQuotes)
             )
+            val marketSessions = buildMarketSessions()
             val snapshot = CachedMarketCore(
                 createdAt = Instant.now(),
                 generatedAt = generatedAt.toString(),
-                marketStatus = "OPEN_PREPARE",
+                marketStatus = buildMarketStatus(marketSessions),
                 summary = "한국주식과 미국주식을 나눠 보고, 수급·공포지표·뉴스·포트폴리오·AI 추천을 분리해서 읽는 투자 대시보드야.",
                 marketSummary = listOf(
                     SummaryMetric("Fear Meter", calculateFearMeter(vixSnapshot), buildFearMeterState(vixSnapshot), buildFearMeterNote(vixSnapshot)),
@@ -292,6 +300,7 @@ class MarketOverviewService(
                     SummaryMetric("US Heat", 64.0, "AI/빅테크 중심", "미국 지수와 VIX를 기준으로 계산"),
                     SummaryMetric("Flow Bias", calculateFlowBias(koreaMarket), buildFlowBiasState(koreaMarket), "국내는 KRX 수급, 미국은 지수/변동성 기준")
                 ),
+                marketSessions = marketSessions,
                 koreaMarket = koreaMarket,
                 usMarket = buildUsMarket(vixSnapshot, usIndicesSnapshot),
                 briefing = DailyBriefing(
@@ -319,6 +328,102 @@ class MarketOverviewService(
             cachedCore = snapshot
             snapshot
         }
+    }
+
+    private fun buildMarketStatus(sessions: List<MarketSessionStatus>): String {
+        val kr = sessions.firstOrNull { it.market == "KR" }
+        val us = sessions.firstOrNull { it.market == "US" }
+        return when {
+            kr?.phase == "REGULAR" -> "KR_REGULAR_OPEN"
+            us?.phase == "REGULAR" -> "US_REGULAR_OPEN"
+            kr?.phase == "PRE_MARKET" || us?.phase == "PRE_MARKET" -> "PRE_MARKET"
+            kr?.phase == "AFTER_HOURS" || us?.phase == "AFTER_HOURS" -> "AFTER_HOURS"
+            else -> "MARKET_CLOSED"
+        }
+    }
+
+    private fun buildMarketSessions(nowUtc: ZonedDateTime = ZonedDateTime.now(ZoneId.of("UTC"))): List<MarketSessionStatus> {
+        val koreaNow = nowUtc.withZoneSameInstant(ZoneId.of("Asia/Seoul"))
+        val usNow = nowUtc.withZoneSameInstant(ZoneId.of("America/New_York"))
+        return listOf(
+            resolveSession(
+                market = "KR",
+                label = "한국",
+                localNow = koreaNow,
+                preStart = null,
+                regularStart = LocalTime.of(9, 0),
+                regularEnd = LocalTime.of(15, 30),
+                afterEnd = null,
+            ),
+            resolveSession(
+                market = "US",
+                label = "미국",
+                localNow = usNow,
+                preStart = LocalTime.of(4, 0),
+                regularStart = LocalTime.of(9, 30),
+                regularEnd = LocalTime.of(16, 0),
+                afterEnd = LocalTime.of(20, 0),
+            ),
+        )
+    }
+
+    private fun resolveSession(
+        market: String,
+        label: String,
+        localNow: ZonedDateTime,
+        preStart: LocalTime?,
+        regularStart: LocalTime,
+        regularEnd: LocalTime,
+        afterEnd: LocalTime?,
+    ): MarketSessionStatus {
+        val isWeekday = localNow.dayOfWeek !in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
+        val time = localNow.toLocalTime()
+        val phase: String
+        val status: String
+        val isOpen: Boolean
+        val note: String
+
+        when {
+            !isWeekday -> {
+                phase = "CLOSED"
+                status = "휴장"
+                isOpen = false
+                note = "주말 휴장"
+            }
+            preStart != null && time >= preStart && time < regularStart -> {
+                phase = "PRE_MARKET"
+                status = "장전"
+                isOpen = false
+                note = "프리마켓 진행 중"
+            }
+            time >= regularStart && time < regularEnd -> {
+                phase = "REGULAR"
+                status = "정규장"
+                isOpen = true
+                note = "정규장 진행 중"
+            }
+            afterEnd != null && time >= regularEnd && time < afterEnd -> {
+                phase = "AFTER_HOURS"
+                status = "장후"
+                isOpen = false
+                note = "애프터마켓 진행 중"
+            }
+            else -> {
+                phase = "CLOSED"
+                status = "마감"
+                isOpen = false
+                note = "정규장 종료"
+            }
+        }
+        return MarketSessionStatus(
+            market = market,
+            label = label,
+            phase = phase,
+            status = status,
+            isOpen = isOpen,
+            localTime = localNow.format(DateTimeFormatter.ofPattern("MM/dd HH:mm")),
+            note = note,
+        )
     }
 
     private fun getCachedNews(): CachedNewsSection {
@@ -706,6 +811,7 @@ data class MarketOverviewResponse(
     val marketStatus: String,
     val summary: String,
     val marketSummary: List<SummaryMetric>,
+    val marketSessions: List<MarketSessionStatus>,
     val koreaMarket: MarketSection,
     val usMarket: MarketSection,
     val news: List<MarketNews>,
@@ -722,6 +828,7 @@ data class MarketSummaryResponse(
     val marketStatus: String,
     val summary: String,
     val marketSummary: List<SummaryMetric>,
+    val marketSessions: List<MarketSessionStatus>,
     val briefing: DailyBriefing,
     val sourceNotes: List<SourceNote>,
     val workspaceCounts: WorkspaceCounts,
@@ -770,6 +877,16 @@ data class SummaryMetric(
     val score: Double,
     val state: String,
     val note: String
+)
+
+data class MarketSessionStatus(
+    val market: String,
+    val label: String,
+    val phase: String,
+    val status: String,
+    val isOpen: Boolean,
+    val localTime: String,
+    val note: String,
 )
 
 data class MarketSection(
@@ -956,6 +1073,7 @@ private data class CachedMarketCore(
     val marketStatus: String,
     val summary: String,
     val marketSummary: List<SummaryMetric>,
+    val marketSessions: List<MarketSessionStatus>,
     val koreaMarket: MarketSection,
     val usMarket: MarketSection,
     val briefing: DailyBriefing,

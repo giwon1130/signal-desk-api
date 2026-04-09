@@ -5,6 +5,8 @@
 ## 1차 릴리즈 범위
 - 한국 시장: `KRX` 지수/수급/차트
 - 미국 시장: `FRED` 지수 + `CBOE VIX`
+- 한국/미국 장 상태 계산
+- 정규장/장전/장후/휴장
 - 뉴스: `Google News RSS`
 - 한국 종목 현재가 일부: `Naver Finance Realtime`
 - 사용자 데이터 저장
@@ -22,6 +24,10 @@
 - `GET /api/v1/market/ai-recommendations`
 - `GET /api/v1/market/paper-trading`
 - `GET /api/v1/market/overview`
+
+`/summary`, `/overview`에는 `marketSessions`가 포함된다.
+- `KR`: 한국 장 상태
+- `US`: 미국 장 상태
 
 ## 사용자 저장 API
 - `POST/DELETE /api/v1/workspace/watchlist`
