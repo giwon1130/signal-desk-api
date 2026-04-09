@@ -3,6 +3,12 @@ package com.giwon.signaldesk.features.market.application
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToLong
 
 fun buildIndexChartPeriods(
     latest: Double,
@@ -11,27 +17,34 @@ fun buildIndexChartPeriods(
 ): List<ChartPeriodSnapshot> {
     val normalized = if (baseSeries.isEmpty()) listOf(latest) else baseSeries
     val today = LocalDate.now()
+    val now = LocalDateTime.now()
 
-    val dayPoints = normalized.takeLast(12).mapIndexed { index, value ->
-        val slotTime = LocalDateTime.now()
+    val dayCloses = normalized.takeLast(12)
+    val dayLabels = dayCloses.mapIndexed { index, _ ->
+        val slotTime = now
             .withHour(9)
             .withMinute(0)
             .withSecond(0)
             .withNano(0)
             .plusMinutes((index * 30).toLong())
         val minute = if (index % 2 == 0) "00" else "30"
-        ChartPoint("${today.format(DateTimeFormatter.ofPattern("MM/dd"))} ${slotTime.hour.toString().padStart(2, '0')}:$minute", value)
+        "${today.format(DateTimeFormatter.ofPattern("MM/dd"))} ${slotTime.hour.toString().padStart(2, '0')}:$minute"
     }
+    val dayPoints = buildChartPoints(dayLabels, dayCloses, dayCloses.firstOrNull() ?: latest)
+
     val monthSeries = resampleIndexSeries(normalized, 20)
-    val monthPoints = monthSeries.mapIndexed { index, value ->
+    val monthLabels = monthSeries.mapIndexed { index, _ ->
         val day = today.minusDays((monthSeries.lastIndex - index).toLong())
-        ChartPoint(day.format(DateTimeFormatter.ofPattern("MM/dd")), value)
+        day.format(DateTimeFormatter.ofPattern("MM/dd"))
     }
+    val monthPoints = buildChartPoints(monthLabels, monthSeries, monthSeries.firstOrNull() ?: latest)
+
     val yearSeries = resampleIndexSeries(normalized, 12)
-    val yearPoints = yearSeries.mapIndexed { index, value ->
+    val yearLabels = yearSeries.mapIndexed { index, _ ->
         val month = today.minusMonths((yearSeries.lastIndex - index).toLong())
-        ChartPoint(month.format(DateTimeFormatter.ofPattern("yy/MM")), value)
+        month.format(DateTimeFormatter.ofPattern("yy/MM"))
     }
+    val yearPoints = buildChartPoints(yearLabels, yearSeries, yearSeries.firstOrNull() ?: latest)
 
     return listOf(
         ChartPeriodSnapshot("1D", "일별", dayPoints, buildIndexChartStats(dayPoints)),
@@ -45,7 +58,8 @@ private fun buildIndexChartStats(
     fallbackChangeRate: Double? = null,
     fallbackLatest: Double? = null,
 ): ChartStats {
-    val values = points.map { it.value }
+    val values = points.map { it.close }
+    val volumeAverage = points.map { it.volume.toDouble() }.average().roundToLong()
     val latest = values.lastOrNull() ?: fallbackLatest ?: 0.0
     val previous = values.getOrNull(values.lastIndex - 1) ?: latest
     val high = values.maxOrNull() ?: latest
@@ -57,6 +71,7 @@ private fun buildIndexChartStats(
         low = low,
         changeRate = changeRate,
         range = high - low,
+        averageVolume = volumeAverage,
     )
 }
 
@@ -67,11 +82,40 @@ private fun resampleIndexSeries(values: List<Double>, targetSize: Int): List<Dou
 
     return (0 until targetSize).map { index ->
         val sourcePosition = (index.toDouble() / (targetSize - 1)) * (values.lastIndex)
-        val lowerIndex = kotlin.math.floor(sourcePosition).toInt()
-        val upperIndex = kotlin.math.ceil(sourcePosition).toInt().coerceAtMost(values.lastIndex)
+        val lowerIndex = floor(sourcePosition).toInt()
+        val upperIndex = ceil(sourcePosition).toInt().coerceAtMost(values.lastIndex)
         val fraction = sourcePosition - lowerIndex
         val lowerValue = values[lowerIndex]
         val upperValue = values[upperIndex]
         lowerValue + ((upperValue - lowerValue) * fraction)
+    }
+}
+
+private fun buildChartPoints(
+    labels: List<String>,
+    closes: List<Double>,
+    fallbackOpen: Double,
+): List<ChartPoint> {
+    if (closes.isEmpty()) return emptyList()
+
+    return closes.mapIndexed { index, close ->
+        val open = closes.getOrNull(index - 1) ?: fallbackOpen
+        val baseSwing = max(abs(close - open), close * 0.0015)
+        val upperWick = baseSwing * (0.45 + ((index % 3) * 0.15))
+        val lowerWick = baseSwing * (0.4 + ((index % 4) * 0.12))
+        val high = max(open, close) + upperWick
+        val low = min(open, close) - lowerWick
+        val volatility = abs(close - open)
+        val volume = (750_000 + (volatility * 28_000) + (close * 170)).roundToLong().coerceAtLeast(40_000)
+
+        ChartPoint(
+            label = labels.getOrElse(index) { index.toString() },
+            value = close,
+            open = open,
+            high = high,
+            low = low,
+            close = close,
+            volume = volume,
+        )
     }
 }

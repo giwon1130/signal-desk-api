@@ -7,6 +7,7 @@
 - 미국 시장: `FRED` 지수 + `CBOE VIX`
 - 한국/미국 장 상태 계산
 - 정규장/장전/장후/휴장
+- 차트 응답에 OHLC/거래량 포함
 - 뉴스: `Google News RSS`
 - 한국 종목 현재가 일부: `Naver Finance Realtime`
 - 사용자 데이터 저장
@@ -28,6 +29,9 @@
 `/summary`, `/overview`에는 `marketSessions`가 포함된다.
 - `KR`: 한국 장 상태
 - `US`: 미국 장 상태
+
+`/sections`의 지수 기간 데이터(`periods.points`)에는 아래 필드가 포함된다.
+- `open`, `high`, `low`, `close`, `volume`
 
 ## 사용자 저장 API
 - `POST/DELETE /api/v1/workspace/watchlist`

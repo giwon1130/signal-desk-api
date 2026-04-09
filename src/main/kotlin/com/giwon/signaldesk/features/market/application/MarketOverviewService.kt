@@ -915,6 +915,11 @@ data class ChartPeriodSnapshot(
 data class ChartPoint(
     val label: String,
     val value: Double,
+    val open: Double,
+    val high: Double,
+    val low: Double,
+    val close: Double,
+    val volume: Long,
 )
 
 data class ChartStats(
@@ -923,6 +928,7 @@ data class ChartStats(
     val low: Double,
     val changeRate: Double,
     val range: Double,
+    val averageVolume: Long,
 )
 
 data class SentimentMetric(
