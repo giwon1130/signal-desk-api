@@ -791,19 +791,25 @@ class MarketOverviewService(
         section: AIRecommendationSection,
         quotes: Map<String, StockQuote>,
     ): AIRecommendationSection {
-        return section.copy(
-            trackRecords = section.trackRecords.map { record ->
-                if (record.market != "KR") return@map record
-                val quote = quotes[record.ticker] ?: return@map record
-                val realizedReturnRate = if (record.entryPrice == 0) 0.0 else
-                    ((quote.currentPrice - record.entryPrice).toDouble() / record.entryPrice) * 100
+        val refreshedTrackRecords = section.trackRecords.map { record ->
+            if (record.market != "KR") return@map record
+            val quote = quotes[record.ticker] ?: return@map record
+            val realizedReturnRate = if (record.entryPrice == 0) 0.0 else
+                ((quote.currentPrice - record.entryPrice).toDouble() / record.entryPrice) * 100
 
-                record.copy(
-                    latestPrice = quote.currentPrice,
-                    realizedReturnRate = realizedReturnRate,
-                    success = realizedReturnRate >= 0
-                )
-            }
+            record.copy(
+                latestPrice = quote.currentPrice,
+                realizedReturnRate = realizedReturnRate,
+                success = realizedReturnRate >= 0
+            )
+        }
+        return section.copy(
+            trackRecords = refreshedTrackRecords,
+            executionLogs = buildRecommendationExecutionLogs(
+                generatedDate = section.generatedDate,
+                picks = section.picks,
+                trackRecords = refreshedTrackRecords,
+            ),
         )
     }
 
@@ -812,13 +818,67 @@ class MarketOverviewService(
         workspacePicks: List<RecommendationPick>,
         workspaceTrackRecords: List<RecommendationTrackRecord>,
     ): AIRecommendationSection {
+        val picks = (baseSection.picks + workspacePicks)
+            .sortedByDescending { it.confidence }
+        val trackRecords = (baseSection.trackRecords + workspaceTrackRecords)
+            .sortedByDescending { it.recommendedDate }
+            .take(20)
+
         return baseSection.copy(
-            picks = (baseSection.picks + workspacePicks)
-                .sortedByDescending { it.confidence },
-            trackRecords = (baseSection.trackRecords + workspaceTrackRecords)
-                .sortedByDescending { it.recommendedDate }
-                .take(20)
+            picks = picks,
+            trackRecords = trackRecords,
+            executionLogs = buildRecommendationExecutionLogs(
+                generatedDate = baseSection.generatedDate,
+                picks = picks,
+                trackRecords = trackRecords,
+            ),
         )
+    }
+
+    private fun buildRecommendationExecutionLogs(
+        generatedDate: String,
+        picks: List<RecommendationPick>,
+        trackRecords: List<RecommendationTrackRecord>,
+    ): List<RecommendationExecutionLog> {
+        val resultByTicker = trackRecords.associateBy { "${it.market}:${it.ticker}" }
+        val pickLogs = picks.map { pick ->
+            val match = resultByTicker["${pick.market}:${pick.ticker}"]
+            RecommendationExecutionLog(
+                date = generatedDate,
+                market = pick.market,
+                ticker = pick.ticker,
+                name = pick.name,
+                stage = "RECOMMEND",
+                status = if (match != null) "검증완료" else "추적중",
+                rationale = "${pick.basis} · ${pick.note}",
+                confidence = pick.confidence,
+                expectedReturnRate = pick.expectedReturnRate,
+                realizedReturnRate = match?.realizedReturnRate,
+                source = pick.source,
+            )
+        }
+
+        val resultLogs = trackRecords
+            .filter { record -> picks.none { it.market == record.market && it.ticker == record.ticker } }
+            .map { record ->
+                RecommendationExecutionLog(
+                    date = record.recommendedDate,
+                    market = record.market,
+                    ticker = record.ticker,
+                    name = record.name,
+                    stage = "RESULT",
+                    status = if (record.success) "검증완료" else "재평가필요",
+                    rationale = "추천 성과 기록",
+                    confidence = null,
+                    expectedReturnRate = null,
+                    realizedReturnRate = record.realizedReturnRate,
+                    source = record.source,
+                )
+            }
+
+        return (pickLogs + resultLogs)
+            .sortedWith(compareByDescending<RecommendationExecutionLog> { it.date }.thenBy { it.market }.thenBy { it.ticker })
+            .take(30)
     }
 
     private fun refreshPaperTrading(
@@ -932,19 +992,27 @@ class MarketOverviewService(
     }
 
     private fun baseAiRecommendations(): AIRecommendationSection {
+        val picks = listOf(
+            RecommendationPick("KR", "000660", "SK하이닉스", "외국인 수급 + 섹터 강도 + 뉴스 일치", 78, "반도체 대형주 주도 구간에서 가장 강도가 좋음", 4.6),
+            RecommendationPick("US", "NVDA", "NVIDIA", "AI 대장주 모멘텀 유지", 74, "나스닥 강세와 섹터 뉴스가 동시에 받쳐줌", 6.8),
+            RecommendationPick("KR", "105560", "KB금융", "금융 저평가 + 수급 안정", 61, "변동성 방어 대안", 2.1)
+        )
+        val trackRecords = listOf(
+            RecommendationTrackRecord("2026-04-02", "KR", "005930", "삼성전자", 80100, 84200, 5.11, true),
+            RecommendationTrackRecord("2026-04-03", "US", "MSFT", "Microsoft", 412, 428, 3.88, true),
+            RecommendationTrackRecord("2026-04-04", "KR", "068270", "셀트리온", 181000, 176200, -2.65, false)
+        )
+
         return AIRecommendationSection(
             generatedDate = LocalDate.now().toString(),
             summary = "수급과 뉴스, 섹터 강도 기준으로 오늘은 반도체와 빅테크 중심 추세 추종이 유리한 날로 본다.",
-            picks = listOf(
-                RecommendationPick("KR", "000660", "SK하이닉스", "외국인 수급 + 섹터 강도 + 뉴스 일치", 78, "반도체 대형주 주도 구간에서 가장 강도가 좋음", 4.6),
-                RecommendationPick("US", "NVDA", "NVIDIA", "AI 대장주 모멘텀 유지", 74, "나스닥 강세와 섹터 뉴스가 동시에 받쳐줌", 6.8),
-                RecommendationPick("KR", "105560", "KB금융", "금융 저평가 + 수급 안정", 61, "변동성 방어 대안", 2.1)
+            picks = picks,
+            trackRecords = trackRecords,
+            executionLogs = buildRecommendationExecutionLogs(
+                generatedDate = LocalDate.now().toString(),
+                picks = picks,
+                trackRecords = trackRecords,
             ),
-            trackRecords = listOf(
-                RecommendationTrackRecord("2026-04-02", "KR", "005930", "삼성전자", 80100, 84200, 5.11, true),
-                RecommendationTrackRecord("2026-04-03", "US", "MSFT", "Microsoft", 412, 428, 3.88, true),
-                RecommendationTrackRecord("2026-04-04", "KR", "068270", "셀트리온", 181000, 176200, -2.65, false)
-            )
         )
     }
 
@@ -1161,7 +1229,8 @@ data class AIRecommendationSection(
     val generatedDate: String,
     val summary: String,
     val picks: List<RecommendationPick>,
-    val trackRecords: List<RecommendationTrackRecord>
+    val trackRecords: List<RecommendationTrackRecord>,
+    val executionLogs: List<RecommendationExecutionLog>,
 )
 
 data class RecommendationPick(
@@ -1187,6 +1256,20 @@ data class RecommendationTrackRecord(
     val success: Boolean,
     val source: String = "BASE",
     val id: String = "",
+)
+
+data class RecommendationExecutionLog(
+    val date: String,
+    val market: String,
+    val ticker: String,
+    val name: String,
+    val stage: String,
+    val status: String,
+    val rationale: String,
+    val confidence: Int?,
+    val expectedReturnRate: Double?,
+    val realizedReturnRate: Double?,
+    val source: String = "BASE",
 )
 
 data class PaperTradingSummary(
