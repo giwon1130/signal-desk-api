@@ -1,9 +1,13 @@
 package com.giwon.signaldesk.bootstrap
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
 import org.springframework.boot.runApplication
 
-@SpringBootApplication(scanBasePackages = ["com.giwon.signaldesk"])
+@SpringBootApplication(
+    scanBasePackages = ["com.giwon.signaldesk"],
+    exclude = [DataSourceAutoConfiguration::class],
+)
 class SignalDeskApiApplication
 
 fun main(args: Array<String>) {

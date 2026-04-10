@@ -26,10 +26,13 @@
 
 ## 저장 구조
 - 시장 데이터는 외부 공개 데이터 소스 호출 결과를 조합
-- 워크스페이스 데이터는 현재 로컬 파일 저장소를 사용
+- 워크스페이스 데이터는 `SignalDeskWorkspaceRepository` 뒤로 추상화
+- 기본 모드는 로컬 파일 저장소(`signal-desk.store.mode=file`)
 - 기본 저장 경로: `./data/signal-desk-store.json`
+- JDBC 저장소 모드(`signal-desk.store.mode=jdbc`)도 지원
+- JDBC 모드에서는 애플리케이션 기동 시 필요한 테이블을 자동 생성
 - 애플리케이션 내부에서는 `SignalDeskWorkspaceRepository` 인터페이스 뒤로 추상화
-- 향후 PostgreSQL 기반 저장소로 교체 예정
+- PostgreSQL 연결 시 파일 저장 없이 워크스페이스 CRUD를 그대로 사용할 수 있음
 
 ## 주요 API
 조회 API:
@@ -76,6 +79,22 @@
 ./gradlew bootRun
 ```
 
+파일 저장 모드(기본값):
+```yaml
+signal-desk:
+  store:
+    mode: file
+    path: ./data/signal-desk-store.json
+```
+
+JDBC 저장 모드 예시:
+```bash
+export SIGNAL_DESK_STORE_JDBC_URL=jdbc:postgresql://localhost:5432/signal_desk
+export SIGNAL_DESK_STORE_JDBC_USERNAME=postgres
+export SIGNAL_DESK_STORE_JDBC_PASSWORD=postgres
+./gradlew bootRun --args='--signal-desk.store.mode=jdbc'
+```
+
 ## 테스트
 ```bash
 ./gradlew test
@@ -84,5 +103,5 @@
 ## 다음 확장
 1. 미국 개별 종목 실데이터 범위 확대
 2. 종목 전체 검색/페이징
-3. 저장소를 PostgreSQL로 전환
+3. JDBC 저장소를 실제 운영용 PostgreSQL 마이그레이션 구조로 확장
 4. AI 추천 자동 산출/성과 자동 계산

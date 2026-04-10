@@ -6,6 +6,14 @@ spring:
     name: signal-desk-api
 
 signal-desk:
+  store:
+    mode: file
+    path: ./data/signal-desk-store.json
+    jdbc:
+      url: ${SIGNAL_DESK_STORE_JDBC_URL:}
+      username: ${SIGNAL_DESK_STORE_JDBC_USERNAME:}
+      password: ${SIGNAL_DESK_STORE_JDBC_PASSWORD:}
+      driver-class-name: org.postgresql.Driver
   integrations:
     krx:
       enabled: true
