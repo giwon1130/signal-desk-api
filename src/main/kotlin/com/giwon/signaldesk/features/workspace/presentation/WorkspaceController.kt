@@ -1,7 +1,7 @@
 package com.giwon.signaldesk.features.workspace.presentation
 
 import com.giwon.signaldesk.features.market.presentation.ApiResponse
-import com.giwon.signaldesk.features.workspace.application.SignalDeskWorkspaceStore
+import com.giwon.signaldesk.features.workspace.application.SignalDeskWorkspaceRepository
 import com.giwon.signaldesk.features.workspace.application.WorkspaceHoldingPosition
 import com.giwon.signaldesk.features.workspace.application.WorkspaceAiPick
 import com.giwon.signaldesk.features.workspace.application.WorkspaceAiTrackRecord
@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/v1/workspace")
 class WorkspaceController(
-    private val workspaceStore: SignalDeskWorkspaceStore,
+    private val workspaceStore: SignalDeskWorkspaceRepository,
 ) {
 
     @GetMapping("/watchlist")

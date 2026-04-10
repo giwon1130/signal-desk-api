@@ -18,7 +18,21 @@
 - AI 추천 근거/성과 실행 로그
 - 모의투자 보유종목/거래
 
+## 역할
+- 한국/미국 시장 데이터를 수집해 웹과 앱에 공통 응답 제공
+- 한국/미국 장 상태를 정규장/장전/장후/휴장 기준으로 계산
+- 뉴스 군집화, 시장 요약, 차트 데이터, 수급 데이터를 한 번에 조합
+- 관심종목, 포트폴리오, AI 추천 로그, 모의투자 데이터를 워크스페이스 단위로 관리
+
+## 저장 구조
+- 시장 데이터는 외부 공개 데이터 소스 호출 결과를 조합
+- 워크스페이스 데이터는 현재 로컬 파일 저장소를 사용
+- 기본 저장 경로: `./data/signal-desk-store.json`
+- 애플리케이션 내부에서는 `SignalDeskWorkspaceRepository` 인터페이스 뒤로 추상화
+- 향후 PostgreSQL 기반 저장소로 교체 예정
+
 ## 주요 API
+조회 API:
 - `GET /api/v1/market/summary`
 - `GET /api/v1/market/sections`
 - `GET /api/v1/market/news`
@@ -36,6 +50,7 @@
 - `open`, `high`, `low`, `close`, `volume`
 
 ## 사용자 저장 API
+- 워크스페이스 CRUD API:
 - `POST/DELETE /api/v1/workspace/watchlist`
 - `POST/DELETE /api/v1/workspace/portfolio`
 - `POST/DELETE /api/v1/workspace/paper/positions`
@@ -48,6 +63,13 @@
 - 뉴스 데이터: 5분 메모리 캐시
 - 분리 endpoint로 프론트 탭 지연 로딩 지원
 - 외부 소스 호출 병렬 처리
+
+## 외부 데이터 소스
+- 한국 지수/수급: `KRX 정보데이터시스템`
+- 한국 종목 현재가 일부: `Naver Finance Realtime`
+- 미국 지수: `FRED`
+- 미국 공포지표: `CBOE VIX`
+- 뉴스: `Google News RSS`
 
 ## 실행
 ```bash

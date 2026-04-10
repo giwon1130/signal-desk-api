@@ -1,6 +1,6 @@
 package com.giwon.signaldesk.features.market.application
 
-import com.giwon.signaldesk.features.workspace.application.SignalDeskWorkspaceStore
+import com.giwon.signaldesk.features.workspace.application.SignalDeskWorkspaceRepository
 import org.springframework.stereotype.Service
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -22,7 +22,7 @@ class MarketOverviewService(
     private val cboeVixClient: CboeVixClient,
     private val fredIndexClient: FredIndexClient,
     private val googleNewsRssClient: GoogleNewsRssClient,
-    private val workspaceStore: SignalDeskWorkspaceStore,
+    private val workspaceStore: SignalDeskWorkspaceRepository,
 ) {
     @Volatile
     private var cachedCore: CachedMarketCore? = null
