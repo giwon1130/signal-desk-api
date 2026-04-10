@@ -1,0 +1,30 @@
+services:
+  signal-desk-postgres:
+    image: postgres:16-alpine
+    container_name: signal-desk-postgres
+    environment:
+      POSTGRES_DB: signal_desk
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - signal-desk-postgres-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+
+  signal-desk-api:
+    build:
+      context: .
+    container_name: signal-desk-api-jdbc
+    depends_on:
+      - signal-desk-postgres
+    environment:
+      SIGNAL_DESK_STORE_JDBC_URL: jdbc:postgresql://signal-desk-postgres:5432/signal_desk
+      SIGNAL_DESK_STORE_JDBC_USERNAME: postgres
+      SIGNAL_DESK_STORE_JDBC_PASSWORD: postgres
+    command: ["java", "-jar", "/app/app.jar", "--signal-desk.store.mode=jdbc"]
+    ports:
+      - "8091:8091"
+
+volumes:
+  signal-desk-postgres-data:

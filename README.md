@@ -95,6 +95,27 @@ export SIGNAL_DESK_STORE_JDBC_PASSWORD=postgres
 ./gradlew bootRun --args='--signal-desk.store.mode=jdbc'
 ```
 
+Docker Compose로 JDBC 모드 빠르게 확인:
+```bash
+docker compose -f docker-compose.jdbc.yml up --build
+```
+
+- PostgreSQL: `localhost:5432`
+- API: `localhost:8091`
+- 초기 스키마: `db/init/001_signal_desk_workspace.sql`
+- 샘플 데이터: `db/init/002_signal_desk_workspace_seed.sql`
+
+초기화 흐름:
+1. Postgres 컨테이너가 처음 올라올 때 `db/init/*.sql`을 순서대로 실행
+2. 애플리케이션은 `--signal-desk.store.mode=jdbc`로 JDBC 저장소 활성화
+3. 이후 `/api/v1/workspace/*` CRUD가 파일 저장 대신 PostgreSQL에 반영
+
+로컬 검증 예시:
+```bash
+curl -s http://localhost:8091/api/v1/market/watchlist
+curl -s http://localhost:8091/api/v1/market/portfolio
+```
+
 ## 테스트
 ```bash
 ./gradlew test
