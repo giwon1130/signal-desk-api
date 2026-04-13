@@ -100,6 +100,8 @@ Docker Compose로 JDBC 모드 빠르게 확인:
 docker compose -f docker-compose.jdbc.yml up --build
 ```
 
+- 이 compose는 `localhost:8091`을 사용하므로, 루트 `signal-desk/docker-compose.yml`과 동시에 실행하지 않는다.
+
 - PostgreSQL: `localhost:5432`
 - API: `localhost:8091`
 - 초기 스키마: `db/init/001_signal_desk_workspace.sql`
@@ -115,6 +117,11 @@ docker compose -f docker-compose.jdbc.yml up --build
 curl -s http://localhost:8091/api/v1/market/watchlist
 curl -s http://localhost:8091/api/v1/market/portfolio
 ```
+
+루트 통합 compose에서 web + api를 함께 올릴 때는 `signal-desk/docker-compose.yml`을 사용한다.
+- 기본 모드: 파일 저장소
+- `signal-desk-web`은 `GET /api/v1/market/summary` healthcheck가 성공한 뒤 기동한다.
+- 컨테이너 이미지에는 healthcheck용 `wget`을 포함했다.
 
 ## 테스트
 ```bash
