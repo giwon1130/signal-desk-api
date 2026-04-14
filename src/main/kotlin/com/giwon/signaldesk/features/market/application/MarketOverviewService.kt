@@ -25,6 +25,11 @@ class MarketOverviewService(
     private val pizzIntClient: PizzIntClient,
     private val workspaceStore: SignalDeskWorkspaceRepository,
 ) {
+    private val trackedBarVenues = listOf(
+        TrackedVenueProxy("Freddie's Beach Bar", "Pentagon", 1.4),
+        TrackedVenueProxy("The Little Gay Pub", "White House", 1.1),
+    )
+
     @Volatile
     private var cachedCore: CachedMarketCore? = null
 
@@ -735,6 +740,16 @@ class MarketOverviewService(
                     url = "https://www.pizzint.watch/whitepaper",
                     experimental = true,
                 ),
+                AlternativeSignal(
+                    label = "Bar Counter-Signal",
+                    score = 44,
+                    state = "관측 대기",
+                    note = "Freddie's Beach Bar, The Little Gay Pub 같은 고정 venue 기반 bar proxy signal. direct venue source 연결 전 기본값으로 표시",
+                    highlights = listOf("Freddie's 1.4mi", "Little Gay Pub 1.1mi", "proxy fallback"),
+                    source = "Tracked Venue Proxy",
+                    url = "https://www.pizzint.watch/whitepaper",
+                    experimental = true,
+                ),
             )
         }
 
@@ -771,12 +786,13 @@ class MarketOverviewService(
             val normalized = it.status.uppercase()
             normalized == "QUIET" || normalized == "NOMINAL" || normalized == "CLOSED"
         }
-        val counterSignalScore = weightedScore(
+        val barCounterSignalScore = weightedScore(
             contributions = listOf(
-                normalizedContribution(quietLocationCount.toDouble(), monitoredLocationCount.coerceAtLeast(1).toDouble(), 0.62),
-                normalizedContribution(maxSpike.toDouble(), 240.0, 0.38),
+                normalizedContribution(quietLocationCount.toDouble(), monitoredLocationCount.coerceAtLeast(1).toDouble(), 0.42),
+                normalizedContribution((snapshot.alertCount ?: 0).toDouble(), 20.0, 0.33),
+                normalizedContribution(maxSpike.toDouble(), 240.0, 0.25),
             ),
-            floor = 6,
+            floor = 12,
         )
 
         return listOf(
@@ -809,16 +825,21 @@ class MarketOverviewService(
                 experimental = true,
             ),
             AlternativeSignal(
-                label = "Night Counter-Signal",
-                score = counterSignalScore,
-                state = buildCounterSignalState(counterSignalScore),
-                note = "조용한 매장 비율 ${quietLocationCount}/${monitoredLocationCount}, 최고 스파이크 ${maxSpike}%를 함께 보는 counter-signal 프록시",
+                label = "Bar Counter-Signal",
+                score = barCounterSignalScore,
+                state = buildCounterSignalState(barCounterSignalScore),
+                note = buildBarCounterSignalNote(
+                    quietLocationCount = quietLocationCount,
+                    monitoredLocationCount = monitoredLocationCount,
+                    maxSpike = maxSpike,
+                    trackedVenues = trackedBarVenues,
+                ),
                 highlights = listOf(
                     "조용함 ${quietLocationCount}/${monitoredLocationCount}",
-                    "최고 ${maxSpike}%",
-                    "proxy signal",
+                    "Freddie's 1.4mi",
+                    "Little Gay Pub 1.1mi",
                 ),
-                source = "PizzINT Whitepaper",
+                source = "Tracked Venue Proxy",
                 url = "https://www.pizzint.watch/whitepaper",
                 experimental = true,
             ),
@@ -862,6 +883,16 @@ class MarketOverviewService(
             score >= 28 -> "혼재"
             else -> "특이 신호 약함"
         }
+    }
+
+    private fun buildBarCounterSignalNote(
+        quietLocationCount: Int,
+        monitoredLocationCount: Int,
+        maxSpike: Int,
+        trackedVenues: List<TrackedVenueProxy>,
+    ): String {
+        val venueSummary = trackedVenues.joinToString(", ") { "${it.name} ${it.distanceMiles}mi" }
+        return "고정 venue(${venueSummary})를 기준으로 조용한 피자 매장 비율 ${quietLocationCount}/${monitoredLocationCount}, 최고 스파이크 ${maxSpike}%를 합산한 bar proxy signal. direct venue traffic source 확보 전까지 프록시로 운영"
     }
 
     private fun normalizedContribution(value: Double, scale: Double, weight: Double): Double {
@@ -1280,6 +1311,12 @@ data class SummaryMetric(
     val score: Double,
     val state: String,
     val note: String
+)
+
+data class TrackedVenueProxy(
+    val name: String,
+    val anchor: String,
+    val distanceMiles: Double,
 )
 
 data class AlternativeSignal(
