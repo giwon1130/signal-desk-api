@@ -749,22 +749,35 @@ class MarketOverviewService(
             .takeIf { !it.isNaN() }
             ?: 0.0
 
-        val doughconWeight = (snapshot.doughconLevel ?: 3) * 14
-        val spikeBreadthWeight = spikingLocations * 9
-        val spikeIntensityWeight = (maxSpike / 2.4).toInt()
-        val doughconScore = (doughconWeight + spikeBreadthWeight + spikeIntensityWeight).coerceIn(0, 100)
+        val doughconScore = weightedScore(
+            contributions = listOf(
+                normalizedContribution(snapshot.doughconLevel?.toDouble() ?: 3.0, 5.0, 0.28),
+                normalizedContribution(spikingLocations.toDouble(), monitoredLocationCount.coerceAtLeast(1).toDouble(), 0.34),
+                normalizedContribution(maxSpike.toDouble(), 240.0, 0.38),
+            ),
+            floor = 14,
+        )
 
-        val reportDensity = ((snapshot.reportCount ?: 0) / 2.5).toInt()
-        val alertDensity = (snapshot.alertCount ?: 0) * 5
-        val spikeContribution = (averageSpike / 4.0).toInt()
-        val alertScore = (reportDensity + alertDensity + spikeContribution).coerceIn(0, 100)
+        val alertScore = weightedScore(
+            contributions = listOf(
+                normalizedContribution((snapshot.reportCount ?: 0).toDouble(), 60.0, 0.4),
+                normalizedContribution((snapshot.alertCount ?: 0).toDouble(), 20.0, 0.35),
+                normalizedContribution(averageSpike, 220.0, 0.25),
+            ),
+            floor = 8,
+        )
 
         val quietLocationCount = snapshot.locationSignals.count {
             val normalized = it.status.uppercase()
             normalized == "QUIET" || normalized == "NOMINAL" || normalized == "CLOSED"
         }
-        val quietRatioScore = if (monitoredLocationCount == 0) 40 else ((quietLocationCount.toDouble() / monitoredLocationCount) * 100).toInt()
-        val counterSignalScore = ((quietRatioScore * 0.55) + (maxSpike.coerceIn(0, 100) * 0.45)).toInt().coerceIn(0, 100)
+        val counterSignalScore = weightedScore(
+            contributions = listOf(
+                normalizedContribution(quietLocationCount.toDouble(), monitoredLocationCount.coerceAtLeast(1).toDouble(), 0.62),
+                normalizedContribution(maxSpike.toDouble(), 240.0, 0.38),
+            ),
+            floor = 6,
+        )
 
         return listOf(
             AlternativeSignal(
@@ -814,10 +827,10 @@ class MarketOverviewService(
 
     private fun buildPizzaState(score: Int): String {
         return when {
-            score >= 80 -> "고경계"
-            score >= 60 -> "주의 강화"
-            score >= 40 -> "보통"
-            score >= 20 -> "낮음"
+            score >= 82 -> "고경계"
+            score >= 64 -> "주의 강화"
+            score >= 42 -> "보통"
+            score >= 22 -> "낮음"
             else -> "평온"
         }
     }
@@ -835,20 +848,31 @@ class MarketOverviewService(
 
     private fun buildPolicyBuzzState(score: Int): String {
         return when {
-            score >= 80 -> "고강도"
-            score >= 55 -> "확대"
-            score >= 35 -> "보통"
+            score >= 78 -> "고강도"
+            score >= 58 -> "확대"
+            score >= 34 -> "보통"
             else -> "잠잠"
         }
     }
 
     private fun buildCounterSignalState(score: Int): String {
         return when {
-            score >= 75 -> "야간 비정상 징후"
-            score >= 55 -> "내부 업무 모드 가능성"
-            score >= 35 -> "혼재"
+            score >= 74 -> "야간 비정상 징후"
+            score >= 52 -> "내부 업무 모드 가능성"
+            score >= 28 -> "혼재"
             else -> "특이 신호 약함"
         }
+    }
+
+    private fun normalizedContribution(value: Double, scale: Double, weight: Double): Double {
+        if (scale <= 0.0) return 0.0
+        return (value / scale).coerceIn(0.0, 1.0) * weight
+    }
+
+    private fun weightedScore(contributions: List<Double>, floor: Int = 0): Int {
+        val total = contributions.sum().coerceIn(0.0, 1.0)
+        val curved = kotlin.math.sqrt(total)
+        return (floor + curved * (100 - floor)).toInt().coerceIn(0, 100)
     }
 
     private fun extractSpikePercent(status: String): Int {
