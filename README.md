@@ -5,6 +5,7 @@
 ## 1차 릴리즈 범위
 - 한국 시장: `KRX` 지수/수급/차트
 - 미국 시장: `FRED` 지수 + `CBOE VIX`
+- 실험 지표: `PizzINT` 기반 Pentagon Pizza Index / Policy Buzz 프록시
 - 한국/미국 장 상태 계산
 - 정규장/장전/장후/휴장
 - 미국장 휴장/조기종료(반일장) 캘린더 반영

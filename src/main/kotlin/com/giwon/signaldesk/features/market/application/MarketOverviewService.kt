@@ -22,6 +22,7 @@ class MarketOverviewService(
     private val cboeVixClient: CboeVixClient,
     private val fredIndexClient: FredIndexClient,
     private val googleNewsRssClient: GoogleNewsRssClient,
+    private val pizzIntClient: PizzIntClient,
     private val workspaceStore: SignalDeskWorkspaceRepository,
 ) {
     @Volatile
@@ -46,6 +47,7 @@ class MarketOverviewService(
             marketStatus = core.marketStatus,
             summary = core.summary,
             marketSummary = core.marketSummary,
+            alternativeSignals = core.alternativeSignals,
             marketSessions = core.marketSessions,
             koreaMarket = core.koreaMarket,
             usMarket = core.usMarket,
@@ -66,6 +68,7 @@ class MarketOverviewService(
             marketStatus = core.marketStatus,
             summary = core.summary,
             marketSummary = core.marketSummary,
+            alternativeSignals = core.alternativeSignals,
             marketSessions = core.marketSessions,
             briefing = core.briefing,
             sourceNotes = core.sourceNotes,
@@ -287,6 +290,7 @@ class MarketOverviewService(
             val vixSnapshot = vixFuture.join()
             val koreanQuotes = koreanQuotesFuture.join()
             val usIndicesSnapshot = usIndicesFuture.join()
+            val pizzIntSnapshot = pizzIntClient.fetchSignals()
             val koreaMarket = koreaMarketBase.copy(
                 leadingStocks = refreshKoreanLeadingStocks(koreaMarketBase.leadingStocks, koreanQuotes)
             )
@@ -302,6 +306,7 @@ class MarketOverviewService(
                     SummaryMetric("US Heat", 64.0, "AI/빅테크 중심", "미국 지수와 VIX를 기준으로 계산"),
                     SummaryMetric("Flow Bias", calculateFlowBias(koreaMarket), buildFlowBiasState(koreaMarket), "국내는 KRX 수급, 미국은 지수/변동성 기준")
                 ),
+                alternativeSignals = buildAlternativeSignals(pizzIntSnapshot),
                 marketSessions = marketSessions,
                 koreaMarket = koreaMarket,
                 usMarket = buildUsMarket(vixSnapshot, usIndicesSnapshot),
@@ -324,7 +329,8 @@ class MarketOverviewService(
                     SourceNote("미국 공포지수", "CBOE VIX", "https://www.cboe.com/tradable_products/vix/"),
                     SourceNote("한국/미국 주요 뉴스", "Google News RSS", "https://news.google.com"),
                     SourceNote("미국 지수", "FRED", "https://fred.stlouisfed.org"),
-                    SourceNote("미국 지연 시세 확장 후보", "Alpha Vantage", "https://www.alphavantage.co/documentation/")
+                    SourceNote("미국 지연 시세 확장 후보", "Alpha Vantage", "https://www.alphavantage.co/documentation/"),
+                    SourceNote("실험 지표", "PizzINT", "https://www.pizzint.watch/")
                 )
             )
             cachedCore = snapshot
@@ -706,6 +712,100 @@ class MarketOverviewService(
         return topFlow?.let { "${it.investor} ${if (it.positive) "우위" else "매도 우위"}" } ?: "수급 중립"
     }
 
+    private fun buildAlternativeSignals(snapshot: PizzIntSnapshot?): List<AlternativeSignal> {
+        if (snapshot == null) {
+            return listOf(
+                AlternativeSignal(
+                    label = "Pentagon Pizza Index",
+                    score = 58,
+                    state = "관측 대기",
+                    note = "PizzINT 공개 페이지 기반 실험 지표. 외부 응답 실패 시 기본값으로 표시",
+                    source = "PizzINT",
+                    url = "https://www.pizzint.watch/",
+                    experimental = true,
+                ),
+                AlternativeSignal(
+                    label = "Policy Buzz",
+                    score = 52,
+                    state = "보통",
+                    note = "정책/안보 키워드 OSINT 강도와 뉴스 밀도를 함께 볼 예정",
+                    source = "PizzINT + News",
+                    url = "https://www.pizzint.watch/whitepaper",
+                    experimental = true,
+                ),
+            )
+        }
+
+        val doughconScore = ((snapshot.doughconLevel ?: 3) * 22).coerceIn(0, 100)
+        val busiestLocation = snapshot.locationSignals.maxByOrNull { extractSpikePercent(it.status) }
+        val maxSpike = busiestLocation?.let { extractSpikePercent(it.status) } ?: 0
+        val alertScore = ((snapshot.alertCount ?: 0) * 6 + (snapshot.reportCount ?: 0)).coerceIn(0, 100)
+        val counterSignalScore = (100 - maxSpike.coerceIn(0, 100)).coerceIn(0, 100)
+
+        return listOf(
+            AlternativeSignal(
+                label = "Pentagon Pizza Index",
+                score = doughconScore,
+                state = buildPizzaState(snapshot.doughconLevel),
+                note = buildPizzaNote(snapshot, busiestLocation, maxSpike),
+                source = "PizzINT",
+                url = snapshot.sourceUrl,
+                experimental = true,
+            ),
+            AlternativeSignal(
+                label = "Policy Buzz",
+                score = alertScore,
+                state = buildPolicyBuzzState(alertScore),
+                note = "OSINT 피드 ${snapshot.reportCount ?: 0}건, 알림 ${snapshot.alertCount ?: 0}건 기준의 정책/안보 체감 지표",
+                source = "PizzINT OSINT Feed",
+                url = snapshot.sourceUrl,
+                experimental = true,
+            ),
+            AlternativeSignal(
+                label = "Night Counter-Signal",
+                score = counterSignalScore,
+                state = if (maxSpike >= 120) "내부 업무 모드 가능성" else "비정상 징후 약함",
+                note = "Whitepaper의 bar counter-signal 개념을 참고한 프록시 지표. 현재는 공개 바 데이터 대신 피자 급등 폭의 역방향으로 계산",
+                source = "PizzINT Whitepaper",
+                url = "https://www.pizzint.watch/whitepaper",
+                experimental = true,
+            ),
+        )
+    }
+
+    private fun buildPizzaState(doughconLevel: Int?): String {
+        return when (doughconLevel) {
+            null -> "데이터 불완전"
+            5 -> "고경계"
+            4 -> "주의 강화"
+            3 -> "보통"
+            2 -> "낮음"
+            else -> "평온"
+        }
+    }
+
+    private fun buildPizzaNote(
+        snapshot: PizzIntSnapshot,
+        busiestLocation: PizzIntLocationSignal?,
+        maxSpike: Int,
+    ): String {
+        val locationPart = busiestLocation?.let { "${it.name} ${it.status}" } ?: "특정 급등 매장 없음"
+        return "DOUGHCON ${snapshot.doughconLevel ?: "-"}, 최고 스파이크 ${maxSpike}%, 대표 관측치: $locationPart"
+    }
+
+    private fun buildPolicyBuzzState(score: Int): String {
+        return when {
+            score >= 80 -> "고강도"
+            score >= 55 -> "확대"
+            score >= 35 -> "보통"
+            else -> "잠잠"
+        }
+    }
+
+    private fun extractSpikePercent(status: String): Int {
+        return Regex("""(\d+)%""").find(status)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+    }
+
     private fun refreshKoreanLeadingStocks(
         stocks: List<TickerSnapshot>,
         quotes: Map<String, StockQuote>,
@@ -1039,6 +1139,7 @@ data class MarketOverviewResponse(
     val marketStatus: String,
     val summary: String,
     val marketSummary: List<SummaryMetric>,
+    val alternativeSignals: List<AlternativeSignal>,
     val marketSessions: List<MarketSessionStatus>,
     val koreaMarket: MarketSection,
     val usMarket: MarketSection,
@@ -1056,6 +1157,7 @@ data class MarketSummaryResponse(
     val marketStatus: String,
     val summary: String,
     val marketSummary: List<SummaryMetric>,
+    val alternativeSignals: List<AlternativeSignal>,
     val marketSessions: List<MarketSessionStatus>,
     val briefing: DailyBriefing,
     val sourceNotes: List<SourceNote>,
@@ -1105,6 +1207,16 @@ data class SummaryMetric(
     val score: Double,
     val state: String,
     val note: String
+)
+
+data class AlternativeSignal(
+    val label: String,
+    val score: Int,
+    val state: String,
+    val note: String,
+    val source: String,
+    val url: String,
+    val experimental: Boolean,
 )
 
 data class MarketSessionStatus(
@@ -1322,6 +1434,7 @@ private data class CachedMarketCore(
     val marketStatus: String,
     val summary: String,
     val marketSummary: List<SummaryMetric>,
+    val alternativeSignals: List<AlternativeSignal>,
     val marketSessions: List<MarketSessionStatus>,
     val koreaMarket: MarketSection,
     val usMarket: MarketSection,
