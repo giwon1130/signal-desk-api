@@ -6,6 +6,7 @@
 - 한국 시장: `KRX` 지수/수급/차트
 - 미국 시장: `FRED` 지수 + `CBOE VIX`
 - 실험 지표: `PizzINT` 기반 Pentagon Pizza Index / Policy Buzz / Bar Counter-Signal 복합 점수
+- 관심종목 이상징후: 가격 급등락, 뉴스 집중, AI 추천 정렬, 보유 손익 경고, 실험 지표 과열을 묶은 `watchAlerts`
 - 한국/미국 장 상태 계산
 - 정규장/장전/장후/휴장
 - 미국장 휴장/조기종료(반일장) 캘린더 반영
@@ -47,7 +48,7 @@
 - `GET /api/v1/market/paper-trading`
 - `GET /api/v1/market/overview`
 
-`/summary`, `/overview`에는 `marketSessions`가 포함된다.
+`/summary`, `/overview`에는 `marketSessions`, `watchAlerts`가 포함된다.
 - `KR`: 한국 장 상태
 - `US`: 미국 장 상태
 
