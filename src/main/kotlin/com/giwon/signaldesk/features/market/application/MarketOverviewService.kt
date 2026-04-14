@@ -736,18 +736,40 @@ class MarketOverviewService(
             )
         }
 
-        val doughconScore = ((snapshot.doughconLevel ?: 3) * 22).coerceIn(0, 100)
+        val spikingLocations = snapshot.locationSignals.count { extractSpikePercent(it.status) > 0 }
+        val monitoredLocationCount = snapshot.monitoredLocationCount ?: snapshot.locationSignals.size
         val busiestLocation = snapshot.locationSignals.maxByOrNull { extractSpikePercent(it.status) }
         val maxSpike = busiestLocation?.let { extractSpikePercent(it.status) } ?: 0
-        val alertScore = ((snapshot.alertCount ?: 0) * 6 + (snapshot.reportCount ?: 0)).coerceIn(0, 100)
-        val counterSignalScore = (100 - maxSpike.coerceIn(0, 100)).coerceIn(0, 100)
+        val averageSpike = snapshot.locationSignals
+            .map { extractSpikePercent(it.status) }
+            .filter { it > 0 }
+            .average()
+            .takeIf { !it.isNaN() }
+            ?: 0.0
+
+        val doughconWeight = (snapshot.doughconLevel ?: 3) * 14
+        val spikeBreadthWeight = spikingLocations * 9
+        val spikeIntensityWeight = (maxSpike / 2.4).toInt()
+        val doughconScore = (doughconWeight + spikeBreadthWeight + spikeIntensityWeight).coerceIn(0, 100)
+
+        val reportDensity = ((snapshot.reportCount ?: 0) / 2.5).toInt()
+        val alertDensity = (snapshot.alertCount ?: 0) * 5
+        val spikeContribution = (averageSpike / 4.0).toInt()
+        val alertScore = (reportDensity + alertDensity + spikeContribution).coerceIn(0, 100)
+
+        val quietLocationCount = snapshot.locationSignals.count {
+            val normalized = it.status.uppercase()
+            normalized == "QUIET" || normalized == "NOMINAL" || normalized == "CLOSED"
+        }
+        val quietRatioScore = if (monitoredLocationCount == 0) 40 else ((quietLocationCount.toDouble() / monitoredLocationCount) * 100).toInt()
+        val counterSignalScore = ((quietRatioScore * 0.55) + (maxSpike.coerceIn(0, 100) * 0.45)).toInt().coerceIn(0, 100)
 
         return listOf(
             AlternativeSignal(
                 label = "Pentagon Pizza Index",
                 score = doughconScore,
-                state = buildPizzaState(snapshot.doughconLevel),
-                note = buildPizzaNote(snapshot, busiestLocation, maxSpike),
+                state = buildPizzaState(doughconScore),
+                note = buildPizzaNote(snapshot, busiestLocation, maxSpike, spikingLocations, monitoredLocationCount),
                 source = "PizzINT",
                 url = snapshot.sourceUrl,
                 experimental = true,
@@ -756,7 +778,7 @@ class MarketOverviewService(
                 label = "Policy Buzz",
                 score = alertScore,
                 state = buildPolicyBuzzState(alertScore),
-                note = "OSINT 피드 ${snapshot.reportCount ?: 0}건, 알림 ${snapshot.alertCount ?: 0}건 기준의 정책/안보 체감 지표",
+                note = "OSINT 피드 ${snapshot.reportCount ?: 0}건, 알림 ${snapshot.alertCount ?: 0}건, 평균 스파이크 ${averageSpike.toInt()}%를 합산한 정책/안보 체감 지표",
                 source = "PizzINT OSINT Feed",
                 url = snapshot.sourceUrl,
                 experimental = true,
@@ -764,8 +786,8 @@ class MarketOverviewService(
             AlternativeSignal(
                 label = "Night Counter-Signal",
                 score = counterSignalScore,
-                state = if (maxSpike >= 120) "내부 업무 모드 가능성" else "비정상 징후 약함",
-                note = "Whitepaper의 bar counter-signal 개념을 참고한 프록시 지표. 현재는 공개 바 데이터 대신 피자 급등 폭의 역방향으로 계산",
+                state = buildCounterSignalState(counterSignalScore),
+                note = "조용한 매장 비율 ${quietLocationCount}/${monitoredLocationCount}, 최고 스파이크 ${maxSpike}%를 함께 보는 counter-signal 프록시",
                 source = "PizzINT Whitepaper",
                 url = "https://www.pizzint.watch/whitepaper",
                 experimental = true,
@@ -773,13 +795,12 @@ class MarketOverviewService(
         )
     }
 
-    private fun buildPizzaState(doughconLevel: Int?): String {
-        return when (doughconLevel) {
-            null -> "데이터 불완전"
-            5 -> "고경계"
-            4 -> "주의 강화"
-            3 -> "보통"
-            2 -> "낮음"
+    private fun buildPizzaState(score: Int): String {
+        return when {
+            score >= 80 -> "고경계"
+            score >= 60 -> "주의 강화"
+            score >= 40 -> "보통"
+            score >= 20 -> "낮음"
             else -> "평온"
         }
     }
@@ -788,9 +809,11 @@ class MarketOverviewService(
         snapshot: PizzIntSnapshot,
         busiestLocation: PizzIntLocationSignal?,
         maxSpike: Int,
+        spikingLocations: Int,
+        monitoredLocationCount: Int,
     ): String {
         val locationPart = busiestLocation?.let { "${it.name} ${it.status}" } ?: "특정 급등 매장 없음"
-        return "DOUGHCON ${snapshot.doughconLevel ?: "-"}, 최고 스파이크 ${maxSpike}%, 대표 관측치: $locationPart"
+        return "DOUGHCON ${snapshot.doughconLevel ?: "-"}, 급등 매장 ${spikingLocations}/${monitoredLocationCount}, 최고 스파이크 ${maxSpike}%, 대표 관측치: $locationPart"
     }
 
     private fun buildPolicyBuzzState(score: Int): String {
@@ -799,6 +822,15 @@ class MarketOverviewService(
             score >= 55 -> "확대"
             score >= 35 -> "보통"
             else -> "잠잠"
+        }
+    }
+
+    private fun buildCounterSignalState(score: Int): String {
+        return when {
+            score >= 75 -> "야간 비정상 징후"
+            score >= 55 -> "내부 업무 모드 가능성"
+            score >= 35 -> "혼재"
+            else -> "특이 신호 약함"
         }
     }
 

@@ -37,6 +37,12 @@ class PizzIntClient(
                 ?.getOrNull(1)
                 ?.toIntOrNull()
 
+            val monitoredLocationCount = Regex("""(\d+)\s+LOCATIONS\s+MONITORED""", RegexOption.IGNORE_CASE)
+                .find(body)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.toIntOrNull()
+
             val reportMatch = Regex("""(\d+)\s+REPORTS\s+•\s+(\d+)\s+ALERTS""", RegexOption.IGNORE_CASE)
                 .find(body)
 
@@ -59,6 +65,7 @@ class PizzIntClient(
 
             PizzIntSnapshot(
                 doughconLevel = doughconLevel,
+                monitoredLocationCount = monitoredLocationCount,
                 reportCount = reportMatch?.groupValues?.getOrNull(1)?.toIntOrNull(),
                 alertCount = reportMatch?.groupValues?.getOrNull(2)?.toIntOrNull(),
                 locationSignals = locationSignals,
@@ -70,6 +77,7 @@ class PizzIntClient(
 
 data class PizzIntSnapshot(
     val doughconLevel: Int?,
+    val monitoredLocationCount: Int?,
     val reportCount: Int?,
     val alertCount: Int?,
     val locationSignals: List<PizzIntLocationSignal>,
