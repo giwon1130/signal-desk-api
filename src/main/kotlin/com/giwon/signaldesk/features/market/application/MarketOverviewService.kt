@@ -23,13 +23,9 @@ class MarketOverviewService(
     private val fredIndexClient: FredIndexClient,
     private val googleNewsRssClient: GoogleNewsRssClient,
     private val pizzIntClient: PizzIntClient,
+    private val venueSignalCollector: VenueSignalCollector,
     private val workspaceStore: SignalDeskWorkspaceRepository,
 ) {
-    private val trackedBarVenues = listOf(
-        TrackedVenueProxy("Freddie's Beach Bar", "Pentagon", 1.4),
-        TrackedVenueProxy("The Little Gay Pub", "White House", 1.1),
-    )
-
     @Volatile
     private var cachedCore: CachedMarketCore? = null
 
@@ -718,6 +714,8 @@ class MarketOverviewService(
     }
 
     private fun buildAlternativeSignals(snapshot: PizzIntSnapshot?): List<AlternativeSignal> {
+        val venueSnapshot = venueSignalCollector.collect()
+
         if (snapshot == null) {
             return listOf(
                 AlternativeSignal(
@@ -745,7 +743,7 @@ class MarketOverviewService(
                     score = 44,
                     state = "관측 대기",
                     note = "Freddie's Beach Bar, The Little Gay Pub 같은 고정 venue 기반 bar proxy signal. direct venue source 연결 전 기본값으로 표시",
-                    highlights = listOf("Freddie's 1.4mi", "Little Gay Pub 1.1mi", "proxy fallback"),
+                    highlights = buildVenueHighlights(venueSnapshot.venues).take(3) + "proxy fallback",
                     source = "Tracked Venue Proxy",
                     url = "https://www.pizzint.watch/whitepaper",
                     experimental = true,
@@ -832,13 +830,11 @@ class MarketOverviewService(
                     quietLocationCount = quietLocationCount,
                     monitoredLocationCount = monitoredLocationCount,
                     maxSpike = maxSpike,
-                    trackedVenues = trackedBarVenues,
+                    trackedVenues = venueSnapshot.venues,
                 ),
                 highlights = listOf(
                     "조용함 ${quietLocationCount}/${monitoredLocationCount}",
-                    "Freddie's 1.4mi",
-                    "Little Gay Pub 1.1mi",
-                ),
+                ) + buildVenueHighlights(venueSnapshot.venues).take(2),
                 source = "Tracked Venue Proxy",
                 url = "https://www.pizzint.watch/whitepaper",
                 experimental = true,
@@ -889,10 +885,14 @@ class MarketOverviewService(
         quietLocationCount: Int,
         monitoredLocationCount: Int,
         maxSpike: Int,
-        trackedVenues: List<TrackedVenueProxy>,
+        trackedVenues: List<VenueSignalTarget>,
     ): String {
         val venueSummary = trackedVenues.joinToString(", ") { "${it.name} ${it.distanceMiles}mi" }
         return "고정 venue(${venueSummary})를 기준으로 조용한 피자 매장 비율 ${quietLocationCount}/${monitoredLocationCount}, 최고 스파이크 ${maxSpike}%를 합산한 bar proxy signal. direct venue traffic source 확보 전까지 프록시로 운영"
+    }
+
+    private fun buildVenueHighlights(venues: List<VenueSignalTarget>): List<String> {
+        return venues.map { "${it.name.substringBefore(' ').trim()} ${it.distanceMiles}mi" }
     }
 
     private fun normalizedContribution(value: Double, scale: Double, weight: Double): Double {
@@ -1311,12 +1311,6 @@ data class SummaryMetric(
     val score: Double,
     val state: String,
     val note: String
-)
-
-data class TrackedVenueProxy(
-    val name: String,
-    val anchor: String,
-    val distanceMiles: Double,
 )
 
 data class AlternativeSignal(

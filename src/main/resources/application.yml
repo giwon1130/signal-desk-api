@@ -30,3 +30,5 @@ signal-desk:
     google-news:
       enabled: true
       base-url: https://news.google.com/rss/search
+    venue-signals:
+      enabled: false

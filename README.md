@@ -5,7 +5,7 @@
 ## 1차 릴리즈 범위
 - 한국 시장: `KRX` 지수/수급/차트
 - 미국 시장: `FRED` 지수 + `CBOE VIX`
-- 실험 지표: `PizzINT` 기반 Pentagon Pizza Index / Policy Buzz / Counter-Signal 복합 점수
+- 실험 지표: `PizzINT` 기반 Pentagon Pizza Index / Policy Buzz / Bar Counter-Signal 복합 점수
 - 한국/미국 장 상태 계산
 - 정규장/장전/장후/휴장
 - 미국장 휴장/조기종료(반일장) 캘린더 반영
@@ -23,6 +23,7 @@
 - 한국/미국 시장 데이터를 수집해 웹과 앱에 공통 응답 제공
 - 한국/미국 장 상태를 정규장/장전/장후/휴장 기준으로 계산
 - 뉴스 군집화, 시장 요약, 차트 데이터, 수급 데이터를 한 번에 조합
+- `VenueSignalCollector`로 bar venue collector 확장 포인트 분리
 - 관심종목, 포트폴리오, AI 추천 로그, 모의투자 데이터를 워크스페이스 단위로 관리
 
 ## 저장 구조
@@ -74,6 +75,16 @@
 - 미국 지수: `FRED`
 - 미국 공포지표: `CBOE VIX`
 - 뉴스: `Google News RSS`
+- Bar venue proxy: `Freddie's Beach Bar`, `The Little Gay Pub`
+
+## 실험 지표 구조
+- `PizzIntClient`
+  - Pentagon Pizza Index
+  - Policy Buzz
+- `VenueSignalCollector`
+  - Bar Counter-Signal용 venue registry / collector 확장 포인트
+  - 현재는 고정 venue metadata만 관리하고, 점수는 proxy 방식으로 생성
+  - 이후 실제 venue traffic source를 연결하면 collector만 교체하는 구조
 
 ## 실행
 ```bash
