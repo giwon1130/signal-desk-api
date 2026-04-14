@@ -788,7 +788,12 @@ class MarketOverviewService(
             if (portfolioPosition != null && kotlin.math.abs(portfolioPosition.profitRate) >= 5.0) {
                 val favorable = portfolioPosition.profitRate >= 0
                 itemAlerts += WatchAlert(
-                    severity = if (kotlin.math.abs(portfolioPosition.profitRate) >= 8.0) "high" else "medium",
+                    severity = when {
+                        !favorable && kotlin.math.abs(portfolioPosition.profitRate) >= 8.0 -> "high"
+                        !favorable -> "medium"
+                        kotlin.math.abs(portfolioPosition.profitRate) >= 8.0 -> "medium"
+                        else -> "low"
+                    },
                     category = "portfolio",
                     market = item.market,
                     ticker = item.ticker,
@@ -820,11 +825,12 @@ class MarketOverviewService(
         return alerts
             .sortedWith(
                 compareByDescending<WatchAlert> { alertSeverityRank(it.severity) }
+                    .thenByDescending { alertCategoryRank(it) }
                     .thenByDescending { it.score }
                     .thenBy { it.market }
                     .thenBy { it.ticker }
             )
-            .distinctBy { "${it.category}:${it.market}:${it.ticker}" }
+            .distinctBy { "${it.market}:${it.ticker}" }
             .take(6)
     }
 
@@ -838,7 +844,7 @@ class MarketOverviewService(
             }
         }
         val afterMarketItems = topAlerts.drop(1).take(2).map { alert ->
-            "${alert.name}: 오늘 ${alert.category} 신호가 실제 수익/손실과 연결됐는지 복기"
+            "${alert.name}: 오늘 ${alertCategoryLabel(alert.category)} 신호가 실제 수익/손실과 연결됐는지 복기"
         }
 
         return base.copy(
@@ -867,6 +873,29 @@ class MarketOverviewService(
             "high" -> 3
             "medium" -> 2
             else -> 1
+        }
+    }
+
+    private fun alertCategoryRank(alert: WatchAlert): Int {
+        return when {
+            alert.category == "portfolio" && alert.title.contains("손실") -> 6
+            alert.category == "news" -> 5
+            alert.category == "price" -> 4
+            alert.category == "ai" -> 3
+            alert.category == "signal" -> 2
+            alert.category == "portfolio" -> 1
+            else -> 0
+        }
+    }
+
+    private fun alertCategoryLabel(category: String): String {
+        return when (category) {
+            "portfolio" -> "보유"
+            "news" -> "뉴스"
+            "price" -> "가격"
+            "ai" -> "AI"
+            "signal" -> "실험"
+            else -> category
         }
     }
 
