@@ -1,5 +1,6 @@
 package com.giwon.signaldesk.features.workspace.application
 
+import org.flywaydb.core.Flyway
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -22,6 +23,17 @@ class SignalDeskJdbcConfig {
         dataSource.username = properties.username
         dataSource.password = properties.password
         return dataSource
+    }
+
+    @Bean
+    fun signalDeskFlyway(dataSource: DataSource): Flyway {
+        val flyway = Flyway.configure()
+            .dataSource(dataSource)
+            .locations("classpath:db/migration")
+            .baselineOnMigrate(true)
+            .load()
+        flyway.migrate()
+        return flyway
     }
 
     @Bean

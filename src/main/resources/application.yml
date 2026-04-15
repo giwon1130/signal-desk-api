@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: signal-desk-api
+  flyway:
+    enabled: false  # Flyway는 SignalDeskJdbcConfig에서 직접 실행 (jdbc 모드일 때만)
 
 signal-desk:
   store:
