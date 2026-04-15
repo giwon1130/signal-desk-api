@@ -1,5 +1,5 @@
 server:
-  port: 8091
+  port: ${PORT:${SERVER_PORT:8091}}
 
 spring:
   application:
@@ -7,7 +7,7 @@ spring:
 
 signal-desk:
   store:
-    mode: file
+    mode: ${SIGNAL_DESK_STORE_MODE:file}
     path: ./data/signal-desk-store.json
     jdbc:
       url: ${SIGNAL_DESK_STORE_JDBC_URL:}
