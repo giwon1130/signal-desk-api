@@ -1,4 +1,5 @@
 server:
+  # Railway injects PORT; fall back to SERVER_PORT then 8091
   port: ${PORT:${SERVER_PORT:8091}}
 
 spring:
@@ -12,9 +13,11 @@ signal-desk:
     mode: ${SIGNAL_DESK_STORE_MODE:file}
     path: ./data/signal-desk-store.json
     jdbc:
-      url: ${SIGNAL_DESK_STORE_JDBC_URL:}
-      username: ${SIGNAL_DESK_STORE_JDBC_USERNAME:}
-      password: ${SIGNAL_DESK_STORE_JDBC_PASSWORD:}
+      # Railway PostgreSQL provides JDBC_DATABASE_URL (jdbc:postgresql://...)
+      # Fall back to individual env vars for local dev
+      url: ${JDBC_DATABASE_URL:${SIGNAL_DESK_STORE_JDBC_URL:}}
+      username: ${PGUSER:${SIGNAL_DESK_STORE_JDBC_USERNAME:}}
+      password: ${PGPASSWORD:${SIGNAL_DESK_STORE_JDBC_PASSWORD:}}
       driver-class-name: org.postgresql.Driver
   integrations:
     krx:
