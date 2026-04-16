@@ -39,6 +39,7 @@
 
 ## 주요 API
 조회 API:
+- `GET /health`
 - `GET /api/v1/market/summary`
 - `GET /api/v1/market/sections`
 - `GET /api/v1/market/news`
@@ -140,6 +141,24 @@ curl -s http://localhost:8091/api/v1/market/portfolio
 ```bash
 ./gradlew test
 ```
+
+## Railway 배포
+- 운영 URL: `https://signal-desk-api-production.up.railway.app`
+- 상태 확인: `GET /health`
+- 실제 데이터 확인: `GET /api/v1/market/summary`
+- Railway 프로젝트에는 `signal-desk-api` 서비스와 `Postgres` 서비스를 함께 둔다.
+- `SIGNAL_DESK_STORE_MODE=jdbc`를 사용하면 Railway PostgreSQL 변수 기준으로 JDBC 저장소가 활성화된다.
+- `DATABASE_URL`, `JDBC_DATABASE_URL`, `PGHOST`, `PGDATABASE`, `PGPORT`, `PGUSER`, `PGPASSWORD` 중 사용 가능한 값을 읽어 접속한다.
+
+자동배포:
+- Railway 대시보드에서 `signal-desk-api` 서비스에 GitHub repo `giwon1130/signal-desk-api`를 연결한다.
+- 브랜치는 `main`으로 두고 Auto Deploy를 켠다.
+- 이후 `main` push 시 Railway가 Dockerfile 기준으로 자동 배포한다.
+
+CORS:
+- 로컬 개발 환경(`localhost`, `127.0.0.1`)은 기본 허용된다.
+- 앱/웹 배포 도메인을 추가하려면 `SIGNAL_DESK_CORS_ALLOWED_ORIGINS`에 쉼표 구분으로 넣는다.
+- 예: `SIGNAL_DESK_CORS_ALLOWED_ORIGINS=https://app.example.com,https://staging.example.com`
 
 ## 다음 확장
 1. 미국 개별 종목 실데이터 범위 확대

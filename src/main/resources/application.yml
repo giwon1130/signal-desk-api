@@ -40,3 +40,5 @@ signal-desk:
       base-url: https://news.google.com/rss/search
     venue-signals:
       enabled: false
+  cors:
+    allowed-origin-patterns: ${SIGNAL_DESK_CORS_ALLOWED_ORIGINS:}
