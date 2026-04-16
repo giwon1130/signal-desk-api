@@ -25,6 +25,17 @@ class SignalDeskJdbcPropertiesTest {
     }
 
     @Test
+    fun `normalizes postgres url with credentials to jdbc url without user info`() {
+        val properties = SignalDeskJdbcProperties(
+            url = "postgresql://postgres:secret@db.railway.internal:5432/railway",
+            username = "postgres",
+            password = "secret",
+        )
+
+        assertEquals("jdbc:postgresql://db.railway.internal:5432/railway", properties.resolveJdbcUrl())
+    }
+
+    @Test
     fun `builds jdbc url from pg variables`() {
         val properties = SignalDeskJdbcProperties(
             host = "postgres.railway.internal",

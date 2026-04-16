@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import java.net.URI
 import javax.sql.DataSource
 
 @Configuration
@@ -52,11 +53,8 @@ data class SignalDeskJdbcProperties(
 ) {
     fun resolveJdbcUrl(): String {
         if (url.isNotBlank()) {
-            return if (url.startsWith("jdbc:")) {
-                url
-            } else {
-                "jdbc:$url"
-            }
+            val normalized = if (url.startsWith("jdbc:")) url.removePrefix("jdbc:") else url
+            return normalizeJdbcUrl(normalized)
         }
 
         require(host.isNotBlank() && database.isNotBlank()) {
@@ -64,5 +62,20 @@ data class SignalDeskJdbcProperties(
         }
 
         return "jdbc:postgresql://$host:$port/$database"
+    }
+
+    private fun normalizeJdbcUrl(candidate: String): String {
+        val parsed = URI(candidate)
+        val scheme = when (parsed.scheme?.lowercase()) {
+            "postgres", "postgresql" -> "postgresql"
+            else -> return "jdbc:$candidate"
+        }
+
+        val resolvedHost = parsed.host ?: return "jdbc:$candidate"
+        val resolvedPort = if (parsed.port == -1) 5432 else parsed.port
+        val resolvedPath = parsed.path?.removePrefix("/").orEmpty()
+        val querySuffix = parsed.query?.takeIf { it.isNotBlank() }?.let { "?$it" }.orEmpty()
+
+        return "jdbc:$scheme://$resolvedHost:$resolvedPort/$resolvedPath$querySuffix"
     }
 }
