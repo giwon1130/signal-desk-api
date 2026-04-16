@@ -10,14 +10,17 @@ spring:
 
 signal-desk:
   store:
-    mode: ${SIGNAL_DESK_STORE_MODE:file}
+    mode: ${SIGNAL_DESK_STORE_MODE:}
     path: ./data/signal-desk-store.json
     jdbc:
-      # Railway PostgreSQL provides JDBC_DATABASE_URL (jdbc:postgresql://...)
-      # Fall back to individual env vars for local dev
-      url: ${JDBC_DATABASE_URL:${SIGNAL_DESK_STORE_JDBC_URL:}}
+      # Railway PostgreSQL may provide DATABASE_URL(postgres://...) or JDBC_DATABASE_URL.
+      # Fall back to PG* env vars so attached DB works without extra mapping.
+      url: ${JDBC_DATABASE_URL:${DATABASE_URL:${SIGNAL_DESK_STORE_JDBC_URL:}}}
       username: ${PGUSER:${SIGNAL_DESK_STORE_JDBC_USERNAME:}}
       password: ${PGPASSWORD:${SIGNAL_DESK_STORE_JDBC_PASSWORD:}}
+      host: ${PGHOST:}
+      port: ${PGPORT:5432}
+      database: ${PGDATABASE:}
       driver-class-name: org.postgresql.Driver
   integrations:
     krx:

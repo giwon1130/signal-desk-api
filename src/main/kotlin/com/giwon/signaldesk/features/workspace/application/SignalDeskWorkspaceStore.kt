@@ -3,15 +3,15 @@ package com.giwon.signaldesk.features.workspace.application
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import jakarta.annotation.PostConstruct
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.annotation.Conditional
 import org.springframework.stereotype.Component
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
 
 @Component
-@ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "file", matchIfMissing = true)
+@Conditional(FileStoreCondition::class)
 class SignalDeskWorkspaceStore(
     private val objectMapper: ObjectMapper,
     @Value("\${signal-desk.store.path:./data/signal-desk-store.json}") private val storePath: String,
