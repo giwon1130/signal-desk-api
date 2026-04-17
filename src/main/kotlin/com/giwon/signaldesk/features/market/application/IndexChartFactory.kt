@@ -3,9 +3,8 @@ package com.giwon.signaldesk.features.market.application
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Random
 import kotlin.math.abs
-import kotlin.math.ceil
-import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToLong
@@ -19,30 +18,29 @@ fun buildIndexChartPeriods(
     val today = LocalDate.now()
     val now = LocalDateTime.now()
 
+    // 1D: 실제 장중 30분봉 데이터
     val dayCloses = normalized.takeLast(12)
     val dayLabels = dayCloses.mapIndexed { index, _ ->
-        val slotTime = now
-            .withHour(9)
-            .withMinute(0)
-            .withSecond(0)
-            .withNano(0)
+        val slotTime = now.withHour(9).withMinute(0).withSecond(0).withNano(0)
             .plusMinutes((index * 30).toLong())
-        val minute = if (index % 2 == 0) "00" else "30"
-        "${today.format(DateTimeFormatter.ofPattern("MM/dd"))} ${slotTime.hour.toString().padStart(2, '0')}:$minute"
+        "${today.format(DateTimeFormatter.ofPattern("MM/dd"))} " +
+            "${slotTime.hour.toString().padStart(2, '0')}:${if (index % 2 == 0) "00" else "30"}"
     }
     val dayPoints = buildChartPoints(dayLabels, dayCloses, dayCloses.firstOrNull() ?: latest)
 
-    val monthSeries = resampleIndexSeries(normalized, 20)
+    // 1M: 20 거래일 합성 랜덤워크 (날짜+가격 기반 seed → 하루 동안 일관성 유지)
+    val monthSeries = buildHistoricalSeries(latest, 20, dailyVolatility = 0.008, today)
     val monthLabels = monthSeries.mapIndexed { index, _ ->
-        val day = today.minusDays((monthSeries.lastIndex - index).toLong())
-        day.format(DateTimeFormatter.ofPattern("MM/dd"))
+        today.minusDays((monthSeries.lastIndex - index).toLong())
+            .format(DateTimeFormatter.ofPattern("MM/dd"))
     }
     val monthPoints = buildChartPoints(monthLabels, monthSeries, monthSeries.firstOrNull() ?: latest)
 
-    val yearSeries = resampleIndexSeries(normalized, 12)
+    // 1Y: 12개월 합성 랜덤워크
+    val yearSeries = buildHistoricalSeries(latest, 12, dailyVolatility = 0.028, today)
     val yearLabels = yearSeries.mapIndexed { index, _ ->
-        val month = today.minusMonths((yearSeries.lastIndex - index).toLong())
-        month.format(DateTimeFormatter.ofPattern("yy/MM"))
+        today.minusMonths((yearSeries.lastIndex - index).toLong())
+            .format(DateTimeFormatter.ofPattern("yy/MM"))
     }
     val yearPoints = buildChartPoints(yearLabels, yearSeries, yearSeries.firstOrNull() ?: latest)
 
@@ -51,6 +49,31 @@ fun buildIndexChartPeriods(
         ChartPeriodSnapshot("1M", "월별", monthPoints, buildIndexChartStats(monthPoints)),
         ChartPeriodSnapshot("1Y", "연별", yearPoints, buildIndexChartStats(yearPoints, changeRate, latest)),
     )
+}
+
+/**
+ * 현재 가격(latest)을 끝점으로, 역방향 랜덤워크로 과거 시계열 생성.
+ * seed를 날짜 + 가격대 기반으로 고정해 하루 동안 차트 모양이 바뀌지 않도록 함.
+ */
+private fun buildHistoricalSeries(
+    latest: Double,
+    size: Int,
+    dailyVolatility: Double,
+    today: LocalDate,
+): List<Double> {
+    val seed = today.toEpochDay() * 1000L + (latest / 100).toLong()
+    val rng = Random(seed)
+
+    // 수익률 시계열 생성 (size-1개)
+    val returns = (0 until size - 1).map { rng.nextGaussian() * dailyVolatility }
+
+    // 현재가에서 역산해 과거→현재 순서로 정렬
+    val series = MutableList(size) { latest }
+    for (i in size - 2 downTo 0) {
+        val r = returns[size - 2 - i]
+        series[i] = series[i + 1] / (1.0 + r)
+    }
+    return series
 }
 
 private fun buildIndexChartStats(
@@ -64,7 +87,8 @@ private fun buildIndexChartStats(
     val previous = values.getOrNull(values.lastIndex - 1) ?: latest
     val high = values.maxOrNull() ?: latest
     val low = values.minOrNull() ?: latest
-    val changeRate = fallbackChangeRate ?: if (previous == 0.0) 0.0 else ((latest - previous) / previous) * 100
+    val changeRate = fallbackChangeRate
+        ?: if (previous == 0.0) 0.0 else ((latest - previous) / previous) * 100
     return ChartStats(
         latest = latest,
         high = high,
@@ -73,22 +97,6 @@ private fun buildIndexChartStats(
         range = high - low,
         averageVolume = volumeAverage,
     )
-}
-
-private fun resampleIndexSeries(values: List<Double>, targetSize: Int): List<Double> {
-    if (values.isEmpty()) return emptyList()
-    if (values.size == 1) return List(targetSize) { values.first() }
-    if (values.size == targetSize) return values
-
-    return (0 until targetSize).map { index ->
-        val sourcePosition = (index.toDouble() / (targetSize - 1)) * (values.lastIndex)
-        val lowerIndex = floor(sourcePosition).toInt()
-        val upperIndex = ceil(sourcePosition).toInt().coerceAtMost(values.lastIndex)
-        val fraction = sourcePosition - lowerIndex
-        val lowerValue = values[lowerIndex]
-        val upperValue = values[upperIndex]
-        lowerValue + ((upperValue - lowerValue) * fraction)
-    }
 }
 
 private fun buildChartPoints(
@@ -100,13 +108,18 @@ private fun buildChartPoints(
 
     return closes.mapIndexed { index, close ->
         val open = closes.getOrNull(index - 1) ?: fallbackOpen
-        val baseSwing = max(abs(close - open), close * 0.0015)
-        val upperWick = baseSwing * (0.45 + ((index % 3) * 0.15))
-        val lowerWick = baseSwing * (0.4 + ((index % 4) * 0.12))
-        val high = max(open, close) + upperWick
-        val low = min(open, close) - lowerWick
+        val baseSwing = max(abs(close - open), close * 0.002)
+
+        // index % n 패턴 대신, close값 + index 조합의 결정적 해시로 다양한 wick 생성
+        val wickSeed = (close * 37 + index * 13).toLong().and(0x7FFFFFFF)
+        val upperMult = 0.40 + ((wickSeed % 7) * 0.06)         // 0.40 ~ 0.76
+        val lowerMult = 0.35 + (((wickSeed / 7) % 6) * 0.07)   // 0.35 ~ 0.70
+
+        val high = max(open, close) + baseSwing * upperMult
+        val low = min(open, close) - baseSwing * lowerMult
         val volatility = abs(close - open)
-        val volume = (750_000 + (volatility * 28_000) + (close * 170)).roundToLong().coerceAtLeast(40_000)
+        val volume = (750_000 + (volatility * 28_000) + (close * 170)).roundToLong()
+            .coerceAtLeast(40_000)
 
         ChartPoint(
             label = labels.getOrElse(index) { index.toString() },
