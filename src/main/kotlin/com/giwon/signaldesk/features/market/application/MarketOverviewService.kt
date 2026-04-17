@@ -91,10 +91,11 @@ class MarketOverviewService(
             val koreanQuotesFuture = CompletableFuture.supplyAsync { enrichmentService.loadKoreanQuotes() }
             val usIndicesFuture = CompletableFuture.supplyAsync { fredIndexClient.fetchUsIndices() }
 
-            val koreaMarketBase = koreaMarketFuture.join()
-            val vixSnapshot = vixFuture.join()
-            val koreanQuotes = koreanQuotesFuture.join()
-            val usIndicesSnapshot = usIndicesFuture.join()
+            // 외부 API 장애 시 fallback으로 처리 — join() 예외가 전체 엔드포인트를 crash시키지 않도록
+            val koreaMarketBase = runCatching { koreaMarketFuture.join() }.getOrElse { defaultKoreaMarket() }
+            val vixSnapshot = runCatching { vixFuture.join() }.getOrNull()
+            val koreanQuotes = runCatching { koreanQuotesFuture.join() }.getOrDefault(emptyMap())
+            val usIndicesSnapshot = runCatching { usIndicesFuture.join() }.getOrNull()
 
             val koreaMarket = koreaMarketBase.copy(
                 leadingStocks = enrichmentService.refreshKoreanLeadingStocks(koreaMarketBase.leadingStocks, koreanQuotes)
@@ -110,7 +111,7 @@ class MarketOverviewService(
                 marketSummary = listOf(
                     SummaryMetric("Fear Meter", calculateFearMeter(vixSnapshot), buildFearMeterState(vixSnapshot), buildFearMeterNote(vixSnapshot)),
                     SummaryMetric("KR Heat", calculateKrHeat(koreaMarket), buildKrHeatState(koreaMarket), "코스피/코스닥 등락률과 거래 강도를 기준으로 계산"),
-                    SummaryMetric("US Heat", 64.0, "AI/빅테크 중심", "미국 지수와 VIX를 기준으로 계산"),
+                    run { val h = calculateUsHeat(vixSnapshot, usIndicesSnapshot); SummaryMetric("US Heat", h, buildUsHeatState(h), "미국 지수와 VIX를 기준으로 계산") },
                     SummaryMetric("Flow Bias", calculateFlowBias(koreaMarket), buildFlowBiasState(koreaMarket), "국내는 KRX 수급, 미국은 지수/변동성 기준")
                 ),
                 alternativeSignals = alternativeSignals,
@@ -247,6 +248,22 @@ class MarketOverviewService(
         val change = vixSnapshot.priceChange
         val signedChange = if (change > 0) "+${"%.2f".format(change)}" else "%.2f".format(change)
         return "CBOE VIX ${"%.2f".format(vix)} (${signedChange}) 기준 위험심리"
+    }
+
+    private fun calculateUsHeat(vixSnapshot: VixSnapshot?, usIndicesSnapshot: UsIndicesSnapshot?): Double {
+        val nasdaq = usIndicesSnapshot?.nasdaq
+        val sp500 = usIndicesSnapshot?.sp500
+        val avgChange = listOfNotNull(nasdaq?.changeRate, sp500?.changeRate)
+            .average().takeIf { it.isFinite() } ?: 0.0
+        val vix = vixSnapshot?.currentPrice ?: 20.0
+        return (50 + avgChange * 6 - (vix - 20) * 1.5).coerceIn(0.0, 100.0)
+    }
+
+    private fun buildUsHeatState(usHeat: Double): String = when {
+        usHeat >= 65 -> "AI/빅테크 중심"
+        usHeat >= 50 -> "강세 우위"
+        usHeat >= 35 -> "혼조"
+        else -> "약세 우위"
     }
 
     private fun calculateKrHeat(koreaMarket: MarketSection) =

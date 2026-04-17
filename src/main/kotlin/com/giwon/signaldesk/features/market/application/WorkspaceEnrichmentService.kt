@@ -103,13 +103,13 @@ class WorkspaceEnrichmentService(
         val positions = portfolio.positions.map { position ->
             if (position.market != "KR") return@map position
             val quote = quotes[position.ticker] ?: return@map position
-            val evaluationAmount = quote.currentPrice * position.quantity
-            val costAmount = position.buyPrice * position.quantity
+            val evaluationAmount = quote.currentPrice.toLong() * position.quantity
+            val costAmount = position.buyPrice.toLong() * position.quantity
             val profitAmount = evaluationAmount - costAmount
             position.copy(
                 currentPrice = quote.currentPrice, profitAmount = profitAmount,
                 evaluationAmount = evaluationAmount,
-                profitRate = if (costAmount == 0) 0.0 else (profitAmount.toDouble() / costAmount) * 100
+                profitRate = if (costAmount == 0L) 0.0 else (profitAmount.toDouble() / costAmount) * 100
             )
         }
         val delta = positions.sumOf { position ->
@@ -119,19 +119,19 @@ class WorkspaceEnrichmentService(
         val totalProfit = totalValue - portfolio.totalCost
         return portfolio.copy(
             totalValue = totalValue, totalProfit = totalProfit,
-            totalProfitRate = if (portfolio.totalCost == 0) 0.0 else (totalProfit.toDouble() / portfolio.totalCost) * 100,
+            totalProfitRate = if (portfolio.totalCost == 0L) 0.0 else (totalProfit.toDouble() / portfolio.totalCost) * 100,
             positions = positions.sortedWith(compareBy({ it.market }, { it.name }))
         )
     }
 
     private fun mergePortfolio(base: PortfolioSummary, workspace: List<HoldingPosition>): PortfolioSummary {
         val positions = (base.positions + workspace).sortedWith(compareBy({ it.market }, { it.name }))
-        val totalCost = positions.sumOf { it.buyPrice * it.quantity }
-        val totalValue = positions.sumOf { it.currentPrice * it.quantity }
+        val totalCost = positions.sumOf { it.buyPrice.toLong() * it.quantity }
+        val totalValue = positions.sumOf { it.currentPrice.toLong() * it.quantity }
         val totalProfit = totalValue - totalCost
         return base.copy(
             totalCost = totalCost, totalValue = totalValue, totalProfit = totalProfit,
-            totalProfitRate = if (totalCost == 0) 0.0 else (totalProfit.toDouble() / totalCost) * 100,
+            totalProfitRate = if (totalCost == 0L) 0.0 else (totalProfit.toDouble() / totalCost) * 100,
             positions = positions
         )
     }
@@ -195,7 +195,7 @@ class WorkspaceEnrichmentService(
     }
 
     private fun refreshPaperTrading(paperTrading: PaperTradingSummary, quotes: Map<String, StockQuote>): PaperTradingSummary {
-        val previousValue = paperTrading.openPositions.associateBy({ it.ticker }) { it.currentPrice * it.quantity }
+        val previousValue = paperTrading.openPositions.associateBy({ it.ticker }) { it.currentPrice.toLong() * it.quantity }
         val positions = paperTrading.openPositions.map { position ->
             if (position.market != "KR") return@map position
             val quote = quotes[position.ticker] ?: return@map position
@@ -204,12 +204,15 @@ class WorkspaceEnrichmentService(
             position.copy(currentPrice = quote.currentPrice, returnRate = returnRate)
         }
         val delta = positions.sumOf { position ->
-            (position.currentPrice * position.quantity) - (previousValue[position.ticker] ?: position.currentPrice * position.quantity)
+            (position.currentPrice.toLong() * position.quantity) - (previousValue[position.ticker] ?: position.currentPrice.toLong() * position.quantity)
         }
         val evaluation = paperTrading.evaluation + delta
+        // totalReturnRate = 현재 평가액 대비 취득 원가 기준 수익률
+        val costBasis = positions.sumOf { it.averagePrice.toLong() * it.quantity }
+        val totalReturnRate = if (costBasis == 0L) 0.0 else ((evaluation - costBasis).toDouble() / costBasis) * 100
         return paperTrading.copy(
             evaluation = evaluation,
-            totalReturnRate = if (paperTrading.evaluation == 0) 0.0 else ((evaluation - paperTrading.evaluation).toDouble() / paperTrading.evaluation) * 100,
+            totalReturnRate = totalReturnRate,
             openPositions = positions.sortedWith(compareBy({ it.market }, { it.name }))
         )
     }
@@ -222,7 +225,7 @@ class WorkspaceEnrichmentService(
         val openPositions = (base.openPositions + workspacePositions).sortedWith(compareBy({ it.market }, { it.name }))
         val trades = (base.recentTrades + workspaceTrades).sortedByDescending { it.tradeDate }.take(20)
         return base.copy(
-            evaluation = openPositions.sumOf { it.currentPrice * it.quantity },
+            evaluation = openPositions.sumOf { it.currentPrice.toLong() * it.quantity },
             openPositions = openPositions, recentTrades = trades
         )
     }
@@ -254,11 +257,11 @@ class WorkspaceEnrichmentService(
     )
 
     fun basePortfolio(): PortfolioSummary = PortfolioSummary(
-        totalCost = 12840000, totalValue = 13765000, totalProfit = 925000, totalProfitRate = 7.2,
+        totalCost = 12840000L, totalValue = 13765000L, totalProfit = 925000L, totalProfitRate = 7.2,
         positions = listOf(
-            HoldingPosition("KR", "005930", "삼성전자", 78000, 84200, 12, 74400, 772800, 8.53),
-            HoldingPosition("KR", "000660", "SK하이닉스", 188000, 201500, 4, 54000, 806000, 7.18),
-            HoldingPosition("US", "MSFT", "Microsoft", 401, 428, 5, 135, 2140, 6.73)
+            HoldingPosition("KR", "005930", "삼성전자", 78000, 84200, 12, 74400L, 1010400L, 8.53),
+            HoldingPosition("KR", "000660", "SK하이닉스", 188000, 201500, 4, 54000L, 806000L, 7.18),
+            HoldingPosition("US", "MSFT", "Microsoft", 401, 428, 5, 135L, 2140L, 6.73)
         )
     )
 
@@ -282,7 +285,7 @@ class WorkspaceEnrichmentService(
     }
 
     fun basePaperTrading(): PaperTradingSummary = PaperTradingSummary(
-        cash = 5000000, evaluation = 5348000, totalReturnRate = 6.96,
+        cash = 5000000, evaluation = 5348000L, totalReturnRate = 6.96,
         openPositions = listOf(
             PaperPosition("KR", "005930", "삼성전자", 79000, 84200, 3, 5.06),
             PaperPosition("US", "AMZN", "Amazon", 176, 184, 2, 4.54)

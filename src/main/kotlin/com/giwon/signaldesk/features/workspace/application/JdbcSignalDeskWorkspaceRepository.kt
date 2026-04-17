@@ -221,8 +221,8 @@ private val portfolioRowMapper = RowMapper { rs: ResultSet, _: Int ->
         buyPrice = rs.getInt("buy_price"),
         currentPrice = rs.getInt("current_price"),
         quantity = rs.getInt("quantity"),
-        profitAmount = rs.getInt("profit_amount"),
-        evaluationAmount = rs.getInt("evaluation_amount"),
+        profitAmount = rs.getLong("profit_amount"),
+        evaluationAmount = rs.getLong("evaluation_amount"),
         profitRate = rs.getDouble("profit_rate"),
     )
 }

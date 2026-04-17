@@ -203,9 +203,9 @@ data class WatchItem(
 )
 
 data class PortfolioSummary(
-    val totalCost: Int,
-    val totalValue: Int,
-    val totalProfit: Int,
+    val totalCost: Long,
+    val totalValue: Long,
+    val totalProfit: Long,
     val totalProfitRate: Double,
     val positions: List<HoldingPosition>
 )
@@ -217,8 +217,8 @@ data class HoldingPosition(
     val buyPrice: Int,
     val currentPrice: Int,
     val quantity: Int,
-    val profitAmount: Int,
-    val evaluationAmount: Int,
+    val profitAmount: Long,
+    val evaluationAmount: Long,
     val profitRate: Double,
     val source: String = "BASE",
     val id: String = "",
@@ -273,7 +273,7 @@ data class RecommendationExecutionLog(
 
 data class PaperTradingSummary(
     val cash: Int,
-    val evaluation: Int,
+    val evaluation: Long,
     val totalReturnRate: Double,
     val openPositions: List<PaperPosition>,
     val recentTrades: List<PaperTrade>

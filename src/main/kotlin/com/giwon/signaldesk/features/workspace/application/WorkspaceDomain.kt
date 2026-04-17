@@ -29,8 +29,8 @@ data class WorkspaceHoldingPosition(
     val buyPrice: Int,
     val currentPrice: Int,
     val quantity: Int,
-    val profitAmount: Int,
-    val evaluationAmount: Int,
+    val profitAmount: Long,
+    val evaluationAmount: Long,
     val profitRate: Double,
 )
 

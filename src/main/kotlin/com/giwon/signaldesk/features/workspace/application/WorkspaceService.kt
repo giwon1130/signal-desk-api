@@ -11,15 +11,15 @@ class WorkspaceService(
         id: String, market: String, ticker: String, name: String,
         buyPrice: Int, currentPrice: Int, quantity: Int,
     ): WorkspaceHoldingPosition {
-        val evaluationAmount = currentPrice * quantity
-        val costAmount = buyPrice * quantity
+        val evaluationAmount = currentPrice.toLong() * quantity
+        val costAmount = buyPrice.toLong() * quantity
         val profitAmount = evaluationAmount - costAmount
         return repository.savePortfolioPosition(
             WorkspaceHoldingPosition(
                 id = id, market = market, ticker = ticker, name = name,
                 buyPrice = buyPrice, currentPrice = currentPrice, quantity = quantity,
                 profitAmount = profitAmount, evaluationAmount = evaluationAmount,
-                profitRate = if (costAmount == 0) 0.0 else (profitAmount.toDouble() / costAmount) * 100,
+                profitRate = if (costAmount == 0L) 0.0 else (profitAmount.toDouble() / costAmount) * 100,
             )
         )
     }
