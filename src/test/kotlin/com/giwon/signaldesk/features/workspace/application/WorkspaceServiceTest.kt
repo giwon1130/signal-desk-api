@@ -18,7 +18,7 @@ class WorkspaceServiceTest {
             id = "", market = "KR", ticker = "005930", name = "삼성전자",
             buyPrice = 70_000, currentPrice = 75_000, quantity = 10,
         )
-        assertEquals(750_000, result.evaluationAmount)
+        assertEquals(750_000L, result.evaluationAmount)
     }
 
     @Test
@@ -27,7 +27,7 @@ class WorkspaceServiceTest {
             id = "", market = "KR", ticker = "005930", name = "삼성전자",
             buyPrice = 70_000, currentPrice = 75_000, quantity = 10,
         )
-        assertEquals(50_000, result.profitAmount)
+        assertEquals(50_000L, result.profitAmount)
     }
 
     @Test
@@ -45,7 +45,7 @@ class WorkspaceServiceTest {
             id = "", market = "US", ticker = "AAPL", name = "Apple",
             buyPrice = 200, currentPrice = 180, quantity = 10,
         )
-        assertEquals(-200, result.profitAmount)
+        assertEquals(-200L, result.profitAmount)
         assertTrue(result.profitRate < 0)
     }
 
