@@ -35,6 +35,17 @@ data class MarketSummaryResponse(
     val sourceNotes: List<SourceNote>,
     val workspaceCounts: WorkspaceCounts,
     val newsSentiments: List<NewsSentiment>,
+    val tradingDayStatus: TradingDayStatus,
+)
+
+data class TradingDayStatus(
+    val krOpen: Boolean,
+    val usOpen: Boolean,
+    val isWeekend: Boolean,
+    val isHoliday: Boolean,
+    val headline: String,        // 사용자에게 보여줄 한 줄 ("주말 휴장 - 다음 거래일 준비" 등)
+    val nextTradingDay: String,  // "월요일 09:00" 같은 안내 문자열
+    val advice: String,          // 휴장 시: "오늘은 진입 금지 - 시장 재개 전 정리만"
 )
 
 data class NewsSentiment(
@@ -123,6 +134,8 @@ data class AlternativeSignal(
     val source: String,
     val url: String,
     val experimental: Boolean,
+    val description: String = "",   // 지표가 무엇인지/어떤 데이터 기반인지 설명 (모달용)
+    val methodology: String = "",   // 점수를 어떻게 계산하는지
 )
 
 data class MarketSessionStatus(

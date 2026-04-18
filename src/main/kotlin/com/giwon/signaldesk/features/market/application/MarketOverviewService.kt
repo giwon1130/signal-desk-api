@@ -65,7 +65,53 @@ class MarketOverviewService(
                 NewsSentimentBuilder.build("KR", news),
                 NewsSentimentBuilder.build("US", news),
             ),
+            tradingDayStatus = buildTradingDayStatus(core.marketSessions),
         )
+    }
+
+    private fun buildTradingDayStatus(sessions: List<MarketSessionStatus>): TradingDayStatus {
+        val kr = sessions.firstOrNull { it.market == "KR" }
+        val us = sessions.firstOrNull { it.market == "US" }
+        val krOpen = kr?.isOpen == true
+        val usOpen = us?.isOpen == true
+        val isWeekend = (kr?.note?.contains("주말") == true) && (us?.note?.contains("주말") == true)
+        val isHoliday = !isWeekend && kr?.note?.contains("휴장") == true && us?.note?.contains("휴장") == true
+
+        val today = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Seoul"))
+        val nextKrOpen = nextKoreanOpen(today)
+        val nextLabel = "${koreanDayLabel(nextKrOpen.dayOfWeek)} ${nextKrOpen.toLocalDate()} 09:00 KST"
+
+        val (headline, advice) = when {
+            krOpen || usOpen -> "장이 열려 있어 — 평소처럼 진행" to "오늘의 단타 픽 / 보유 모니터를 그대로 사용해도 OK"
+            isWeekend -> "주말 휴장 — 다음 거래일 준비 모드" to "신규 진입은 다음 개장 후. 오늘은 관심종목 정리, AI 로그 복기, 손절·익절 라인 재설정만 해."
+            isHoliday -> "오늘은 휴장일 — 시장 재개 전 정리" to "체결은 안 되니까 시나리오만 점검하고 다음 거래일 준비."
+            else -> "정규장 종료 — 시간외/다음날 준비" to "오늘 마감 결과를 보고 내일 진입 후보 1~2개만 추려두자."
+        }
+
+        return TradingDayStatus(
+            krOpen = krOpen, usOpen = usOpen,
+            isWeekend = isWeekend, isHoliday = isHoliday,
+            headline = headline, nextTradingDay = nextLabel, advice = advice,
+        )
+    }
+
+    private fun nextKoreanOpen(now: java.time.ZonedDateTime): java.time.ZonedDateTime {
+        var candidate = now.toLocalDate()
+        if (now.toLocalTime() >= java.time.LocalTime.of(9, 0)) candidate = candidate.plusDays(1)
+        while (candidate.dayOfWeek == java.time.DayOfWeek.SATURDAY || candidate.dayOfWeek == java.time.DayOfWeek.SUNDAY) {
+            candidate = candidate.plusDays(1)
+        }
+        return candidate.atTime(9, 0).atZone(java.time.ZoneId.of("Asia/Seoul"))
+    }
+
+    private fun koreanDayLabel(day: java.time.DayOfWeek): String = when (day) {
+        java.time.DayOfWeek.MONDAY -> "월요일"
+        java.time.DayOfWeek.TUESDAY -> "화요일"
+        java.time.DayOfWeek.WEDNESDAY -> "수요일"
+        java.time.DayOfWeek.THURSDAY -> "목요일"
+        java.time.DayOfWeek.FRIDAY -> "금요일"
+        java.time.DayOfWeek.SATURDAY -> "토요일"
+        java.time.DayOfWeek.SUNDAY -> "일요일"
     }
 
     fun getMarketSections(): MarketSectionsResponse {
