@@ -15,6 +15,7 @@ data class StockSearchResult(
 @Service
 class StockSearchService(
     private val naverClient: NaverFinanceQuoteClient,
+    private val naverSearchClient: NaverStockSearchClient,
 ) {
 
     // ── Static Registry ─────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ class StockSearchService(
             else -> krRegistry + usRegistry
         }
 
-        val matched = if (keyword.isBlank()) {
+        val staticMatched = if (keyword.isBlank()) {
             pool
         } else {
             pool.filter { item ->
@@ -105,7 +106,18 @@ class StockSearchService(
             }
         }
 
-        val results = matched.take(limit)
+        // 정적 결과가 부족하면 Naver 동적 검색으로 보강
+        val dynamicMatched = if (keyword.isNotBlank() && staticMatched.size < limit) {
+            val seen = staticMatched.map { "${it.market}:${it.ticker}" }.toMutableSet()
+            naverSearchClient.search(keyword, limit).filter { extra ->
+                val key = "${extra.market}:${extra.ticker}"
+                val accepted = market.isNullOrBlank() || market.equals("ALL", true) ||
+                               extra.market.equals(market, true)
+                accepted && seen.add(key)
+            }
+        } else emptyList()
+
+        val results = (staticMatched + dynamicMatched).take(limit)
 
         // Enrich KR results with real-time prices
         val krTickers = results.filter { it.market == "KR" }.map { it.ticker }

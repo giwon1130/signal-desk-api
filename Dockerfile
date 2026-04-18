@@ -1,4 +1,4 @@
-FROM eclipse-temurin:17-jdk AS builder
+FROM eclipse-temurin:21-jdk AS builder
 WORKDIR /app
 COPY gradlew gradlew
 COPY gradle gradle
@@ -6,7 +6,7 @@ COPY settings.gradle.kts build.gradle.kts ./
 COPY src src
 RUN chmod +x ./gradlew && ./gradlew bootJar --no-daemon
 
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:21-jre
 WORKDIR /app
 
 RUN apt-get update \

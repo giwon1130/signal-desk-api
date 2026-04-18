@@ -47,6 +47,7 @@ class KakaoSkillService(
             ?: return kakaoText("'${parsed.query}' 종목을 찾지 못했어.")
 
         val saved = workspaceService.savePortfolioPosition(
+            userId = null,
             id = "",
             market = stock.market,
             ticker = stock.ticker,
@@ -67,7 +68,7 @@ class KakaoSkillService(
     // ── 포트폴리오 현황 ───────────────────────────────────────────────────
 
     private fun handlePortfolio(): KakaoSkillResponse {
-        val positions = repository.loadPortfolioPositions().filter { it.market == "KR" }
+        val positions = repository.loadPortfolioPositions(null).filter { it.market == "KR" }
         if (positions.isEmpty()) return kakaoText("아직 저장된 종목이 없어.\n'삼성전자 70000에 샀어' 처럼 입력해봐.")
 
         val tickers = positions.map { it.ticker }

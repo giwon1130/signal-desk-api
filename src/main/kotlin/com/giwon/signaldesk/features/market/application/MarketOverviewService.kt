@@ -6,6 +6,7 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.Month
 import java.time.ZoneId
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 
 @Service
@@ -25,13 +26,13 @@ class MarketOverviewService(
     private val coreTtl: Duration = Duration.ofSeconds(60)
     private val newsTtl: Duration = Duration.ofMinutes(5)
 
-    fun getOverview(): MarketOverviewResponse {
+    fun getOverview(userId: UUID? = null): MarketOverviewResponse {
         val core = getCoreSnapshot()
         val news = getNewsFeed().news
-        val watchlist = enrichmentService.getWatchlist().watchlist
-        val portfolio = enrichmentService.getPortfolio().portfolio
-        val aiRecommendations = enrichmentService.getAiRecommendations().aiRecommendations
-        val paperTrading = enrichmentService.getPaperTrading().paperTrading
+        val watchlist = enrichmentService.getWatchlist(userId).watchlist
+        val portfolio = enrichmentService.getPortfolio(userId).portfolio
+        val aiRecommendations = enrichmentService.getAiRecommendations(userId).aiRecommendations
+        val paperTrading = enrichmentService.getPaperTrading(userId).paperTrading
         val watchAlerts = watchAlertService.buildWatchAlerts(core.alternativeSignals, news, watchlist, portfolio, aiRecommendations)
         val briefing = watchAlertService.buildBriefing(core.briefing, watchAlerts)
         return MarketOverviewResponse(
@@ -44,10 +45,10 @@ class MarketOverviewService(
         )
     }
 
-    fun getSummary(): MarketSummaryResponse {
+    fun getSummary(userId: UUID? = null): MarketSummaryResponse {
         val core = getCoreSnapshot()
-        val quotes = enrichmentService.loadKoreanQuotes()
-        val snapshot = enrichmentService.buildWorkspaceSnapshot(quotes)
+        val quotes = enrichmentService.loadKoreanQuotes(userId)
+        val snapshot = enrichmentService.buildWorkspaceSnapshot(quotes, userId)
         val watchAlerts = watchAlertService.buildWatchAlerts(
             core.alternativeSignals, getCachedNews().news,
             snapshot.watchlist, snapshot.portfolio, snapshot.aiRecommendations,
@@ -58,7 +59,7 @@ class MarketOverviewService(
             marketSummary = core.marketSummary, alternativeSignals = core.alternativeSignals,
             watchAlerts = watchAlerts, marketSessions = core.marketSessions,
             briefing = briefing, sourceNotes = core.sourceNotes,
-            workspaceCounts = enrichmentService.buildWorkspaceCounts(),
+            workspaceCounts = enrichmentService.buildWorkspaceCounts(userId),
         )
     }
 
@@ -72,10 +73,10 @@ class MarketOverviewService(
         return NewsFeedResponse(generatedAt = news.generatedAt, news = news.news)
     }
 
-    fun getWatchlist() = enrichmentService.getWatchlist()
-    fun getPortfolio() = enrichmentService.getPortfolio()
-    fun getAiRecommendations() = enrichmentService.getAiRecommendations()
-    fun getPaperTrading() = enrichmentService.getPaperTrading()
+    fun getWatchlist(userId: UUID? = null) = enrichmentService.getWatchlist(userId)
+    fun getPortfolio(userId: UUID? = null) = enrichmentService.getPortfolio(userId)
+    fun getAiRecommendations(userId: UUID? = null) = enrichmentService.getAiRecommendations(userId)
+    fun getPaperTrading(userId: UUID? = null) = enrichmentService.getPaperTrading(userId)
 
     private fun getCoreSnapshot(): CachedMarketCore {
         val cached = cachedCore

@@ -7,24 +7,43 @@ import org.springframework.stereotype.Component
 import java.sql.ResultSet
 import java.util.UUID
 
+/**
+ * user_id 스코핑 규칙:
+ *  - userId == null  → user_id IS NULL 인 글로벌(레거시) 데이터만 조회/저장
+ *  - userId != null  → 해당 사용자 행만 조회/저장
+ *
+ * 즉 사용자 데이터와 글로벌 데이터는 격리된다.
+ */
 @Component
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class JdbcSignalDeskWorkspaceRepository(
     private val jdbcTemplate: JdbcTemplate,
 ) : SignalDeskWorkspaceRepository {
 
-    override fun loadWatchlist(): List<WorkspaceWatchItem> =
+    // ── helpers ─────────────────────────────────────────────────────────────
+
+    private fun whereUser(column: String = "user_id"): String =
+        "($column = ?::uuid or ($column is null and ?::uuid is null))"
+
+    private fun userArgs(userId: UUID?): Array<Any?> {
+        val s = userId?.toString()
+        return arrayOf(s, s)
+    }
+
+    // ── watchlist ───────────────────────────────────────────────────────────
+
+    override fun loadWatchlist(userId: UUID?): List<WorkspaceWatchItem> =
         jdbcTemplate.query(
-            "select id, market, ticker, name, price, change_rate, sector, stance, note from signal_desk_watchlist order by name",
-            watchlistRowMapper,
+            "select id, market, ticker, name, price, change_rate, sector, stance, note from signal_desk_watchlist where ${whereUser()} order by name",
+            watchlistRowMapper, *userArgs(userId),
         )
 
-    override fun saveWatchItem(item: WorkspaceWatchItem): WorkspaceWatchItem {
+    override fun saveWatchItem(userId: UUID?, item: WorkspaceWatchItem): WorkspaceWatchItem {
         val nextItem = item.copy(id = item.id.ifBlank { UUID.randomUUID().toString() })
         jdbcTemplate.update(
             """
-            insert into signal_desk_watchlist (id, market, ticker, name, price, change_rate, sector, stance, note)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            insert into signal_desk_watchlist (id, market, ticker, name, price, change_rate, sector, stance, note, user_id)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
             on conflict (id) do update set
                 market = excluded.market,
                 ticker = excluded.ticker,
@@ -35,27 +54,29 @@ class JdbcSignalDeskWorkspaceRepository(
                 stance = excluded.stance,
                 note = excluded.note
             """.trimIndent(),
-            nextItem.id, nextItem.market, nextItem.ticker, nextItem.name, nextItem.price, nextItem.changeRate, nextItem.sector, nextItem.stance, nextItem.note,
+            nextItem.id, nextItem.market, nextItem.ticker, nextItem.name, nextItem.price, nextItem.changeRate, nextItem.sector, nextItem.stance, nextItem.note, userId?.toString(),
         )
         return nextItem
     }
 
-    override fun deleteWatchItem(id: String) {
-        jdbcTemplate.update("delete from signal_desk_watchlist where id = ?", id)
+    override fun deleteWatchItem(userId: UUID?, id: String) {
+        jdbcTemplate.update("delete from signal_desk_watchlist where id = ? and ${whereUser()}", id, *userArgs(userId))
     }
 
-    override fun loadPortfolioPositions(): List<WorkspaceHoldingPosition> =
+    // ── portfolio ───────────────────────────────────────────────────────────
+
+    override fun loadPortfolioPositions(userId: UUID?): List<WorkspaceHoldingPosition> =
         jdbcTemplate.query(
-            "select id, market, ticker, name, buy_price, current_price, quantity, profit_amount, evaluation_amount, profit_rate from signal_desk_portfolio_positions order by name",
-            portfolioRowMapper,
+            "select id, market, ticker, name, buy_price, current_price, quantity, profit_amount, evaluation_amount, profit_rate from signal_desk_portfolio_positions where ${whereUser()} order by name",
+            portfolioRowMapper, *userArgs(userId),
         )
 
-    override fun savePortfolioPosition(position: WorkspaceHoldingPosition): WorkspaceHoldingPosition {
+    override fun savePortfolioPosition(userId: UUID?, position: WorkspaceHoldingPosition): WorkspaceHoldingPosition {
         val nextPosition = position.copy(id = position.id.ifBlank { UUID.randomUUID().toString() })
         jdbcTemplate.update(
             """
-            insert into signal_desk_portfolio_positions (id, market, ticker, name, buy_price, current_price, quantity, profit_amount, evaluation_amount, profit_rate)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            insert into signal_desk_portfolio_positions (id, market, ticker, name, buy_price, current_price, quantity, profit_amount, evaluation_amount, profit_rate, user_id)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
             on conflict (id) do update set
                 market = excluded.market,
                 ticker = excluded.ticker,
@@ -67,27 +88,29 @@ class JdbcSignalDeskWorkspaceRepository(
                 evaluation_amount = excluded.evaluation_amount,
                 profit_rate = excluded.profit_rate
             """.trimIndent(),
-            nextPosition.id, nextPosition.market, nextPosition.ticker, nextPosition.name, nextPosition.buyPrice, nextPosition.currentPrice, nextPosition.quantity, nextPosition.profitAmount, nextPosition.evaluationAmount, nextPosition.profitRate,
+            nextPosition.id, nextPosition.market, nextPosition.ticker, nextPosition.name, nextPosition.buyPrice, nextPosition.currentPrice, nextPosition.quantity, nextPosition.profitAmount, nextPosition.evaluationAmount, nextPosition.profitRate, userId?.toString(),
         )
         return nextPosition
     }
 
-    override fun deletePortfolioPosition(id: String) {
-        jdbcTemplate.update("delete from signal_desk_portfolio_positions where id = ?", id)
+    override fun deletePortfolioPosition(userId: UUID?, id: String) {
+        jdbcTemplate.update("delete from signal_desk_portfolio_positions where id = ? and ${whereUser()}", id, *userArgs(userId))
     }
 
-    override fun loadPaperPositions(): List<WorkspacePaperPosition> =
+    // ── paper positions ─────────────────────────────────────────────────────
+
+    override fun loadPaperPositions(userId: UUID?): List<WorkspacePaperPosition> =
         jdbcTemplate.query(
-            "select id, market, ticker, name, average_price, current_price, quantity, return_rate from signal_desk_paper_positions order by name",
-            paperPositionRowMapper,
+            "select id, market, ticker, name, average_price, current_price, quantity, return_rate from signal_desk_paper_positions where ${whereUser()} order by name",
+            paperPositionRowMapper, *userArgs(userId),
         )
 
-    override fun savePaperPosition(position: WorkspacePaperPosition): WorkspacePaperPosition {
+    override fun savePaperPosition(userId: UUID?, position: WorkspacePaperPosition): WorkspacePaperPosition {
         val nextPosition = position.copy(id = position.id.ifBlank { UUID.randomUUID().toString() })
         jdbcTemplate.update(
             """
-            insert into signal_desk_paper_positions (id, market, ticker, name, average_price, current_price, quantity, return_rate)
-            values (?, ?, ?, ?, ?, ?, ?, ?)
+            insert into signal_desk_paper_positions (id, market, ticker, name, average_price, current_price, quantity, return_rate, user_id)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
             on conflict (id) do update set
                 market = excluded.market,
                 ticker = excluded.ticker,
@@ -97,27 +120,29 @@ class JdbcSignalDeskWorkspaceRepository(
                 quantity = excluded.quantity,
                 return_rate = excluded.return_rate
             """.trimIndent(),
-            nextPosition.id, nextPosition.market, nextPosition.ticker, nextPosition.name, nextPosition.averagePrice, nextPosition.currentPrice, nextPosition.quantity, nextPosition.returnRate,
+            nextPosition.id, nextPosition.market, nextPosition.ticker, nextPosition.name, nextPosition.averagePrice, nextPosition.currentPrice, nextPosition.quantity, nextPosition.returnRate, userId?.toString(),
         )
         return nextPosition
     }
 
-    override fun deletePaperPosition(id: String) {
-        jdbcTemplate.update("delete from signal_desk_paper_positions where id = ?", id)
+    override fun deletePaperPosition(userId: UUID?, id: String) {
+        jdbcTemplate.update("delete from signal_desk_paper_positions where id = ? and ${whereUser()}", id, *userArgs(userId))
     }
 
-    override fun loadPaperTrades(): List<WorkspacePaperTrade> =
+    // ── paper trades ────────────────────────────────────────────────────────
+
+    override fun loadPaperTrades(userId: UUID?): List<WorkspacePaperTrade> =
         jdbcTemplate.query(
-            "select id, trade_date, side, market, ticker, name, price, quantity from signal_desk_paper_trades order by trade_date desc, name",
-            paperTradeRowMapper,
+            "select id, trade_date, side, market, ticker, name, price, quantity from signal_desk_paper_trades where ${whereUser()} order by trade_date desc, name",
+            paperTradeRowMapper, *userArgs(userId),
         )
 
-    override fun savePaperTrade(trade: WorkspacePaperTrade): WorkspacePaperTrade {
+    override fun savePaperTrade(userId: UUID?, trade: WorkspacePaperTrade): WorkspacePaperTrade {
         val nextTrade = trade.copy(id = trade.id.ifBlank { UUID.randomUUID().toString() })
         jdbcTemplate.update(
             """
-            insert into signal_desk_paper_trades (id, trade_date, side, market, ticker, name, price, quantity)
-            values (?, ?, ?, ?, ?, ?, ?, ?)
+            insert into signal_desk_paper_trades (id, trade_date, side, market, ticker, name, price, quantity, user_id)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
             on conflict (id) do update set
                 trade_date = excluded.trade_date,
                 side = excluded.side,
@@ -127,27 +152,29 @@ class JdbcSignalDeskWorkspaceRepository(
                 price = excluded.price,
                 quantity = excluded.quantity
             """.trimIndent(),
-            nextTrade.id, nextTrade.tradeDate, nextTrade.side, nextTrade.market, nextTrade.ticker, nextTrade.name, nextTrade.price, nextTrade.quantity,
+            nextTrade.id, nextTrade.tradeDate, nextTrade.side, nextTrade.market, nextTrade.ticker, nextTrade.name, nextTrade.price, nextTrade.quantity, userId?.toString(),
         )
         return nextTrade
     }
 
-    override fun deletePaperTrade(id: String) {
-        jdbcTemplate.update("delete from signal_desk_paper_trades where id = ?", id)
+    override fun deletePaperTrade(userId: UUID?, id: String) {
+        jdbcTemplate.update("delete from signal_desk_paper_trades where id = ? and ${whereUser()}", id, *userArgs(userId))
     }
 
-    override fun loadAiPicks(): List<WorkspaceAiPick> =
+    // ── ai picks ────────────────────────────────────────────────────────────
+
+    override fun loadAiPicks(userId: UUID?): List<WorkspaceAiPick> =
         jdbcTemplate.query(
-            "select id, market, ticker, name, basis, confidence, note, expected_return_rate from signal_desk_ai_picks order by confidence desc, name",
-            aiPickRowMapper,
+            "select id, market, ticker, name, basis, confidence, note, expected_return_rate from signal_desk_ai_picks where ${whereUser()} order by confidence desc, name",
+            aiPickRowMapper, *userArgs(userId),
         )
 
-    override fun saveAiPick(pick: WorkspaceAiPick): WorkspaceAiPick {
+    override fun saveAiPick(userId: UUID?, pick: WorkspaceAiPick): WorkspaceAiPick {
         val nextPick = pick.copy(id = pick.id.ifBlank { UUID.randomUUID().toString() })
         jdbcTemplate.update(
             """
-            insert into signal_desk_ai_picks (id, market, ticker, name, basis, confidence, note, expected_return_rate)
-            values (?, ?, ?, ?, ?, ?, ?, ?)
+            insert into signal_desk_ai_picks (id, market, ticker, name, basis, confidence, note, expected_return_rate, user_id)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
             on conflict (id) do update set
                 market = excluded.market,
                 ticker = excluded.ticker,
@@ -157,27 +184,29 @@ class JdbcSignalDeskWorkspaceRepository(
                 note = excluded.note,
                 expected_return_rate = excluded.expected_return_rate
             """.trimIndent(),
-            nextPick.id, nextPick.market, nextPick.ticker, nextPick.name, nextPick.basis, nextPick.confidence, nextPick.note, nextPick.expectedReturnRate,
+            nextPick.id, nextPick.market, nextPick.ticker, nextPick.name, nextPick.basis, nextPick.confidence, nextPick.note, nextPick.expectedReturnRate, userId?.toString(),
         )
         return nextPick
     }
 
-    override fun deleteAiPick(id: String) {
-        jdbcTemplate.update("delete from signal_desk_ai_picks where id = ?", id)
+    override fun deleteAiPick(userId: UUID?, id: String) {
+        jdbcTemplate.update("delete from signal_desk_ai_picks where id = ? and ${whereUser()}", id, *userArgs(userId))
     }
 
-    override fun loadAiTrackRecords(): List<WorkspaceAiTrackRecord> =
+    // ── ai track records ────────────────────────────────────────────────────
+
+    override fun loadAiTrackRecords(userId: UUID?): List<WorkspaceAiTrackRecord> =
         jdbcTemplate.query(
-            "select id, recommended_date, market, ticker, name, entry_price, latest_price, realized_return_rate, success from signal_desk_ai_track_records order by recommended_date desc, name",
-            aiTrackRecordRowMapper,
+            "select id, recommended_date, market, ticker, name, entry_price, latest_price, realized_return_rate, success from signal_desk_ai_track_records where ${whereUser()} order by recommended_date desc, name",
+            aiTrackRecordRowMapper, *userArgs(userId),
         )
 
-    override fun saveAiTrackRecord(record: WorkspaceAiTrackRecord): WorkspaceAiTrackRecord {
+    override fun saveAiTrackRecord(userId: UUID?, record: WorkspaceAiTrackRecord): WorkspaceAiTrackRecord {
         val nextRecord = record.copy(id = record.id.ifBlank { UUID.randomUUID().toString() })
         jdbcTemplate.update(
             """
-            insert into signal_desk_ai_track_records (id, recommended_date, market, ticker, name, entry_price, latest_price, realized_return_rate, success)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            insert into signal_desk_ai_track_records (id, recommended_date, market, ticker, name, entry_price, latest_price, realized_return_rate, success, user_id)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
             on conflict (id) do update set
                 recommended_date = excluded.recommended_date,
                 market = excluded.market,
@@ -188,13 +217,13 @@ class JdbcSignalDeskWorkspaceRepository(
                 realized_return_rate = excluded.realized_return_rate,
                 success = excluded.success
             """.trimIndent(),
-            nextRecord.id, nextRecord.recommendedDate, nextRecord.market, nextRecord.ticker, nextRecord.name, nextRecord.entryPrice, nextRecord.latestPrice, nextRecord.realizedReturnRate, nextRecord.success,
+            nextRecord.id, nextRecord.recommendedDate, nextRecord.market, nextRecord.ticker, nextRecord.name, nextRecord.entryPrice, nextRecord.latestPrice, nextRecord.realizedReturnRate, nextRecord.success, userId?.toString(),
         )
         return nextRecord
     }
 
-    override fun deleteAiTrackRecord(id: String) {
-        jdbcTemplate.update("delete from signal_desk_ai_track_records where id = ?", id)
+    override fun deleteAiTrackRecord(userId: UUID?, id: String) {
+        jdbcTemplate.update("delete from signal_desk_ai_track_records where id = ? and ${whereUser()}", id, *userArgs(userId))
     }
 }
 

@@ -11,7 +11,7 @@ class ShortTermPickService(
 ) {
 
     fun picks(limit: Int = 3): List<ShortTermPick> {
-        val aiPicks = repository.loadAiPicks()
+        val aiPicks = repository.loadAiPicks(null)
             .filter { it.market == "KR" && it.confidence >= 60 }
             .sortedWith(compareByDescending<com.giwon.signaldesk.features.workspace.application.WorkspaceAiPick> { it.confidence }
                 .thenByDescending { it.expectedReturnRate })

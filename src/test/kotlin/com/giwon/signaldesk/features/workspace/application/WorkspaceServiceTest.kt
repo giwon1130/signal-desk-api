@@ -152,22 +152,22 @@ class WorkspaceServiceTest {
 
 /** 저장 로직 없이 인자를 그대로 반환하는 테스트용 스텁 */
 private class PassThroughWorkspaceRepository : SignalDeskWorkspaceRepository {
-    override fun loadWatchlist() = emptyList<WorkspaceWatchItem>()
-    override fun saveWatchItem(item: WorkspaceWatchItem) = item
-    override fun deleteWatchItem(id: String) = Unit
-    override fun loadPortfolioPositions() = emptyList<WorkspaceHoldingPosition>()
-    override fun savePortfolioPosition(position: WorkspaceHoldingPosition) = position
-    override fun deletePortfolioPosition(id: String) = Unit
-    override fun loadPaperPositions() = emptyList<WorkspacePaperPosition>()
-    override fun savePaperPosition(position: WorkspacePaperPosition) = position
-    override fun deletePaperPosition(id: String) = Unit
-    override fun loadPaperTrades() = emptyList<WorkspacePaperTrade>()
-    override fun savePaperTrade(trade: WorkspacePaperTrade) = trade
-    override fun deletePaperTrade(id: String) = Unit
-    override fun loadAiPicks() = emptyList<WorkspaceAiPick>()
-    override fun saveAiPick(pick: WorkspaceAiPick) = pick
-    override fun deleteAiPick(id: String) = Unit
-    override fun loadAiTrackRecords() = emptyList<WorkspaceAiTrackRecord>()
-    override fun saveAiTrackRecord(record: WorkspaceAiTrackRecord) = record
-    override fun deleteAiTrackRecord(id: String) = Unit
+    override fun loadWatchlist(userId: java.util.UUID?) = emptyList<WorkspaceWatchItem>()
+    override fun saveWatchItem(userId: java.util.UUID?, item: WorkspaceWatchItem) = item
+    override fun deleteWatchItem(userId: java.util.UUID?, id: String) = Unit
+    override fun loadPortfolioPositions(userId: java.util.UUID?) = emptyList<WorkspaceHoldingPosition>()
+    override fun savePortfolioPosition(userId: java.util.UUID?, position: WorkspaceHoldingPosition) = position
+    override fun deletePortfolioPosition(userId: java.util.UUID?, id: String) = Unit
+    override fun loadPaperPositions(userId: java.util.UUID?) = emptyList<WorkspacePaperPosition>()
+    override fun savePaperPosition(userId: java.util.UUID?, position: WorkspacePaperPosition) = position
+    override fun deletePaperPosition(userId: java.util.UUID?, id: String) = Unit
+    override fun loadPaperTrades(userId: java.util.UUID?) = emptyList<WorkspacePaperTrade>()
+    override fun savePaperTrade(userId: java.util.UUID?, trade: WorkspacePaperTrade) = trade
+    override fun deletePaperTrade(userId: java.util.UUID?, id: String) = Unit
+    override fun loadAiPicks(userId: java.util.UUID?) = emptyList<WorkspaceAiPick>()
+    override fun saveAiPick(userId: java.util.UUID?, pick: WorkspaceAiPick) = pick
+    override fun deleteAiPick(userId: java.util.UUID?, id: String) = Unit
+    override fun loadAiTrackRecords(userId: java.util.UUID?) = emptyList<WorkspaceAiTrackRecord>()
+    override fun saveAiTrackRecord(userId: java.util.UUID?, record: WorkspaceAiTrackRecord) = record
+    override fun deleteAiTrackRecord(userId: java.util.UUID?, id: String) = Unit
 }

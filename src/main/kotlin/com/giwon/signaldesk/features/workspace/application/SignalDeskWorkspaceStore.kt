@@ -10,6 +10,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
 
+/**
+ * 파일 기반 저장소(개발 모드 fallback).
+ *
+ * 주의: 단순화를 위해 user_id 스코핑을 무시한다 — 모든 사용자가 동일한 파일을 공유한다.
+ * 사용자별 격리가 필요하면 jdbc 모드를 사용한다.
+ */
 @Component
 @Conditional(FileStoreCondition::class)
 class SignalDeskWorkspaceStore(
@@ -26,75 +32,75 @@ class SignalDeskWorkspaceStore(
         if (!Files.exists(resolvedPath)) write(StoreFile())
     }
 
-    override fun loadWatchlist(): List<WorkspaceWatchItem> = synchronized(lock) { read().watchlist }
+    override fun loadWatchlist(userId: UUID?): List<WorkspaceWatchItem> = synchronized(lock) { read().watchlist }
 
-    override fun saveWatchItem(item: WorkspaceWatchItem): WorkspaceWatchItem = synchronized(lock) {
+    override fun saveWatchItem(userId: UUID?, item: WorkspaceWatchItem): WorkspaceWatchItem = synchronized(lock) {
         val next = item.copy(id = item.id.ifBlank { UUID.randomUUID().toString() })
         write(read().copy(watchlist = read().watchlist.filterNot { it.id == next.id }.plus(next).sortedBy { it.name }))
         next
     }
 
-    override fun deleteWatchItem(id: String) = synchronized(lock) {
+    override fun deleteWatchItem(userId: UUID?, id: String) = synchronized(lock) {
         write(read().copy(watchlist = read().watchlist.filterNot { it.id == id }))
     }
 
-    override fun loadPortfolioPositions(): List<WorkspaceHoldingPosition> = synchronized(lock) { read().portfolioPositions }
+    override fun loadPortfolioPositions(userId: UUID?): List<WorkspaceHoldingPosition> = synchronized(lock) { read().portfolioPositions }
 
-    override fun savePortfolioPosition(position: WorkspaceHoldingPosition): WorkspaceHoldingPosition = synchronized(lock) {
+    override fun savePortfolioPosition(userId: UUID?, position: WorkspaceHoldingPosition): WorkspaceHoldingPosition = synchronized(lock) {
         val next = position.copy(id = position.id.ifBlank { UUID.randomUUID().toString() })
         write(read().copy(portfolioPositions = read().portfolioPositions.filterNot { it.id == next.id }.plus(next).sortedBy { it.name }))
         next
     }
 
-    override fun deletePortfolioPosition(id: String) = synchronized(lock) {
+    override fun deletePortfolioPosition(userId: UUID?, id: String) = synchronized(lock) {
         write(read().copy(portfolioPositions = read().portfolioPositions.filterNot { it.id == id }))
     }
 
-    override fun loadPaperPositions(): List<WorkspacePaperPosition> = synchronized(lock) { read().paperPositions }
+    override fun loadPaperPositions(userId: UUID?): List<WorkspacePaperPosition> = synchronized(lock) { read().paperPositions }
 
-    override fun savePaperPosition(position: WorkspacePaperPosition): WorkspacePaperPosition = synchronized(lock) {
+    override fun savePaperPosition(userId: UUID?, position: WorkspacePaperPosition): WorkspacePaperPosition = synchronized(lock) {
         val next = position.copy(id = position.id.ifBlank { UUID.randomUUID().toString() })
         write(read().copy(paperPositions = read().paperPositions.filterNot { it.id == next.id }.plus(next).sortedBy { it.name }))
         next
     }
 
-    override fun deletePaperPosition(id: String) = synchronized(lock) {
+    override fun deletePaperPosition(userId: UUID?, id: String) = synchronized(lock) {
         write(read().copy(paperPositions = read().paperPositions.filterNot { it.id == id }))
     }
 
-    override fun loadPaperTrades(): List<WorkspacePaperTrade> = synchronized(lock) { read().paperTrades }
+    override fun loadPaperTrades(userId: UUID?): List<WorkspacePaperTrade> = synchronized(lock) { read().paperTrades }
 
-    override fun savePaperTrade(trade: WorkspacePaperTrade): WorkspacePaperTrade = synchronized(lock) {
+    override fun savePaperTrade(userId: UUID?, trade: WorkspacePaperTrade): WorkspacePaperTrade = synchronized(lock) {
         val next = trade.copy(id = trade.id.ifBlank { UUID.randomUUID().toString() })
         write(read().copy(paperTrades = read().paperTrades.filterNot { it.id == next.id }.plus(next).sortedByDescending { it.tradeDate }))
         next
     }
 
-    override fun deletePaperTrade(id: String) = synchronized(lock) {
+    override fun deletePaperTrade(userId: UUID?, id: String) = synchronized(lock) {
         write(read().copy(paperTrades = read().paperTrades.filterNot { it.id == id }))
     }
 
-    override fun loadAiPicks(): List<WorkspaceAiPick> = synchronized(lock) { read().aiPicks }
+    override fun loadAiPicks(userId: UUID?): List<WorkspaceAiPick> = synchronized(lock) { read().aiPicks }
 
-    override fun saveAiPick(pick: WorkspaceAiPick): WorkspaceAiPick = synchronized(lock) {
+    override fun saveAiPick(userId: UUID?, pick: WorkspaceAiPick): WorkspaceAiPick = synchronized(lock) {
         val next = pick.copy(id = pick.id.ifBlank { UUID.randomUUID().toString() })
         write(read().copy(aiPicks = read().aiPicks.filterNot { it.id == next.id }.plus(next).sortedByDescending { it.confidence }))
         next
     }
 
-    override fun deleteAiPick(id: String) = synchronized(lock) {
+    override fun deleteAiPick(userId: UUID?, id: String) = synchronized(lock) {
         write(read().copy(aiPicks = read().aiPicks.filterNot { it.id == id }))
     }
 
-    override fun loadAiTrackRecords(): List<WorkspaceAiTrackRecord> = synchronized(lock) { read().aiTrackRecords }
+    override fun loadAiTrackRecords(userId: UUID?): List<WorkspaceAiTrackRecord> = synchronized(lock) { read().aiTrackRecords }
 
-    override fun saveAiTrackRecord(record: WorkspaceAiTrackRecord): WorkspaceAiTrackRecord = synchronized(lock) {
+    override fun saveAiTrackRecord(userId: UUID?, record: WorkspaceAiTrackRecord): WorkspaceAiTrackRecord = synchronized(lock) {
         val next = record.copy(id = record.id.ifBlank { UUID.randomUUID().toString() })
         write(read().copy(aiTrackRecords = read().aiTrackRecords.filterNot { it.id == next.id }.plus(next).sortedByDescending { it.recommendedDate }))
         next
     }
 
-    override fun deleteAiTrackRecord(id: String) = synchronized(lock) {
+    override fun deleteAiTrackRecord(userId: UUID?, id: String) = synchronized(lock) {
         write(read().copy(aiTrackRecords = read().aiTrackRecords.filterNot { it.id == id }))
     }
 

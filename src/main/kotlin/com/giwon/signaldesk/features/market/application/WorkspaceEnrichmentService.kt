@@ -4,6 +4,7 @@ import com.giwon.signaldesk.features.workspace.application.SignalDeskWorkspaceRe
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.util.UUID
 
 @Service
 class WorkspaceEnrichmentService(
@@ -11,18 +12,18 @@ class WorkspaceEnrichmentService(
     private val workspaceStore: SignalDeskWorkspaceRepository,
 ) {
 
-    fun loadKoreanQuotes(): Map<String, StockQuote> =
-        naverFinanceQuoteClient.fetchKoreanQuotes(buildQuoteUniverse())
+    fun loadKoreanQuotes(userId: UUID? = null): Map<String, StockQuote> =
+        naverFinanceQuoteClient.fetchKoreanQuotes(buildQuoteUniverse(userId))
 
-    fun buildWorkspaceCounts() = WorkspaceCounts(
-        watchlistCount = workspaceStore.loadWatchlist().size,
-        portfolioCount = workspaceStore.loadPortfolioPositions().size,
-        paperPositionCount = workspaceStore.loadPaperPositions().size,
-        aiPickCount = workspaceStore.loadAiPicks().size,
+    fun buildWorkspaceCounts(userId: UUID? = null) = WorkspaceCounts(
+        watchlistCount = workspaceStore.loadWatchlist(userId).size,
+        portfolioCount = workspaceStore.loadPortfolioPositions(userId).size,
+        paperPositionCount = workspaceStore.loadPaperPositions(userId).size,
+        aiPickCount = workspaceStore.loadAiPicks(userId).size,
     )
 
-    fun getWatchlist(quotes: Map<String, StockQuote> = loadKoreanQuotes()): WatchlistResponse {
-        val merged = baseWatchlist() + workspaceStore.loadWatchlist().map {
+    fun getWatchlist(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): WatchlistResponse {
+        val merged = baseWatchlist() + workspaceStore.loadWatchlist(userId).map {
             WatchItem(id = it.id, market = it.market, ticker = it.ticker, name = it.name,
                 price = it.price, changeRate = it.changeRate, sector = it.sector,
                 stance = it.stance, note = it.note, source = "USER")
@@ -30,8 +31,8 @@ class WorkspaceEnrichmentService(
         return WatchlistResponse(LocalDateTime.now().toString(), refreshWatchlist(merged, quotes))
     }
 
-    fun getPortfolio(quotes: Map<String, StockQuote> = loadKoreanQuotes()): PortfolioResponse {
-        val merged = mergePortfolio(basePortfolio(), workspaceStore.loadPortfolioPositions().map {
+    fun getPortfolio(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): PortfolioResponse {
+        val merged = mergePortfolio(basePortfolio(), workspaceStore.loadPortfolioPositions(userId).map {
             HoldingPosition(id = it.id, market = it.market, ticker = it.ticker, name = it.name,
                 buyPrice = it.buyPrice, currentPrice = it.currentPrice, quantity = it.quantity,
                 profitAmount = it.profitAmount, evaluationAmount = it.evaluationAmount,
@@ -40,15 +41,15 @@ class WorkspaceEnrichmentService(
         return PortfolioResponse(LocalDateTime.now().toString(), refreshPortfolio(merged, quotes))
     }
 
-    fun getAiRecommendations(quotes: Map<String, StockQuote> = loadKoreanQuotes()): AiRecommendationsResponse {
+    fun getAiRecommendations(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): AiRecommendationsResponse {
         val merged = mergeAiRecommendations(
             baseAiRecommendations(),
-            workspaceStore.loadAiPicks().map {
+            workspaceStore.loadAiPicks(userId).map {
                 RecommendationPick(market = it.market, ticker = it.ticker, name = it.name,
                     basis = it.basis, confidence = it.confidence, note = it.note,
                     expectedReturnRate = it.expectedReturnRate, source = "USER", id = it.id)
             },
-            workspaceStore.loadAiTrackRecords().map {
+            workspaceStore.loadAiTrackRecords(userId).map {
                 RecommendationTrackRecord(recommendedDate = it.recommendedDate, market = it.market,
                     ticker = it.ticker, name = it.name, entryPrice = it.entryPrice,
                     latestPrice = it.latestPrice, realizedReturnRate = it.realizedReturnRate,
@@ -58,15 +59,15 @@ class WorkspaceEnrichmentService(
         return AiRecommendationsResponse(LocalDateTime.now().toString(), refreshAiRecommendations(merged, quotes))
     }
 
-    fun getPaperTrading(quotes: Map<String, StockQuote> = loadKoreanQuotes()): PaperTradingResponse {
+    fun getPaperTrading(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): PaperTradingResponse {
         val merged = mergePaperTrading(
             basePaperTrading(),
-            workspaceStore.loadPaperPositions().map {
+            workspaceStore.loadPaperPositions(userId).map {
                 PaperPosition(market = it.market, ticker = it.ticker, name = it.name,
                     averagePrice = it.averagePrice, currentPrice = it.currentPrice,
                     quantity = it.quantity, returnRate = it.returnRate, source = "USER", id = it.id)
             },
-            workspaceStore.loadPaperTrades().map {
+            workspaceStore.loadPaperTrades(userId).map {
                 PaperTrade(tradeDate = it.tradeDate, side = it.side, market = it.market,
                     ticker = it.ticker, name = it.name, price = it.price,
                     quantity = it.quantity, source = "USER", id = it.id)
@@ -75,11 +76,11 @@ class WorkspaceEnrichmentService(
         return PaperTradingResponse(LocalDateTime.now().toString(), refreshPaperTrading(merged, quotes))
     }
 
-    fun buildWorkspaceSnapshot(quotes: Map<String, StockQuote>): WorkspaceSnapshot {
+    fun buildWorkspaceSnapshot(quotes: Map<String, StockQuote>, userId: UUID? = null): WorkspaceSnapshot {
         return WorkspaceSnapshot(
-            watchlist = getWatchlist(quotes).watchlist,
-            portfolio = getPortfolio(quotes).portfolio,
-            aiRecommendations = getAiRecommendations(quotes).aiRecommendations,
+            watchlist = getWatchlist(userId, quotes).watchlist,
+            portfolio = getPortfolio(userId, quotes).portfolio,
+            aiRecommendations = getAiRecommendations(userId, quotes).aiRecommendations,
         )
     }
 
@@ -230,17 +231,17 @@ class WorkspaceEnrichmentService(
         )
     }
 
-    private fun buildQuoteUniverse(): List<String> {
+    private fun buildQuoteUniverse(userId: UUID?): List<String> {
         val baseTickers = (baseWatchlist().asSequence().map { it.ticker } +
             basePortfolio().positions.asSequence().map { it.ticker } +
             baseAiRecommendations().trackRecords.asSequence().map { it.ticker } +
             basePaperTrading().openPositions.asSequence().map { it.ticker })
             .filter { it.all(Char::isDigit) }
 
-        val userTickers = (workspaceStore.loadWatchlist().asSequence().map { it.ticker } +
-            workspaceStore.loadPortfolioPositions().asSequence().map { it.ticker } +
-            workspaceStore.loadAiTrackRecords().asSequence().map { it.ticker } +
-            workspaceStore.loadPaperPositions().asSequence().map { it.ticker })
+        val userTickers = (workspaceStore.loadWatchlist(userId).asSequence().map { it.ticker } +
+            workspaceStore.loadPortfolioPositions(userId).asSequence().map { it.ticker } +
+            workspaceStore.loadAiTrackRecords(userId).asSequence().map { it.ticker } +
+            workspaceStore.loadPaperPositions(userId).asSequence().map { it.ticker })
             .filter { it.all(Char::isDigit) }
 
         return (baseTickers + userTickers)

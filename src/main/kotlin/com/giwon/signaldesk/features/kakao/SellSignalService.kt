@@ -12,10 +12,10 @@ class SellSignalService(
 ) {
 
     fun evaluate(): List<SellSignal> {
-        val positions = repository.loadPortfolioPositions().filter { it.market == "KR" }
+        val positions = repository.loadPortfolioPositions(null).filter { it.market == "KR" }
         if (positions.isEmpty()) return emptyList()
 
-        val aiPicks = repository.loadAiPicks().associateBy { it.ticker }
+        val aiPicks = repository.loadAiPicks(null).associateBy { it.ticker }
         val quotes = naverClient.fetchKoreanQuotes(positions.map { it.ticker })
 
         return positions.mapNotNull { pos ->
