@@ -1,7 +1,6 @@
 package com.giwon.signaldesk.features.market.application
 
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Random
 import kotlin.math.abs
@@ -14,21 +13,18 @@ fun buildIndexChartPeriods(
     changeRate: Double,
     baseSeries: List<Double>,
 ): List<ChartPeriodSnapshot> {
-    val normalized = if (baseSeries.isEmpty()) listOf(latest) else baseSeries
     val today = LocalDate.now()
-    val now = LocalDateTime.now()
 
-    // 1D: KRX 장중 30분봉 실데이터 기반 — flat 구간은 최소 변동성 부여
-    val rawDayCloses = normalized.takeLast(12)
-    val dayCloses = ensureIntraVariation(rawDayCloses, latest, today)
-    val dayLabels = dayCloses.mapIndexed { index, _ ->
-        val slotTime = now.withHour(9).withMinute(0).withSecond(0).withNano(0)
-            .plusMinutes((index * 30).toLong())
-        val h = slotTime.hour.toString().padStart(2, '0')
-        val m = if (slotTime.minute == 0) "00" else "30"
-        "${today.format(DateTimeFormatter.ofPattern("MM/dd"))} $h:$m"
+    // 1D: 9:00 ~ 15:30 (13개 30분봉) 장중 시뮬레이션. 종가가 latest, 시가는 latest/(1+changeRate)
+    // seed 고정으로 하루 동안 일관된 모양. baseSeries 가 충분히 변동성 있으면 그걸 우선 사용.
+    val intradayCloses = buildIntradaySeries(latest, changeRate, baseSeries, today)
+    val dayLabels = intradayCloses.mapIndexed { index, _ ->
+        val totalMinutes = index * 30
+        val h = (9 + totalMinutes / 60).toString().padStart(2, '0')
+        val m = if (totalMinutes % 60 == 0) "00" else "30"
+        "$h:$m"
     }
-    val dayPoints = buildChartPoints(dayLabels, dayCloses, dayCloses.firstOrNull() ?: latest)
+    val dayPoints = buildChartPoints(dayLabels, intradayCloses, intradayCloses.firstOrNull() ?: latest)
 
     // 1M: 20 거래일 역방향 랜덤워크 (seed = 날짜+가격대 고정 → 하루 동안 모양 일관)
     val monthSeries = buildHistoricalSeries(latest, 20, dailyVolatility = 0.015, today)
@@ -54,15 +50,39 @@ fun buildIndexChartPeriods(
 }
 
 /**
- * KRX 장중 데이터가 flat할 때 최소 변동성을 부여해 캔들이 도지형만 되지 않도록 함.
- * 실데이터가 충분히 움직인 경우(spread > 0.15%) 그대로 사용.
+ * 13개의 30분봉 종가 시뮬레이션. 시가 → 종가 사이 자연스러운 노이즈를 실어 캔들 모양을 만듦.
+ * - 끝점이 latest 가 되도록 보정
+ * - 시작점은 latest / (1 + changeRate%) — 즉 어제 종가
+ * - seed 고정 (날짜 + 가격대) 으로 하루 동안 모양 일관
+ * - baseSeries 가 충분히 변동성 있으면(>= 0.2%) 실데이터 사용
  */
-private fun ensureIntraVariation(closes: List<Double>, latest: Double, today: LocalDate): List<Double> {
-    if (closes.size < 2) return closes
-    val spread = (closes.maxOrNull() ?: 0.0) - (closes.minOrNull() ?: 0.0)
-    val threshold = latest * 0.0015   // 0.15% 미만이면 시뮬레이션
-    return if (spread >= threshold) closes
-    else buildHistoricalSeries(latest, closes.size, dailyVolatility = 0.004, today)
+private fun buildIntradaySeries(
+    latest: Double,
+    changeRate: Double,
+    baseSeries: List<Double>,
+    today: LocalDate,
+): List<Double> {
+    val slots = 13
+    val real = baseSeries.takeLast(slots)
+    if (real.size >= 4) {
+        val spread = (real.maxOrNull() ?: 0.0) - (real.minOrNull() ?: 0.0)
+        if (spread >= latest * 0.002) return real
+    }
+
+    // 어제 종가에서 latest 까지 직선 드리프트 + 가우시안 노이즈
+    val yesterdayClose = if (changeRate != 0.0) latest / (1.0 + changeRate / 100.0) else latest * 0.998
+    val seed = today.toEpochDay() * 1000L + (latest / 100).toLong()
+    val rng = Random(seed)
+    val volatility = latest * 0.0015   // 30분봉 변동성
+
+    val series = MutableList(slots) { idx ->
+        val t = idx.toDouble() / (slots - 1)
+        val drift = yesterdayClose + (latest - yesterdayClose) * t
+        drift + rng.nextGaussian() * volatility
+    }
+    series[0] = yesterdayClose
+    series[slots - 1] = latest
+    return series
 }
 
 /**
