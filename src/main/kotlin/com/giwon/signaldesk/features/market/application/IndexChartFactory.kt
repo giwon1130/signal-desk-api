@@ -8,6 +8,14 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToLong
 
+/**
+ * 일봉(D) / 주봉(W) / 월봉(M) 세 가지 캔들 시리즈를 생성한다.
+ * - 캔들 1개 = 정확히 1일/1주/1개월 OHLC
+ * - 끝점이 latest 가 되도록 보정 (오늘 = 현재가)
+ * - seed 고정(날짜+가격대)으로 새로고침해도 모양 일관
+ *
+ * baseSeries 가 충분한 길이의 실데이터라면 일봉에 우선 사용.
+ */
 fun buildIndexChartPeriods(
     latest: Double,
     changeRate: Double,
@@ -15,74 +23,51 @@ fun buildIndexChartPeriods(
 ): List<ChartPeriodSnapshot> {
     val today = LocalDate.now()
 
-    // 1D: 9:00 ~ 15:30 (13개 30분봉) 장중 시뮬레이션. 종가가 latest, 시가는 latest/(1+changeRate)
-    // seed 고정으로 하루 동안 일관된 모양. baseSeries 가 충분히 변동성 있으면 그걸 우선 사용.
-    val intradayCloses = buildIntradaySeries(latest, changeRate, baseSeries, today)
-    val dayLabels = intradayCloses.mapIndexed { index, _ ->
-        val totalMinutes = index * 30
-        val h = (9 + totalMinutes / 60).toString().padStart(2, '0')
-        val m = if (totalMinutes % 60 == 0) "00" else "30"
-        "$h:$m"
-    }
-    val dayPoints = buildChartPoints(dayLabels, intradayCloses, intradayCloses.firstOrNull() ?: latest)
-
-    // 1M: 20 거래일 역방향 랜덤워크 (seed = 날짜+가격대 고정 → 하루 동안 모양 일관)
-    val monthSeries = buildHistoricalSeries(latest, 20, dailyVolatility = 0.015, today)
-    val monthLabels = monthSeries.mapIndexed { index, _ ->
-        today.minusDays((monthSeries.lastIndex - index).toLong())
+    // ── 일봉: 30 거래일 ─────────────────────────────────────────────
+    val dailyCloses = pickRealOrSimulate(baseSeries, latest, today, size = 30, dailyVolatility = 0.012)
+    val dailyLabels = dailyCloses.mapIndexed { index, _ ->
+        today.minusDays((dailyCloses.lastIndex - index).toLong())
             .format(DateTimeFormatter.ofPattern("MM/dd"))
     }
-    val monthPoints = buildChartPoints(monthLabels, monthSeries, monthSeries.firstOrNull() ?: latest)
+    val dailyPoints = buildChartPoints(dailyLabels, dailyCloses, dailyCloses.firstOrNull() ?: latest)
 
-    // 1Y: 12개월 역방향 랜덤워크
-    val yearSeries = buildHistoricalSeries(latest, 12, dailyVolatility = 0.05, today)
-    val yearLabels = yearSeries.mapIndexed { index, _ ->
-        today.minusMonths((yearSeries.lastIndex - index).toLong())
+    // ── 주봉: 20 주 ────────────────────────────────────────────────
+    val weeklyCloses = buildHistoricalSeries(latest, size = 20, dailyVolatility = 0.025, today)
+    val weeklyLabels = weeklyCloses.mapIndexed { index, _ ->
+        today.minusWeeks((weeklyCloses.lastIndex - index).toLong())
+            .format(DateTimeFormatter.ofPattern("MM/dd"))
+    }
+    val weeklyPoints = buildChartPoints(weeklyLabels, weeklyCloses, weeklyCloses.firstOrNull() ?: latest)
+
+    // ── 월봉: 12 개월 ──────────────────────────────────────────────
+    val monthlyCloses = buildHistoricalSeries(latest, size = 12, dailyVolatility = 0.05, today)
+    val monthlyLabels = monthlyCloses.mapIndexed { index, _ ->
+        today.minusMonths((monthlyCloses.lastIndex - index).toLong())
             .format(DateTimeFormatter.ofPattern("yy/MM"))
     }
-    val yearPoints = buildChartPoints(yearLabels, yearSeries, yearSeries.firstOrNull() ?: latest)
+    val monthlyPoints = buildChartPoints(monthlyLabels, monthlyCloses, monthlyCloses.firstOrNull() ?: latest)
 
     return listOf(
-        ChartPeriodSnapshot("1D", "일별", dayPoints, buildIndexChartStats(dayPoints)),
-        ChartPeriodSnapshot("1M", "월별", monthPoints, buildIndexChartStats(monthPoints)),
-        ChartPeriodSnapshot("1Y", "연별", yearPoints, buildIndexChartStats(yearPoints, changeRate, latest)),
+        ChartPeriodSnapshot("D", "일봉", dailyPoints, buildIndexChartStats(dailyPoints)),
+        ChartPeriodSnapshot("W", "주봉", weeklyPoints, buildIndexChartStats(weeklyPoints)),
+        ChartPeriodSnapshot("M", "월봉", monthlyPoints, buildIndexChartStats(monthlyPoints, changeRate, latest)),
     )
 }
 
-/**
- * 13개의 30분봉 종가 시뮬레이션. 시가 → 종가 사이 자연스러운 노이즈를 실어 캔들 모양을 만듦.
- * - 끝점이 latest 가 되도록 보정
- * - 시작점은 latest / (1 + changeRate%) — 즉 어제 종가
- * - seed 고정 (날짜 + 가격대) 으로 하루 동안 모양 일관
- * - baseSeries 가 충분히 변동성 있으면(>= 0.2%) 실데이터 사용
- */
-private fun buildIntradaySeries(
-    latest: Double,
-    changeRate: Double,
+/** 실데이터가 충분(>= size 의 절반)하면 그걸 쓰고, 부족하면 시뮬레이션. */
+private fun pickRealOrSimulate(
     baseSeries: List<Double>,
+    latest: Double,
     today: LocalDate,
+    size: Int,
+    dailyVolatility: Double,
 ): List<Double> {
-    val slots = 13
-    val real = baseSeries.takeLast(slots)
-    if (real.size >= 4) {
+    val real = baseSeries.takeLast(size)
+    if (real.size >= size / 2) {
         val spread = (real.maxOrNull() ?: 0.0) - (real.minOrNull() ?: 0.0)
         if (spread >= latest * 0.002) return real
     }
-
-    // 어제 종가에서 latest 까지 직선 드리프트 + 가우시안 노이즈
-    val yesterdayClose = if (changeRate != 0.0) latest / (1.0 + changeRate / 100.0) else latest * 0.998
-    val seed = today.toEpochDay() * 1000L + (latest / 100).toLong()
-    val rng = Random(seed)
-    val volatility = latest * 0.0015   // 30분봉 변동성
-
-    val series = MutableList(slots) { idx ->
-        val t = idx.toDouble() / (slots - 1)
-        val drift = yesterdayClose + (latest - yesterdayClose) * t
-        drift + rng.nextGaussian() * volatility
-    }
-    series[0] = yesterdayClose
-    series[slots - 1] = latest
-    return series
+    return buildHistoricalSeries(latest, size, dailyVolatility, today)
 }
 
 /**

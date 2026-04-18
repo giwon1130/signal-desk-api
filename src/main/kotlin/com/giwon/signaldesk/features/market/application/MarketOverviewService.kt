@@ -54,12 +54,17 @@ class MarketOverviewService(
             snapshot.watchlist, snapshot.portfolio, snapshot.aiRecommendations,
         )
         val briefing = watchAlertService.buildBriefing(core.briefing, watchAlerts)
+        val news = getCachedNews().news
         return MarketSummaryResponse(
             generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
             marketSummary = core.marketSummary, alternativeSignals = core.alternativeSignals,
             watchAlerts = watchAlerts, marketSessions = core.marketSessions,
             briefing = briefing, sourceNotes = core.sourceNotes,
             workspaceCounts = enrichmentService.buildWorkspaceCounts(userId),
+            newsSentiments = listOf(
+                NewsSentimentBuilder.build("KR", news),
+                NewsSentimentBuilder.build("US", news),
+            ),
         )
     }
 

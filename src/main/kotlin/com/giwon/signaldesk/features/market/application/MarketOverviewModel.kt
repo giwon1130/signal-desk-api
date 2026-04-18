@@ -34,6 +34,25 @@ data class MarketSummaryResponse(
     val briefing: DailyBriefing,
     val sourceNotes: List<SourceNote>,
     val workspaceCounts: WorkspaceCounts,
+    val newsSentiments: List<NewsSentiment>,
+)
+
+data class NewsSentiment(
+    val market: String,            // "KR" / "US"
+    val score: Int,                // 0~100 (50=중립)
+    val label: String,             // 긍정 / 중립 / 부정
+    val rationale: String,
+    val positiveCount: Int,
+    val negativeCount: Int,
+    val neutralCount: Int,
+    val highlights: List<NewsHighlight>,
+)
+
+data class NewsHighlight(
+    val title: String,
+    val source: String,
+    val url: String,
+    val tone: String,              // 긍정 / 중립 / 부정
 )
 
 data class MarketSectionsResponse(
