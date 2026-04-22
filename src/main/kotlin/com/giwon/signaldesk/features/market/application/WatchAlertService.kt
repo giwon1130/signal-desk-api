@@ -106,24 +106,6 @@ class WatchAlertService {
             .take(6)
     }
 
-    fun buildBriefing(base: DailyBriefing, watchAlerts: List<WatchAlert>): DailyBriefing {
-        val topAlerts = watchAlerts.take(3)
-        val preMarketItems = topAlerts.take(2).map { alert ->
-            when (alert.category) {
-                "portfolio" -> "${alert.name}: 보유 ${alert.title} · ${alert.tags.joinToString(" / ")}"
-                "ai" -> "${alert.name}: AI 추천 정렬 확인 · ${alert.tags.joinToString(" / ")}"
-                else -> "${alert.name}: ${alert.title} · ${alert.tags.joinToString(" / ")}"
-            }
-        }
-        val afterMarketItems = topAlerts.drop(1).take(2).map { alert ->
-            "${alert.name}: 오늘 ${alertCategoryLabel(alert.category)} 신호가 실제 수익/손실과 연결됐는지 복기"
-        }
-        return base.copy(
-            preMarket = (preMarketItems + base.preMarket).distinct().take(5),
-            afterMarket = (afterMarketItems + base.afterMarket).distinct().take(5),
-        )
-    }
-
     private fun isRelatedNews(item: WatchItem, news: MarketNews): Boolean {
         val title = news.title.lowercase()
         return title.contains(item.name.lowercase()) || title.contains(item.ticker.lowercase())
@@ -149,10 +131,6 @@ class WatchAlertService {
         alert.category == "signal" -> 2
         alert.category == "portfolio" -> 1
         else -> 0
-    }
-
-    private fun alertCategoryLabel(category: String) = when (category) {
-        "portfolio" -> "보유"; "news" -> "뉴스"; "price" -> "가격"; "ai" -> "AI"; "signal" -> "실험"; else -> category
     }
 
     fun formatSignedRate(value: Double): String = if (value > 0) "+${"%.2f".format(value)}%" else "${"%.2f".format(value)}%"

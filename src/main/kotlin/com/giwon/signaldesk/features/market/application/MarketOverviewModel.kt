@@ -338,7 +338,28 @@ data class PaperTrade(
 data class DailyBriefing(
     val headline: String,
     val preMarket: List<String>,
-    val afterMarket: List<String>
+    val afterMarket: List<String>,
+    val narrative: String = "",
+    val slot: String = "INTRADAY",
+    val context: BriefingContext? = null,
+    val actionItems: List<BriefingAction> = emptyList(),
+)
+
+data class BriefingContext(
+    val holdingPnlLabel: String?,
+    val holdingPnlRate: Double?,
+    val watchlistAlertCount: Int,
+    val marketMood: String,
+    val keyEvent: String?,
+)
+
+data class BriefingAction(
+    val priority: String,
+    val category: String,
+    val title: String,
+    val detail: String,
+    val ticker: String?,
+    val market: String?,
 )
 
 data class SourceNote(

@@ -18,6 +18,7 @@ class MarketOverviewService(
     private val marketSessionService: MarketSessionService,
     private val alternativeSignalService: AlternativeSignalService,
     private val watchAlertService: WatchAlertService,
+    private val dailyBriefBuilder: DailyBriefBuilder,
     private val enrichmentService: WorkspaceEnrichmentService,
 ) {
     @Volatile private var cachedCore: CachedMarketCore? = null
@@ -34,7 +35,16 @@ class MarketOverviewService(
         val aiRecommendations = enrichmentService.getAiRecommendations(userId).aiRecommendations
         val paperTrading = enrichmentService.getPaperTrading(userId).paperTrading
         val watchAlerts = watchAlertService.buildWatchAlerts(core.alternativeSignals, news, watchlist, portfolio, aiRecommendations)
-        val briefing = watchAlertService.buildBriefing(core.briefing, watchAlerts)
+        val tradingDay = buildTradingDayStatus(core.marketSessions)
+        val briefing = dailyBriefBuilder.build(
+            base = core.briefing,
+            watchAlerts = watchAlerts,
+            portfolio = portfolio,
+            aiRecommendations = aiRecommendations,
+            marketSummary = core.marketSummary,
+            alternativeSignals = core.alternativeSignals,
+            tradingDay = tradingDay,
+        )
         return MarketOverviewResponse(
             generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
             marketSummary = core.marketSummary, alternativeSignals = core.alternativeSignals,
@@ -53,7 +63,16 @@ class MarketOverviewService(
             core.alternativeSignals, getCachedNews().news,
             snapshot.watchlist, snapshot.portfolio, snapshot.aiRecommendations,
         )
-        val briefing = watchAlertService.buildBriefing(core.briefing, watchAlerts)
+        val tradingDay = buildTradingDayStatus(core.marketSessions)
+        val briefing = dailyBriefBuilder.build(
+            base = core.briefing,
+            watchAlerts = watchAlerts,
+            portfolio = snapshot.portfolio,
+            aiRecommendations = snapshot.aiRecommendations,
+            marketSummary = core.marketSummary,
+            alternativeSignals = core.alternativeSignals,
+            tradingDay = tradingDay,
+        )
         val news = getCachedNews().news
         return MarketSummaryResponse(
             generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
@@ -65,7 +84,7 @@ class MarketOverviewService(
                 NewsSentimentBuilder.build("KR", news),
                 NewsSentimentBuilder.build("US", news),
             ),
-            tradingDayStatus = buildTradingDayStatus(core.marketSessions),
+            tradingDayStatus = tradingDay,
         )
     }
 
