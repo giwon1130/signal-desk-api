@@ -263,6 +263,17 @@ data class AIRecommendationSection(
     val picks: List<RecommendationPick>,
     val trackRecords: List<RecommendationTrackRecord>,
     val executionLogs: List<RecommendationExecutionLog>,
+    val metrics: RecommendationMetrics? = null,
+)
+
+data class RecommendationMetrics(
+    val windowDays: Int,         // 집계 윈도우 (기본 30)
+    val totalCount: Int,         // 윈도우 내 종결(실현수익률 존재) 기록 수
+    val successCount: Int,       // 성공 기록 수
+    val hitRate: Double,         // 0.0~1.0
+    val averageReturnRate: Double, // 평균 실현 수익률 %
+    val bestReturnRate: Double,   // 최고 실현 수익률 %
+    val worstReturnRate: Double,  // 최저 실현 수익률 %
 )
 
 data class RecommendationPick(
@@ -276,6 +287,8 @@ data class RecommendationPick(
     val source: String = "BASE",
     val id: String = "",
     val userStatus: String = "NEW",
+    val newsUrl: String? = null,
+    val newsTitle: String? = null,
 )
 
 data class RecommendationTrackRecord(
@@ -304,6 +317,8 @@ data class RecommendationExecutionLog(
     val realizedReturnRate: Double?,
     val source: String = "BASE",
     val userStatus: String = "NEW",
+    val newsUrl: String? = null,
+    val newsTitle: String? = null,
 )
 
 data class PaperTradingSummary(

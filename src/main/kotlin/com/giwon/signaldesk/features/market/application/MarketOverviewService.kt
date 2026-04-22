@@ -20,6 +20,7 @@ class MarketOverviewService(
     private val watchAlertService: WatchAlertService,
     private val dailyBriefBuilder: DailyBriefBuilder,
     private val personalContextAnnotator: PersonalContextAnnotator,
+    private val recommendationMetricsCalculator: RecommendationMetricsCalculator,
     private val enrichmentService: WorkspaceEnrichmentService,
 ) {
     @Volatile private var cachedCore: CachedMarketCore? = null
@@ -35,7 +36,12 @@ class MarketOverviewService(
         val portfolio = enrichmentService.getPortfolio(userId).portfolio
         val aiRecommendationsRaw = enrichmentService.getAiRecommendations(userId).aiRecommendations
         val paperTrading = enrichmentService.getPaperTrading(userId).paperTrading
-        val aiRecommendations = personalContextAnnotator.annotateRecommendations(aiRecommendationsRaw, watchlist, portfolio)
+        val annotatedAi = personalContextAnnotator.annotateRecommendations(aiRecommendationsRaw, watchlist, portfolio)
+        val aiRecommendations = annotatedAi.copy(
+            picks = attachNewsLinks(annotatedAi.picks, news),
+            executionLogs = attachNewsLinksToLogs(annotatedAi.executionLogs, news),
+            metrics = recommendationMetricsCalculator.compute(annotatedAi.trackRecords),
+        )
         val alternativeSignals = personalContextAnnotator.annotateAlternativeSignals(core.alternativeSignals, watchlist, portfolio)
         val watchAlerts = watchAlertService.buildWatchAlerts(alternativeSignals, news, watchlist, portfolio, aiRecommendations)
         val tradingDay = buildTradingDayStatus(core.marketSessions)
@@ -62,8 +68,14 @@ class MarketOverviewService(
         val core = getCoreSnapshot()
         val quotes = enrichmentService.loadKoreanQuotes(userId)
         val snapshot = enrichmentService.buildWorkspaceSnapshot(quotes, userId)
-        val aiRecommendations = personalContextAnnotator.annotateRecommendations(
+        val annotatedAi = personalContextAnnotator.annotateRecommendations(
             snapshot.aiRecommendations, snapshot.watchlist, snapshot.portfolio,
+        )
+        val summaryNews = getCachedNews().news
+        val aiRecommendations = annotatedAi.copy(
+            picks = attachNewsLinks(annotatedAi.picks, summaryNews),
+            executionLogs = attachNewsLinksToLogs(annotatedAi.executionLogs, summaryNews),
+            metrics = recommendationMetricsCalculator.compute(annotatedAi.trackRecords),
         )
         val alternativeSignals = personalContextAnnotator.annotateAlternativeSignals(
             core.alternativeSignals, snapshot.watchlist, snapshot.portfolio,
@@ -368,5 +380,34 @@ class MarketOverviewService(
     private fun buildFlowBiasState(koreaMarket: MarketSection): String {
         val topFlow = koreaMarket.investorFlows.maxByOrNull { kotlin.math.abs(it.amountBillionWon) }
         return topFlow?.let { "${it.investor} ${if (it.positive) "우위" else "매도 우위"}" } ?: "수급 중립"
+    }
+
+    // ─── News Linking ───────────────────────────────────────────────────────
+    // 추천 근거를 뉴스 헤드라인으로 뒷받침: name 이 제목에 포함되는 첫 뉴스 URL 을 붙인다.
+    // 매칭 실패하면 null — UI 는 링크를 감춘다.
+
+    private fun attachNewsLinks(picks: List<RecommendationPick>, news: List<MarketNews>): List<RecommendationPick> {
+        if (news.isEmpty()) return picks
+        return picks.map { p ->
+            val match = findNewsMatch(p.market, p.name, p.ticker, news)
+            if (match == null) p else p.copy(newsUrl = match.url, newsTitle = match.title)
+        }
+    }
+
+    private fun attachNewsLinksToLogs(logs: List<RecommendationExecutionLog>, news: List<MarketNews>): List<RecommendationExecutionLog> {
+        if (news.isEmpty()) return logs
+        return logs.map { l ->
+            val match = findNewsMatch(l.market, l.name, l.ticker, news)
+            if (match == null) l else l.copy(newsUrl = match.url, newsTitle = match.title)
+        }
+    }
+
+    private fun findNewsMatch(market: String, name: String, ticker: String, news: List<MarketNews>): MarketNews? {
+        val scoped = news.filter { it.market == market }.ifEmpty { news }
+        return scoped.firstOrNull {
+            name.isNotBlank() && it.title.contains(name, ignoreCase = true)
+        } ?: scoped.firstOrNull {
+            ticker.isNotBlank() && it.title.contains(ticker, ignoreCase = true)
+        }
     }
 }
