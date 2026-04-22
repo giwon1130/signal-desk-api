@@ -19,6 +19,7 @@ class MarketOverviewService(
     private val alternativeSignalService: AlternativeSignalService,
     private val watchAlertService: WatchAlertService,
     private val dailyBriefBuilder: DailyBriefBuilder,
+    private val personalContextAnnotator: PersonalContextAnnotator,
     private val enrichmentService: WorkspaceEnrichmentService,
 ) {
     @Volatile private var cachedCore: CachedMarketCore? = null
@@ -32,9 +33,11 @@ class MarketOverviewService(
         val news = getNewsFeed().news
         val watchlist = enrichmentService.getWatchlist(userId).watchlist
         val portfolio = enrichmentService.getPortfolio(userId).portfolio
-        val aiRecommendations = enrichmentService.getAiRecommendations(userId).aiRecommendations
+        val aiRecommendationsRaw = enrichmentService.getAiRecommendations(userId).aiRecommendations
         val paperTrading = enrichmentService.getPaperTrading(userId).paperTrading
-        val watchAlerts = watchAlertService.buildWatchAlerts(core.alternativeSignals, news, watchlist, portfolio, aiRecommendations)
+        val aiRecommendations = personalContextAnnotator.annotateRecommendations(aiRecommendationsRaw, watchlist, portfolio)
+        val alternativeSignals = personalContextAnnotator.annotateAlternativeSignals(core.alternativeSignals, watchlist, portfolio)
+        val watchAlerts = watchAlertService.buildWatchAlerts(alternativeSignals, news, watchlist, portfolio, aiRecommendations)
         val tradingDay = buildTradingDayStatus(core.marketSessions)
         val briefing = dailyBriefBuilder.build(
             base = core.briefing,
@@ -42,12 +45,12 @@ class MarketOverviewService(
             portfolio = portfolio,
             aiRecommendations = aiRecommendations,
             marketSummary = core.marketSummary,
-            alternativeSignals = core.alternativeSignals,
+            alternativeSignals = alternativeSignals,
             tradingDay = tradingDay,
         )
         return MarketOverviewResponse(
             generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
-            marketSummary = core.marketSummary, alternativeSignals = core.alternativeSignals,
+            marketSummary = core.marketSummary, alternativeSignals = alternativeSignals,
             watchAlerts = watchAlerts, marketSessions = core.marketSessions,
             koreaMarket = core.koreaMarket, usMarket = core.usMarket, news = news,
             watchlist = watchlist, portfolio = portfolio, aiRecommendations = aiRecommendations,
@@ -59,24 +62,30 @@ class MarketOverviewService(
         val core = getCoreSnapshot()
         val quotes = enrichmentService.loadKoreanQuotes(userId)
         val snapshot = enrichmentService.buildWorkspaceSnapshot(quotes, userId)
+        val aiRecommendations = personalContextAnnotator.annotateRecommendations(
+            snapshot.aiRecommendations, snapshot.watchlist, snapshot.portfolio,
+        )
+        val alternativeSignals = personalContextAnnotator.annotateAlternativeSignals(
+            core.alternativeSignals, snapshot.watchlist, snapshot.portfolio,
+        )
         val watchAlerts = watchAlertService.buildWatchAlerts(
-            core.alternativeSignals, getCachedNews().news,
-            snapshot.watchlist, snapshot.portfolio, snapshot.aiRecommendations,
+            alternativeSignals, getCachedNews().news,
+            snapshot.watchlist, snapshot.portfolio, aiRecommendations,
         )
         val tradingDay = buildTradingDayStatus(core.marketSessions)
         val briefing = dailyBriefBuilder.build(
             base = core.briefing,
             watchAlerts = watchAlerts,
             portfolio = snapshot.portfolio,
-            aiRecommendations = snapshot.aiRecommendations,
+            aiRecommendations = aiRecommendations,
             marketSummary = core.marketSummary,
-            alternativeSignals = core.alternativeSignals,
+            alternativeSignals = alternativeSignals,
             tradingDay = tradingDay,
         )
         val news = getCachedNews().news
         return MarketSummaryResponse(
             generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
-            marketSummary = core.marketSummary, alternativeSignals = core.alternativeSignals,
+            marketSummary = core.marketSummary, alternativeSignals = alternativeSignals,
             watchAlerts = watchAlerts, marketSessions = core.marketSessions,
             briefing = briefing, sourceNotes = core.sourceNotes,
             workspaceCounts = enrichmentService.buildWorkspaceCounts(userId),

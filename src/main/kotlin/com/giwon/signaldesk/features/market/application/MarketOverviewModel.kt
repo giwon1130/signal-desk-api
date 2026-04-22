@@ -136,6 +136,7 @@ data class AlternativeSignal(
     val experimental: Boolean,
     val description: String = "",   // 지표가 무엇인지/어떤 데이터 기반인지 설명 (모달용)
     val methodology: String = "",   // 점수를 어떻게 계산하는지
+    val personalImpact: String? = null,  // 내 관심/보유 종목과 연결된 한 줄 해석
 )
 
 data class MarketSessionStatus(
@@ -274,6 +275,7 @@ data class RecommendationPick(
     val expectedReturnRate: Double,
     val source: String = "BASE",
     val id: String = "",
+    val userStatus: String = "NEW",
 )
 
 data class RecommendationTrackRecord(
@@ -301,6 +303,7 @@ data class RecommendationExecutionLog(
     val expectedReturnRate: Double?,
     val realizedReturnRate: Double?,
     val source: String = "BASE",
+    val userStatus: String = "NEW",
 )
 
 data class PaperTradingSummary(
