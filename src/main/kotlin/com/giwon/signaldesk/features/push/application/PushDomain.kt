@@ -19,6 +19,16 @@ data class AlertLogEntry(
     val date: LocalDate,
 )
 
+data class AlertHistoryItem(
+    val market: String,
+    val ticker: String,
+    val name: String,
+    val direction: AlertDirection,
+    val changeRate: Double,
+    val alertDate: String,
+    val sentAt: String,
+)
+
 data class AlertCandidate(
     val userId: UUID,
     val ticker: String,

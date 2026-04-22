@@ -66,17 +66,43 @@ class JdbcPushRepository(
             java.sql.Date.valueOf(date),
         ).toSet()
 
-    override fun recordAlert(userId: UUID, ticker: String, direction: AlertDirection, date: LocalDate, changeRate: Double) {
+    override fun recordAlert(
+        userId: UUID, market: String, ticker: String, name: String,
+        direction: AlertDirection, date: LocalDate, changeRate: Double,
+    ) {
         jdbcTemplate.update(
             """
-            insert into signal_desk_push_alert_log (id, user_id, ticker, direction, alert_date, change_rate)
-            values (?::uuid, ?::uuid, ?, ?, ?, ?)
+            insert into signal_desk_push_alert_log (id, user_id, market, ticker, name, direction, alert_date, change_rate)
+            values (?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?)
             on conflict (user_id, ticker, direction, alert_date) do nothing
             """.trimIndent(),
-            UUID.randomUUID().toString(), userId.toString(), ticker, direction.name,
+            UUID.randomUUID().toString(), userId.toString(), market, ticker, name, direction.name,
             java.sql.Date.valueOf(date), changeRate,
         )
     }
+
+    override fun listAlertHistory(userId: UUID, limit: Int): List<AlertHistoryItem> =
+        jdbcTemplate.query(
+            """
+            select market, ticker, name, direction, change_rate, alert_date, sent_at
+            from signal_desk_push_alert_log
+            where user_id = ?::uuid
+            order by sent_at desc
+            limit ?
+            """.trimIndent(),
+            { rs, _ ->
+                AlertHistoryItem(
+                    market = rs.getString("market") ?: "",
+                    ticker = rs.getString("ticker"),
+                    name = rs.getString("name") ?: rs.getString("ticker"),
+                    direction = AlertDirection.valueOf(rs.getString("direction")),
+                    changeRate = rs.getDouble("change_rate"),
+                    alertDate = rs.getDate("alert_date").toString(),
+                    sentAt = rs.getTimestamp("sent_at").toInstant().toString(),
+                )
+            },
+            userId.toString(), limit,
+        )
 
     private val deviceRowMapper = { rs: ResultSet, _: Int ->
         PushDevice(

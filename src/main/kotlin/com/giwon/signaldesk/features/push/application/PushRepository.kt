@@ -10,5 +10,9 @@ interface PushRepository {
     fun listAllDevicesGroupedByUser(): Map<UUID, List<PushDevice>>
 
     fun loadRecentAlertLog(date: LocalDate): Set<AlertLogEntry>
-    fun recordAlert(userId: UUID, ticker: String, direction: AlertDirection, date: LocalDate, changeRate: Double)
+    fun recordAlert(
+        userId: UUID, market: String, ticker: String, name: String,
+        direction: AlertDirection, date: LocalDate, changeRate: Double,
+    )
+    fun listAlertHistory(userId: UUID, limit: Int): List<AlertHistoryItem>
 }

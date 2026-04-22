@@ -59,7 +59,7 @@ class WatchlistAlertService(
         }
         expoPushClient.send(messages)
         candidates.forEach { c ->
-            pushRepository.recordAlert(c.userId, c.ticker, c.direction, today, c.changeRate)
+            pushRepository.recordAlert(c.userId, c.market, c.ticker, c.name, c.direction, today, c.changeRate)
         }
         log.info("Watchlist alert dispatched. candidates={}, messages={}", candidates.size, messages.size)
     }
