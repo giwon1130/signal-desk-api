@@ -21,6 +21,7 @@ class MarketOverviewService(
     private val dailyBriefBuilder: DailyBriefBuilder,
     private val personalContextAnnotator: PersonalContextAnnotator,
     private val recommendationMetricsCalculator: RecommendationMetricsCalculator,
+    private val pickNewsMatcher: PickNewsMatcher,
     private val enrichmentService: WorkspaceEnrichmentService,
 ) {
     @Volatile private var cachedCore: CachedMarketCore? = null
@@ -389,7 +390,7 @@ class MarketOverviewService(
     private fun attachNewsLinks(picks: List<RecommendationPick>, news: List<MarketNews>): List<RecommendationPick> {
         if (news.isEmpty()) return picks
         return picks.map { p ->
-            val match = findNewsMatch(p.market, p.name, p.ticker, news)
+            val match = pickNewsMatcher.findMatch(p.market, p.name, p.ticker, news)
             if (match == null) p else p.copy(newsUrl = match.url, newsTitle = match.title)
         }
     }
@@ -397,17 +398,8 @@ class MarketOverviewService(
     private fun attachNewsLinksToLogs(logs: List<RecommendationExecutionLog>, news: List<MarketNews>): List<RecommendationExecutionLog> {
         if (news.isEmpty()) return logs
         return logs.map { l ->
-            val match = findNewsMatch(l.market, l.name, l.ticker, news)
+            val match = pickNewsMatcher.findMatch(l.market, l.name, l.ticker, news)
             if (match == null) l else l.copy(newsUrl = match.url, newsTitle = match.title)
-        }
-    }
-
-    private fun findNewsMatch(market: String, name: String, ticker: String, news: List<MarketNews>): MarketNews? {
-        val scoped = news.filter { it.market == market }.ifEmpty { news }
-        return scoped.firstOrNull {
-            name.isNotBlank() && it.title.contains(name, ignoreCase = true)
-        } ?: scoped.firstOrNull {
-            ticker.isNotBlank() && it.title.contains(ticker, ignoreCase = true)
         }
     }
 }
