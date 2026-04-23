@@ -15,6 +15,7 @@ import java.time.Duration
 @Component
 class KrxOfficialClient(
     private val objectMapper: ObjectMapper,
+    private val naverIndexChartClient: NaverIndexChartClient,
     @Value("\${signal-desk.integrations.krx.enabled:true}") private val enabled: Boolean,
     @Value("\${signal-desk.integrations.krx.base-url:https://data.krx.co.kr}") private val baseUrl: String,
 ) {
@@ -59,26 +60,34 @@ class KrxOfficialClient(
                 title = "한국 시장",
                 indices = listOfNotNull(
                     kospi?.let { index ->
+                        val latest = parseNumber(index["PRSNT_IDX"].asText())
+                        val changeRate = parseNumber(index["IDX_FLUC_RT"].asText())
                         IndexMetric(
                             label = "KOSPI",
-                            value = parseNumber(index["PRSNT_IDX"].asText()),
-                            changeRate = parseNumber(index["IDX_FLUC_RT"].asText()),
-                            periods = buildIndexChartPeriods(
-                                latest = parseNumber(index["PRSNT_IDX"].asText()),
-                                changeRate = parseNumber(index["IDX_FLUC_RT"].asText()),
-                                baseSeries = fetchChart(index["IND_TP_CD"].asText(), index["IDX_IND_CD"].asText())
+                            value = latest,
+                            changeRate = changeRate,
+                            periods = buildIndexChartPeriodsFromOhlc(
+                                latest = latest,
+                                changeRate = changeRate,
+                                dailyCandles = naverIndexChartClient.fetchOhlc("KOSPI", NaverIndexChartClient.PeriodType.DAILY, 30),
+                                weeklyCandles = naverIndexChartClient.fetchOhlc("KOSPI", NaverIndexChartClient.PeriodType.WEEKLY, 20),
+                                monthlyCandles = naverIndexChartClient.fetchOhlc("KOSPI", NaverIndexChartClient.PeriodType.MONTHLY, 12),
                             )
                         )
                     },
                     kosdaq?.let { index ->
+                        val latest = parseNumber(index["PRSNT_IDX"].asText())
+                        val changeRate = parseNumber(index["IDX_FLUC_RT"].asText())
                         IndexMetric(
                             label = "KOSDAQ",
-                            value = parseNumber(index["PRSNT_IDX"].asText()),
-                            changeRate = parseNumber(index["IDX_FLUC_RT"].asText()),
-                            periods = buildIndexChartPeriods(
-                                latest = parseNumber(index["PRSNT_IDX"].asText()),
-                                changeRate = parseNumber(index["IDX_FLUC_RT"].asText()),
-                                baseSeries = fetchChart(index["IND_TP_CD"].asText(), index["IDX_IND_CD"].asText())
+                            value = latest,
+                            changeRate = changeRate,
+                            periods = buildIndexChartPeriodsFromOhlc(
+                                latest = latest,
+                                changeRate = changeRate,
+                                dailyCandles = naverIndexChartClient.fetchOhlc("KOSDAQ", NaverIndexChartClient.PeriodType.DAILY, 30),
+                                weeklyCandles = naverIndexChartClient.fetchOhlc("KOSDAQ", NaverIndexChartClient.PeriodType.WEEKLY, 20),
+                                monthlyCandles = naverIndexChartClient.fetchOhlc("KOSDAQ", NaverIndexChartClient.PeriodType.MONTHLY, 12),
                             )
                         )
                     }

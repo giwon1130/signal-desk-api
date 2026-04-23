@@ -9,6 +9,90 @@ import kotlin.math.min
 import kotlin.math.roundToLong
 
 /**
+ * 실 OHLC 캔들 데이터로부터 차트 시리즈를 만든다.
+ * - dailyCandles/weeklyCandles/monthlyCandles 가 비어있으면 시뮬레이션으로 폴백
+ * - latest/changeRate 는 실시간 시세이므로 마지막 캔들의 close 를 latest로 보정
+ */
+fun buildIndexChartPeriodsFromOhlc(
+    latest: Double,
+    changeRate: Double,
+    dailyCandles: List<IndexCandle>,
+    weeklyCandles: List<IndexCandle>,
+    monthlyCandles: List<IndexCandle>,
+): List<ChartPeriodSnapshot> {
+    val today = LocalDate.now()
+
+    val dailyPoints = if (dailyCandles.isNotEmpty()) {
+        candlesToPoints(dailyCandles.takeLast(30), latest, "MM/dd")
+    } else {
+        // 폴백: 시뮬레이션
+        val closes = buildHistoricalSeries(latest, 30, 0.012, today)
+        val labels = closes.mapIndexed { i, _ ->
+            today.minusDays((closes.lastIndex - i).toLong()).format(DateTimeFormatter.ofPattern("MM/dd"))
+        }
+        buildChartPoints(labels, closes, closes.firstOrNull() ?: latest)
+    }
+
+    val weeklyPoints = if (weeklyCandles.isNotEmpty()) {
+        candlesToPoints(weeklyCandles.takeLast(20), latest, "MM/dd")
+    } else {
+        val closes = buildHistoricalSeries(latest, 20, 0.025, today)
+        val labels = closes.mapIndexed { i, _ ->
+            today.minusWeeks((closes.lastIndex - i).toLong()).format(DateTimeFormatter.ofPattern("MM/dd"))
+        }
+        buildChartPoints(labels, closes, closes.firstOrNull() ?: latest)
+    }
+
+    val monthlyPoints = if (monthlyCandles.isNotEmpty()) {
+        candlesToPoints(monthlyCandles.takeLast(12), latest, "yy/MM")
+    } else {
+        val closes = buildHistoricalSeries(latest, 12, 0.05, today)
+        val labels = closes.mapIndexed { i, _ ->
+            today.minusMonths((closes.lastIndex - i).toLong()).format(DateTimeFormatter.ofPattern("yy/MM"))
+        }
+        buildChartPoints(labels, closes, closes.firstOrNull() ?: latest)
+    }
+
+    return listOf(
+        ChartPeriodSnapshot("D", "일봉", dailyPoints, buildIndexChartStats(dailyPoints)),
+        ChartPeriodSnapshot("W", "주봉", weeklyPoints, buildIndexChartStats(weeklyPoints)),
+        ChartPeriodSnapshot("M", "월봉", monthlyPoints, buildIndexChartStats(monthlyPoints, changeRate, latest)),
+    )
+}
+
+/** 실 OHLC 캔들 → ChartPoint. 마지막 캔들의 close는 latest로 보정해서 실시간 시세와 일치시킨다. */
+private fun candlesToPoints(
+    candles: List<IndexCandle>,
+    latest: Double,
+    labelPattern: String,
+): List<ChartPoint> {
+    if (candles.isEmpty()) return emptyList()
+    val formatter = DateTimeFormatter.ofPattern(labelPattern)
+    val srcFormatter = DateTimeFormatter.ofPattern("yyyyMMdd")
+
+    return candles.mapIndexed { idx, candle ->
+        val isLast = idx == candles.lastIndex
+        // 마지막 캔들은 실시간 시세로 close 보정. high/low도 latest 가 벗어나면 확장.
+        val close = if (isLast) latest else candle.close
+        val high = if (isLast) max(candle.high, latest) else candle.high
+        val low = if (isLast) min(candle.low, latest) else candle.low
+        val label = runCatching {
+            LocalDate.parse(candle.date, srcFormatter).format(formatter)
+        }.getOrDefault(candle.date)
+
+        ChartPoint(
+            label = label,
+            value = close,
+            open = candle.open,
+            high = high,
+            low = low,
+            close = close,
+            volume = candle.volume,
+        )
+    }
+}
+
+/**
  * 일봉(D) / 주봉(W) / 월봉(M) 세 가지 캔들 시리즈를 생성한다.
  * - 캔들 1개 = 정확히 1일/1주/1개월 OHLC
  * - 끝점이 latest 가 되도록 보정 (오늘 = 현재가)
