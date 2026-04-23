@@ -1,12 +1,29 @@
 server:
   # Railway injects PORT; fall back to SERVER_PORT then 8091
   port: ${PORT:${SERVER_PORT:8091}}
+  tomcat:
+    threads:
+      max: 50            # default 200 → 본인 트래픽엔 과함, 메모리 절감
+      min-spare: 5
+    accept-count: 50
 
 spring:
   application:
     name: signal-desk-api
   flyway:
     enabled: false  # Flyway는 SignalDeskJdbcConfig에서 직접 실행 (jdbc 모드일 때만)
+  datasource:
+    hikari:
+      maximum-pool-size: 5      # default 10 → 본인 트래픽엔 5로 충분
+      minimum-idle: 1
+      connection-timeout: 5000
+      idle-timeout: 300000
+
+logging:
+  level:
+    # quote fetch 로그가 분당 10+회 INFO로 찍혀서 사용량/가독성 모두 안 좋음
+    com.giwon.signaldesk.features.market.application.NaverFinanceQuoteClient: WARN
+    com.giwon.signaldesk.features.realtime.PriceTickerHandler: WARN
 
 signal-desk:
   store:

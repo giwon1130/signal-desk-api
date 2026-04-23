@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service
 import com.giwon.signaldesk.features.workspace.application.JdbcStoreCondition
 import java.net.URI
 import java.net.http.HttpClient
+import java.time.Duration
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 
@@ -87,6 +88,7 @@ class AuthService(
     private fun verifyGoogleToken(idToken: String): GoogleUserInfo? = runCatching {
         val req = HttpRequest.newBuilder()
             .uri(URI.create("https://oauth2.googleapis.com/tokeninfo?id_token=$idToken"))
+            .timeout(Duration.ofSeconds(5))
             .GET().build()
         val res = http.send(req, HttpResponse.BodyHandlers.ofString())
         if (res.statusCode() != 200) return null
@@ -102,6 +104,7 @@ class AuthService(
         val req = HttpRequest.newBuilder()
             .uri(URI.create("https://kapi.kakao.com/v2/user/me"))
             .header("Authorization", "Bearer $accessToken")
+            .timeout(Duration.ofSeconds(5))
             .GET().build()
         val res = http.send(req, HttpResponse.BodyHandlers.ofString())
         if (res.statusCode() != 200) return null
