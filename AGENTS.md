@@ -146,7 +146,15 @@ PostgreSQL은 Railway 프로젝트에 PostgreSQL 플러그인을 어태치하면
 - 신규 가입 시 `userRepo.saveOAuthUser` 호출 → `users` 테이블에 `google_id`/`kakao_id` 컬럼만 채우고 `password_hash`는 NULL.
 - 같은 이메일로 일반 가입한 유저가 OAuth로 다시 들어오면 자동으로 `linkGoogleId` / `linkKakaoId`로 묶는다.
 
-## 작업 규약
+## 개발 워크플로 (에이전트가 따를 절차)
+
+다른 PC에서도 작업하기 때문에 항상 원격지 최신화부터 시작한다.
+
+1. **요구사항 받으면 먼저 `git pull`** — origin/main 기준으로 최신화. 충돌나면 사용자에게 알리고 멈춤.
+2. **작업 진행** — 코드 수정.
+3. **검증** — 변경 범위에 맞는 컴파일/테스트 (`./gradlew compileKotlin` 또는 `./gradlew test`).
+4. **커밋 + 푸시** — `git push origin <branch>:main`이 막히면 feature 브랜치로 푸시 + PR 링크 안내.
+5. **Railway 자동 빌드** — main에 머지/푸시되면 Railway가 자동으로 컨테이너 빌드 + 재배포. 별도 `railway up` 명령은 필요 없음. 빌드 상태 확인이 필요하면 `railway logs --service signal-desk-api`.
 
 ## 작업 규약 (개발)
 
