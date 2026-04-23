@@ -13,10 +13,23 @@ import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 네이버 모바일 종목 검색 (KOSPI/KOSDAQ 전종목 + 미국주식 일부).
+ * 네이버 종목 자동완성 검색.
  *
- * 정적 레지스트리(StockSearchService)에서 못 찾은 키워드를 fallback 으로 처리한다.
- * 결과는 in-memory 캐시 (TTL 10분).
+ * 엔드포인트: https://ac.stock.naver.com/ac?q={query}&target=stock
+ *
+ * 응답 예:
+ *  {
+ *    "query": "삼성",
+ *    "items": [
+ *      {"code":"005930","name":"삼성전자","typeCode":"KOSPI","typeName":"코스피",
+ *       "reutersCode":"005930","nationCode":"KOR","nationName":"대한민국","category":"stock"},
+ *      {"code":"AAPL","name":"애플","typeCode":"NASDAQ","typeName":"나스닥 증권거래소",
+ *       "reutersCode":"AAPL.O","nationCode":"USA","nationName":"미국","category":"stock"}
+ *    ]
+ *  }
+ *
+ * KOR/USA 종목만 필터링한다(JPN/CHN/EUR 제외). 정적 레지스트리(StockSearchService)에서 못 찾은
+ * 키워드를 fallback 으로 처리하며, 결과는 in-memory 캐시 (TTL 10분).
  */
 @Component
 class NaverStockSearchClient(private val mapper: ObjectMapper) {
@@ -35,52 +48,49 @@ class NaverStockSearchClient(private val mapper: ObjectMapper) {
         val now = System.currentTimeMillis()
         cache[key]?.let { if (it.expiresAt > now) return it.results.take(limit) }
 
-        val results = runCatching { fetchRemote(key, limit) }.getOrElse {
+        val results = runCatching { fetchRemote(key) }.getOrElse {
             log.warn("Naver stock search failed for '{}': {}", key, it.message)
             emptyList()
         }
         cache[key] = CacheEntry(results, now + ttlMs)
-        return results
+        return results.take(limit)
     }
 
-    private fun fetchRemote(query: String, limit: Int): List<StockSearchResult> {
+    private fun fetchRemote(query: String): List<StockSearchResult> {
         val encoded = URLEncoder.encode(query, StandardCharsets.UTF_8)
-        val url = "https://m.stock.naver.com/api/search/total?query=$encoded&searchSection=stock&pageSize=$limit"
+        val url = "https://ac.stock.naver.com/ac?q=$encoded&target=stock"
         val req = HttpRequest.newBuilder()
             .uri(URI.create(url))
             .timeout(Duration.ofSeconds(4))
             .header("User-Agent", "Mozilla/5.0")
-            .header("Referer", "https://m.stock.naver.com/")
             .GET().build()
 
         val res = http.send(req, HttpResponse.BodyHandlers.ofString())
         if (res.statusCode() != 200) return emptyList()
 
         val root = mapper.readTree(res.body())
-        // 응답 구조 (변경 가능): { "stocks": { "items": [ { "itemCode", "stockName", "nationCode", ... } ] } }
-        val items = root.path("stocks").path("items")
+        val items = root.path("items")
         if (!items.isArray) return emptyList()
 
         return items.mapNotNull { node ->
-            val ticker = node.path("itemCode").asText().ifBlank { null } ?: return@mapNotNull null
-            val name   = node.path("stockName").asText().ifBlank { null } ?: return@mapNotNull null
+            val ticker = node.path("code").asText().ifBlank { null } ?: return@mapNotNull null
+            val name   = node.path("name").asText().ifBlank { null } ?: return@mapNotNull null
             val nation = node.path("nationCode").asText().ifBlank { "KOR" }
-            val market = if (nation.equals("USA", ignoreCase = true)) "US" else "KR"
-
-            // 가격/등락 정보가 있으면 사용, 없으면 0
-            val price = node.path("closePrice").asText("0")
-                .replace(",", "").toDoubleOrNull()?.toInt() ?: 0
-            val changeRate = node.path("fluctuationsRatio").asText("0")
-                .replace(",", "").toDoubleOrNull() ?: 0.0
-            val sector = node.path("industryName").asText("").ifBlank { "기타" }
+            val market = when {
+                nation.equals("KOR", ignoreCase = true) -> "KR"
+                nation.equals("USA", ignoreCase = true) -> "US"
+                else -> return@mapNotNull null   // JPN/CHN/EUR 등은 일단 제외
+            }
+            // 자동완성 응답에는 typeCode(KOSPI/NASDAQ 등)만 있고 섹터는 없다.
+            val sector = node.path("typeCode").asText("기타")
 
             StockSearchResult(
                 ticker     = ticker,
                 name       = name,
                 market     = market,
                 sector     = sector,
-                price      = price,
-                changeRate = changeRate,
+                price      = 0,            // 가격은 StockSearchService에서 enrich
+                changeRate = 0.0,
                 stance     = "동적 검색 결과",
             )
         }

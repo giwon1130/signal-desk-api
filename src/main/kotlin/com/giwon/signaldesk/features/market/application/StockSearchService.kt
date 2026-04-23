@@ -106,8 +106,9 @@ class StockSearchService(
             }
         }
 
-        // 정적 결과가 부족하면 Naver 동적 검색으로 보강
-        val dynamicMatched = if (keyword.isNotBlank() && staticMatched.size < limit) {
+        // 키워드가 있으면 항상 Naver 동적 검색으로 보강 → 정적 풀 밖의 종목도 다 잡힌다.
+        // 정적 결과가 우선순위(큐레이션된 stance/sector 보존), 그 뒤에 동적 결과 합침.
+        val dynamicMatched = if (keyword.isNotBlank()) {
             val seen = staticMatched.map { "${it.market}:${it.ticker}" }.toMutableSet()
             naverSearchClient.search(keyword, limit).filter { extra ->
                 val key = "${extra.market}:${extra.ticker}"
