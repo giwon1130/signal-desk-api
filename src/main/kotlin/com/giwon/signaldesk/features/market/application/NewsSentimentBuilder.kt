@@ -33,7 +33,11 @@ object NewsSentimentBuilder {
             score <= 40 -> "부정"
             else        -> "중립"
         }
-        val highlights = classified.take(5).map { (n, tone) ->
+        // 하이라이트는 tone 이 긍정/부정인 기사를 먼저 올리고, 모자라면 중립으로 채운다.
+        // (중립 헤드라인만 5개 노출되면 왜 이 sentiment 가 나왔는지 근거가 안 보임)
+        val tonedFirst = classified
+            .sortedByDescending { (_, tone) -> if (tone != 0) 1 else 0 }
+        val highlights = tonedFirst.take(8).map { (n, tone) ->
             NewsHighlight(
                 title = n.title,
                 source = n.source,
