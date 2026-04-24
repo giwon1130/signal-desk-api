@@ -9,6 +9,8 @@ import com.giwon.signaldesk.features.market.application.NewsFeedResponse
 import com.giwon.signaldesk.features.market.application.PaperTradingResponse
 import com.giwon.signaldesk.features.market.application.PortfolioResponse
 import com.giwon.signaldesk.features.market.application.AiRecommendationsResponse
+import com.giwon.signaldesk.features.market.application.TopMoversResponse
+import com.giwon.signaldesk.features.market.application.TopMoversService
 import com.giwon.signaldesk.features.market.application.WatchlistResponse
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.web.bind.annotation.GetMapping
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/market")
 class MarketOverviewController(
     private val marketOverviewService: MarketOverviewService,
+    private val topMoversService: TopMoversService,
     @Autowired(required = false) private val authContext: AuthContext? = null,
 ) {
     private fun userId(auth: String?) = authContext?.optionalUserId(auth)
@@ -66,6 +69,17 @@ class MarketOverviewController(
             data = marketOverviewService.getOverview(userId(auth))
         )
     }
+
+    /**
+     * 급등/급락 상위 종목.
+     *   GET /api/v1/market/top-movers?limit=10
+     * 한국 시장(KOSPI/KOSDAQ) gainers+losers 를 병렬 수집해 한 번에 응답.
+     */
+    @GetMapping("/top-movers")
+    fun getTopMovers(
+        @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "10") limit: Int,
+    ): ApiResponse<TopMoversResponse> =
+        ApiResponse(true, topMoversService.fetchTopMovers(limit.coerceIn(3, 30)))
 }
 
 data class ApiResponse<T>(
