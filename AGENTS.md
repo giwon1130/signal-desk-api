@@ -156,6 +156,21 @@ PostgreSQL은 Railway 프로젝트에 PostgreSQL 플러그인을 어태치하면
 4. **커밋 + 푸시** — `git push origin <branch>:main`이 막히면 feature 브랜치로 푸시 + PR 링크 안내.
 5. **Railway 자동 빌드** — main에 머지/푸시되면 Railway가 자동으로 컨테이너 빌드 + 재배포. 별도 `railway up` 명령은 필요 없음. 빌드 상태 확인이 필요하면 `railway logs --service signal-desk-api`.
 
+### 릴리즈 자동화 스크립트
+
+feature 브랜치를 main 에 머지하고 Railway 배포까지 한 번에:
+
+```bash
+./scripts/release.sh                 # 현재 체크아웃된 브랜치를 main 에 머지
+./scripts/release.sh feat/foo        # feat/foo 를 main 에 머지
+./scripts/release.sh feat/foo --ff   # fast-forward only
+```
+
+스크립트가 하는 일: `main` 체크아웃 → `pull --ff-only` → `merge --no-ff <branch>` → `push origin main` → 로컬 feature 브랜치 정리.
+푸시가 끝나면 Railway 가 자동으로 새 컨테이너를 빌드·배포한다.
+
+**Claude 가 돌릴 때 주의**: 호스트 정책상 홈 디렉터리에서 열린 세션은 `git push origin main` 이 막힐 수 있다. 이 저장소 폴더 안에서 Claude 를 실행하거나, 스크립트를 사용자가 직접 터미널에서 호출하면 된다.
+
 ## 작업 규약 (개발)
 
 - **응답 모델 변경 시**: `MarketOverviewModel.kt` → `signal-desk-app/src/types.ts` 동시 갱신.
