@@ -67,9 +67,15 @@ class TopMoversClient(
     }
 
     private fun parseMovers(html: String, direction: Direction, limit: Int): List<TopMover> {
-        // 네이버 상승/하락 페이지 상단에는 반대편 미니 요약이 섞여 있다 (상승 페이지 맨 위에 작은 하락 요약 블록이 있거나 반대).
+        // 네이버 페이지는 변동률 셀에 서로 다른 색 클래스를 쓴다:
+        //   red01  → 상승 (sise_rise)
+        //   nv01   → 하락 (sise_fall 의 주 행들)
+        //   blue01 → 드물게 섞이는 소폭 하락 요약
         // direction 에 맞는 색만 골라서 실제 "상위 상승/하락" 만 노출한다.
-        val expectColor = when (direction) { Direction.GAINERS -> "red01"; Direction.LOSERS -> "blue01" }
+        val expectColors = when (direction) {
+            Direction.GAINERS -> setOf("red01")
+            Direction.LOSERS  -> setOf("nv01", "blue01")
+        }
         val rows = ROW_REGEX.findAll(html).toList()
         return rows.asSequence()
             .mapNotNull { match ->
@@ -80,10 +86,10 @@ class TopMoversClient(
                 val rateStr = match.groupValues[5].replace(",", "")
 
                 if (code.isBlank() || name.isBlank()) return@mapNotNull null
-                if (rateSign != expectColor) return@mapNotNull null
+                if (rateSign !in expectColors) return@mapNotNull null
                 val price = priceStr.toDoubleOrNull()?.toInt() ?: 0
                 val rate = rateStr.toDoubleOrNull() ?: return@mapNotNull null
-                val signed = if (rateSign == "blue01") -rate else rate
+                val signed = if (rateSign == "blue01" || rateSign == "nv01") -rate else rate
 
                 TopMover(market = "KR", ticker = code, name = name, price = price, changeRate = signed)
             }
@@ -99,7 +105,7 @@ class TopMoversClient(
         // 네이버 시세 상승/하락 페이지의 각 tr 에서 필요한 필드만 추출.
         // "code=XYZ" class="tltle">이름</a> ... <td class="number">현재가</td> ... span class="tah p11 (red01|blue01)"> +rate% ... </span>
         private val ROW_REGEX = Regex(
-            """code=([A-Za-z0-9]+)"\s+class="tltle">([^<]+)</a></td>\s*<td class="number">([\d,]+)</td>.*?tah\s+p11\s+(red01|blue01)">\s*[+-]?([\d.,]+)%""",
+            """code=([A-Za-z0-9]+)"\s+class="tltle">([^<]+)</a></td>\s*<td class="number">([\d,]+)</td>.*?tah\s+p11\s+(red01|blue01|nv01)">\s*[+-]?([\d.,]+)%""",
             setOf(RegexOption.DOT_MATCHES_ALL),
         )
     }
