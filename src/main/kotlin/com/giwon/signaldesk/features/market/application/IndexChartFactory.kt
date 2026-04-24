@@ -22,11 +22,12 @@ fun buildIndexChartPeriodsFromOhlc(
 ): List<ChartPeriodSnapshot> {
     val today = LocalDate.now()
 
+    // 차트 윈도우: D=90 / W=52 / M=36. 앱에서 가로 스크롤로 과거 데이터까지 탐색 가능해야 하므로 여유 있게 남긴다.
     val dailyPoints = if (dailyCandles.isNotEmpty()) {
-        candlesToPoints(dailyCandles.takeLast(30), latest, "MM/dd")
+        candlesToPoints(dailyCandles.takeLast(90), latest, "MM/dd")
     } else {
         // 폴백: 시뮬레이션
-        val closes = buildHistoricalSeries(latest, 30, 0.012, today)
+        val closes = buildHistoricalSeries(latest, 90, 0.012, today)
         val labels = closes.mapIndexed { i, _ ->
             today.minusDays((closes.lastIndex - i).toLong()).format(DateTimeFormatter.ofPattern("MM/dd"))
         }
@@ -34,9 +35,9 @@ fun buildIndexChartPeriodsFromOhlc(
     }
 
     val weeklyPoints = if (weeklyCandles.isNotEmpty()) {
-        candlesToPoints(weeklyCandles.takeLast(20), latest, "MM/dd")
+        candlesToPoints(weeklyCandles.takeLast(52), latest, "MM/dd")
     } else {
-        val closes = buildHistoricalSeries(latest, 20, 0.025, today)
+        val closes = buildHistoricalSeries(latest, 52, 0.025, today)
         val labels = closes.mapIndexed { i, _ ->
             today.minusWeeks((closes.lastIndex - i).toLong()).format(DateTimeFormatter.ofPattern("MM/dd"))
         }
@@ -44,9 +45,9 @@ fun buildIndexChartPeriodsFromOhlc(
     }
 
     val monthlyPoints = if (monthlyCandles.isNotEmpty()) {
-        candlesToPoints(monthlyCandles.takeLast(12), latest, "yy/MM")
+        candlesToPoints(monthlyCandles.takeLast(36), latest, "yy/MM")
     } else {
-        val closes = buildHistoricalSeries(latest, 12, 0.05, today)
+        val closes = buildHistoricalSeries(latest, 36, 0.05, today)
         val labels = closes.mapIndexed { i, _ ->
             today.minusMonths((closes.lastIndex - i).toLong()).format(DateTimeFormatter.ofPattern("yy/MM"))
         }
@@ -107,24 +108,24 @@ fun buildIndexChartPeriods(
 ): List<ChartPeriodSnapshot> {
     val today = LocalDate.now()
 
-    // ── 일봉: 30 거래일 ─────────────────────────────────────────────
-    val dailyCloses = pickRealOrSimulate(baseSeries, latest, today, size = 30, dailyVolatility = 0.012)
+    // ── 일봉: 90 거래일 ─────────────────────────────────────────────
+    val dailyCloses = pickRealOrSimulate(baseSeries, latest, today, size = 90, dailyVolatility = 0.012)
     val dailyLabels = dailyCloses.mapIndexed { index, _ ->
         today.minusDays((dailyCloses.lastIndex - index).toLong())
             .format(DateTimeFormatter.ofPattern("MM/dd"))
     }
     val dailyPoints = buildChartPoints(dailyLabels, dailyCloses, dailyCloses.firstOrNull() ?: latest)
 
-    // ── 주봉: 20 주 ────────────────────────────────────────────────
-    val weeklyCloses = buildHistoricalSeries(latest, size = 20, dailyVolatility = 0.025, today)
+    // ── 주봉: 52 주 ────────────────────────────────────────────────
+    val weeklyCloses = buildHistoricalSeries(latest, size = 52, dailyVolatility = 0.025, today)
     val weeklyLabels = weeklyCloses.mapIndexed { index, _ ->
         today.minusWeeks((weeklyCloses.lastIndex - index).toLong())
             .format(DateTimeFormatter.ofPattern("MM/dd"))
     }
     val weeklyPoints = buildChartPoints(weeklyLabels, weeklyCloses, weeklyCloses.firstOrNull() ?: latest)
 
-    // ── 월봉: 12 개월 ──────────────────────────────────────────────
-    val monthlyCloses = buildHistoricalSeries(latest, size = 12, dailyVolatility = 0.05, today)
+    // ── 월봉: 36 개월 ──────────────────────────────────────────────
+    val monthlyCloses = buildHistoricalSeries(latest, size = 36, dailyVolatility = 0.05, today)
     val monthlyLabels = monthlyCloses.mapIndexed { index, _ ->
         today.minusMonths((monthlyCloses.lastIndex - index).toLong())
             .format(DateTimeFormatter.ofPattern("yy/MM"))

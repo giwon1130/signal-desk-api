@@ -47,19 +47,19 @@ class IndexChartFactoryTest {
         )
 
         val dailySnap = periods.first { it.key == "D" }
-        assertThat(dailySnap.points).hasSize(30)
+        assertThat(dailySnap.points).hasSize(90)
         // 마지막 close는 latest 근처 (시뮬레이션도 마지막은 latest)
         assertThat(dailySnap.points.last().close).isEqualTo(3000.0)
     }
 
     @Test
-    fun `30개 초과 캔들이 들어오면 마지막 30개만 사용한다`() {
-        val many = (1..50).map { i ->
-            IndexCandle("2026010${i.toString().padStart(2, '0')}", 100.0 + i, 110.0 + i, 95.0 + i, 105.0 + i, 1000)
+    fun `90개 초과 캔들이 들어오면 마지막 90개만 사용한다`() {
+        val many = (1..120).map { i ->
+            IndexCandle("2026%04d".format(i), 100.0 + i, 110.0 + i, 95.0 + i, 105.0 + i, 1000)
         }
 
         val periods = buildIndexChartPeriodsFromOhlc(
-            latest = 155.0,
+            latest = 225.0,
             changeRate = 0.0,
             dailyCandles = many,
             weeklyCandles = emptyList(),
@@ -67,8 +67,8 @@ class IndexChartFactoryTest {
         )
 
         val dailySnap = periods.first { it.key == "D" }
-        assertThat(dailySnap.points).hasSize(30)
-        // takeLast(30): 첫 캔들의 raw close는 105.0 + 21 = 126.0
-        assertThat(dailySnap.points[0].close).isEqualTo(126.0)
+        assertThat(dailySnap.points).hasSize(90)
+        // takeLast(90): 첫 캔들의 raw close 는 105.0 + 31 = 136.0
+        assertThat(dailySnap.points[0].close).isEqualTo(136.0)
     }
 }
