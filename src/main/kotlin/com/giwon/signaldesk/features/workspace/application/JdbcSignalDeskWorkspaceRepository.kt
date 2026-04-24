@@ -39,7 +39,17 @@ class JdbcSignalDeskWorkspaceRepository(
         )
 
     override fun saveWatchItem(userId: UUID?, item: WorkspaceWatchItem): WorkspaceWatchItem {
-        val nextItem = item.copy(id = item.id.ifBlank { UUID.randomUUID().toString() })
+        // 신규 저장(id 비어있음) 시 같은 (user_id, market, ticker) 가 이미 있으면 그 id 를 재사용해서
+        // 업데이트로 처리한다. 과거에 dedupe 없이 쌓인 레거시 중복 행도 같은 id 하나로 수렴시킨다.
+        val resolvedId: String = item.id.ifBlank {
+            val existing = jdbcTemplate.query(
+                "select id from signal_desk_watchlist where ${whereUser()} and market = ? and ticker = ? order by id limit 1",
+                { rs, _ -> rs.getString("id") },
+                *userArgs(userId), item.market, item.ticker,
+            ).firstOrNull()
+            existing ?: UUID.randomUUID().toString()
+        }
+        val nextItem = item.copy(id = resolvedId)
         jdbcTemplate.update(
             """
             insert into signal_desk_watchlist (id, market, ticker, name, price, change_rate, sector, stance, note, user_id)

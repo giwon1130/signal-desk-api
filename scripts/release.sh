@@ -12,8 +12,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if [[ -n "$(git status --porcelain)" ]]; then
-  echo "❌ working tree 가 깨끗하지 않아. 먼저 커밋/stash 해." >&2
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "❌ 변경된 트래킹 파일이 남아있어. 먼저 커밋/stash 해." >&2
   exit 1
 fi
 
