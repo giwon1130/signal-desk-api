@@ -2,6 +2,7 @@ package com.giwon.signaldesk.features.realtime
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.giwon.signaldesk.features.market.application.NaverFinanceQuoteClient
+import com.giwon.signaldesk.features.market.application.NaverGlobalQuoteClient
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Configuration
 import org.springframework.scheduling.annotation.Scheduled
@@ -30,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap
 class PriceTickerHandler(
     private val mapper: ObjectMapper,
     private val naver: NaverFinanceQuoteClient,
+    private val naverGlobal: NaverGlobalQuoteClient,
 ) : TextWebSocketHandler() {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -63,7 +65,16 @@ class PriceTickerHandler(
         }
     }
 
-    /** 5초마다 모든 구독 ticker 가격을 한 번에 갱신해 broadcast. */
+    /**
+     * 5초마다 모든 구독 ticker 가격을 한 번에 갱신해 broadcast.
+     *
+     * 티커 분류:
+     *  - 6자리 숫자 → 한국 (NaverFinanceQuoteClient, polling 엔드포인트로 벌크 조회)
+     *  - 그 외 (알파벳/숫자 조합) → 미국 (NaverGlobalQuoteClient, 종목별 병렬 호출)
+     *
+     * US 가격은 원래 Double 인데 StockQuote.currentPrice 가 Int 라서 1원 단위로 반올림돼서
+     * 나간다 (예: AAPL 204.15 → 204). 도메인이 대부분 KR 이므로 MVP 수준에서 수용 가능.
+     */
     @Scheduled(fixedDelay = 5_000L, initialDelay = 5_000L)
     fun broadcastPrices() {
         if (sessions.isEmpty()) return
@@ -71,9 +82,15 @@ class PriceTickerHandler(
         if (allTickers.isEmpty()) return
 
         val krTickers = allTickers.filter { it.matches(Regex("\\d{6}")) }
-        if (krTickers.isEmpty()) return
+        val usTickers = allTickers.filter { it.matches(Regex("[A-Za-z][A-Za-z0-9.-]*")) }
 
-        val quotes = runCatching { naver.fetchKoreanQuotes(krTickers) }.getOrDefault(emptyMap())
+        val quotes = mutableMapOf<String, com.giwon.signaldesk.features.market.application.StockQuote>()
+        if (krTickers.isNotEmpty()) {
+            quotes += runCatching { naver.fetchKoreanQuotes(krTickers) }.getOrDefault(emptyMap())
+        }
+        if (usTickers.isNotEmpty()) {
+            quotes += runCatching { naverGlobal.fetchUsQuotes(usTickers) }.getOrDefault(emptyMap())
+        }
         if (quotes.isEmpty()) return
 
         val now = System.currentTimeMillis()
