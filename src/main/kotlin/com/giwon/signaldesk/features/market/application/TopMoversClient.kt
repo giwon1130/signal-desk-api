@@ -59,17 +59,19 @@ class TopMoversClient(
                 return@runCatching emptyList<TopMover>()
             }
             val html = String(response.body(), Charset.forName("EUC-KR"))
-            parseMovers(html, limit)
+            parseMovers(html, direction, limit)
         }.getOrElse {
             log.warn("TopMovers fetch exception. uri={}, err={}", uri, it.message)
             emptyList()
         }
     }
 
-    private fun parseMovers(html: String, limit: Int): List<TopMover> {
+    private fun parseMovers(html: String, direction: Direction, limit: Int): List<TopMover> {
+        // 네이버 상승/하락 페이지 상단에는 반대편 미니 요약이 섞여 있다 (상승 페이지 맨 위에 작은 하락 요약 블록이 있거나 반대).
+        // direction 에 맞는 색만 골라서 실제 "상위 상승/하락" 만 노출한다.
+        val expectColor = when (direction) { Direction.GAINERS -> "red01"; Direction.LOSERS -> "blue01" }
         val rows = ROW_REGEX.findAll(html).toList()
         return rows.asSequence()
-            .take(limit * 2) // 여유롭게 잡고 필터 후 limit 재적용
             .mapNotNull { match ->
                 val code = match.groupValues[1]
                 val name = match.groupValues[2].trim()
@@ -78,7 +80,7 @@ class TopMoversClient(
                 val rateStr = match.groupValues[5].replace(",", "")
 
                 if (code.isBlank() || name.isBlank()) return@mapNotNull null
-                // 6자리 숫자 종목만 (우선주 접미사 붙은 코드는 그대로 두되, ETN/ETF 도 포함됨)
+                if (rateSign != expectColor) return@mapNotNull null
                 val price = priceStr.toDoubleOrNull()?.toInt() ?: 0
                 val rate = rateStr.toDoubleOrNull() ?: return@mapNotNull null
                 val signed = if (rateSign == "blue01") -rate else rate
