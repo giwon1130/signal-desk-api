@@ -49,10 +49,22 @@ class NaverFinanceQuoteClient(
                 ?.asSequence()
                 ?.associate { node ->
                     val ticker = node["cd"].asText()
+                    // Naver 폴링 API 는 cr(등락률)을 '부호 없는 크기'로 준다.
+                    // 방향은 rf 코드 ("2/3"=상승/보합, "4/5"=하한가/하락) 또는 nv<sv 로 판별.
+                    // rf 가 신뢰가 안 될 때를 대비해 nv vs sv 비교를 1차 근거로 사용.
+                    val nv = node["nv"]?.asInt() ?: 0
+                    val sv = node["sv"]?.asInt() ?: 0
+                    val rf = node["rf"]?.asText().orEmpty()
+                    val magnitude = node["cr"]?.asDouble() ?: 0.0
+                    val isDown = when {
+                        sv > 0 && nv > 0 -> nv < sv
+                        else -> rf == "4" || rf == "5"
+                    }
+                    val signedRate = if (isDown) -magnitude else magnitude
                     ticker to StockQuote(
                         ticker = ticker,
-                        currentPrice = node["nv"]?.asInt() ?: 0,
-                        changeRate = node["cr"]?.asDouble() ?: 0.0,
+                        currentPrice = nv,
+                        changeRate = signedRate,
                     )
                 }
                 .orEmpty()
