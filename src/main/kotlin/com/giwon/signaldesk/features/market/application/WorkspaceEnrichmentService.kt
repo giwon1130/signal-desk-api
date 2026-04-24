@@ -22,59 +22,90 @@ class WorkspaceEnrichmentService(
         aiPickCount = workspaceStore.loadAiPicks(userId).size,
     )
 
+    // 인증된 유저(userId != null)에게는 데모 시드(baseXxx)를 합치지 않는다.
+    // 과거에는 비로그인 데모 화면을 위해 baseWatchlist/basePortfolio/... 를 무조건 prepend 했지만,
+    // 실사용자 입장에서는 "해제해도 계속 돌아오는 유령 종목"으로 보여서 혼란이 컸다.
+    // userId == null 일 때만 데모 시드를 노출 (비로그인 미리보기 유지용).
     fun getWatchlist(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): WatchlistResponse {
-        val merged = baseWatchlist() + workspaceStore.loadWatchlist(userId).map {
+        val userItems = workspaceStore.loadWatchlist(userId).map {
             WatchItem(id = it.id, market = it.market, ticker = it.ticker, name = it.name,
                 price = it.price, changeRate = it.changeRate, sector = it.sector,
                 stance = it.stance, note = it.note, source = "USER")
         }
+        val merged = if (userId == null) baseWatchlist() + userItems else userItems
         return WatchlistResponse(LocalDateTime.now().toString(), refreshWatchlist(merged, quotes))
     }
 
     fun getPortfolio(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): PortfolioResponse {
-        val merged = mergePortfolio(basePortfolio(), workspaceStore.loadPortfolioPositions(userId).map {
+        val userPositions = workspaceStore.loadPortfolioPositions(userId).map {
             HoldingPosition(id = it.id, market = it.market, ticker = it.ticker, name = it.name,
                 buyPrice = it.buyPrice, currentPrice = it.currentPrice, quantity = it.quantity,
                 profitAmount = it.profitAmount, evaluationAmount = it.evaluationAmount,
                 profitRate = it.profitRate, source = "USER")
-        })
+        }
+        val merged = if (userId == null) {
+            mergePortfolio(basePortfolio(), userPositions)
+        } else {
+            mergePortfolio(emptyPortfolio(), userPositions)
+        }
         return PortfolioResponse(LocalDateTime.now().toString(), refreshPortfolio(merged, quotes))
     }
 
     fun getAiRecommendations(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): AiRecommendationsResponse {
-        val merged = mergeAiRecommendations(
-            baseAiRecommendations(),
-            workspaceStore.loadAiPicks(userId).map {
-                RecommendationPick(market = it.market, ticker = it.ticker, name = it.name,
-                    basis = it.basis, confidence = it.confidence, note = it.note,
-                    expectedReturnRate = it.expectedReturnRate, source = "USER", id = it.id)
-            },
-            workspaceStore.loadAiTrackRecords(userId).map {
-                RecommendationTrackRecord(recommendedDate = it.recommendedDate, market = it.market,
-                    ticker = it.ticker, name = it.name, entryPrice = it.entryPrice,
-                    latestPrice = it.latestPrice, realizedReturnRate = it.realizedReturnRate,
-                    success = it.success, source = "USER", id = it.id)
-            }
-        )
+        val userPicks = workspaceStore.loadAiPicks(userId).map {
+            RecommendationPick(market = it.market, ticker = it.ticker, name = it.name,
+                basis = it.basis, confidence = it.confidence, note = it.note,
+                expectedReturnRate = it.expectedReturnRate, source = "USER", id = it.id)
+        }
+        val userTrack = workspaceStore.loadAiTrackRecords(userId).map {
+            RecommendationTrackRecord(recommendedDate = it.recommendedDate, market = it.market,
+                ticker = it.ticker, name = it.name, entryPrice = it.entryPrice,
+                latestPrice = it.latestPrice, realizedReturnRate = it.realizedReturnRate,
+                success = it.success, source = "USER", id = it.id)
+        }
+        val merged = if (userId == null) {
+            mergeAiRecommendations(baseAiRecommendations(), userPicks, userTrack)
+        } else {
+            mergeAiRecommendations(emptyAiRecommendations(), userPicks, userTrack)
+        }
         return AiRecommendationsResponse(LocalDateTime.now().toString(), refreshAiRecommendations(merged, quotes))
     }
 
     fun getPaperTrading(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): PaperTradingResponse {
-        val merged = mergePaperTrading(
-            basePaperTrading(),
-            workspaceStore.loadPaperPositions(userId).map {
-                PaperPosition(market = it.market, ticker = it.ticker, name = it.name,
-                    averagePrice = it.averagePrice, currentPrice = it.currentPrice,
-                    quantity = it.quantity, returnRate = it.returnRate, source = "USER", id = it.id)
-            },
-            workspaceStore.loadPaperTrades(userId).map {
-                PaperTrade(tradeDate = it.tradeDate, side = it.side, market = it.market,
-                    ticker = it.ticker, name = it.name, price = it.price,
-                    quantity = it.quantity, source = "USER", id = it.id)
-            }
-        )
+        val userPositions = workspaceStore.loadPaperPositions(userId).map {
+            PaperPosition(market = it.market, ticker = it.ticker, name = it.name,
+                averagePrice = it.averagePrice, currentPrice = it.currentPrice,
+                quantity = it.quantity, returnRate = it.returnRate, source = "USER", id = it.id)
+        }
+        val userTrades = workspaceStore.loadPaperTrades(userId).map {
+            PaperTrade(tradeDate = it.tradeDate, side = it.side, market = it.market,
+                ticker = it.ticker, name = it.name, price = it.price,
+                quantity = it.quantity, source = "USER", id = it.id)
+        }
+        val merged = if (userId == null) {
+            mergePaperTrading(basePaperTrading(), userPositions, userTrades)
+        } else {
+            mergePaperTrading(emptyPaperTrading(), userPositions, userTrades)
+        }
         return PaperTradingResponse(LocalDateTime.now().toString(), refreshPaperTrading(merged, quotes))
     }
+
+    private fun emptyPortfolio() = PortfolioSummary(
+        totalCost = 0L, totalValue = 0L, totalProfit = 0L, totalProfitRate = 0.0, positions = emptyList(),
+    )
+
+    private fun emptyAiRecommendations() = AIRecommendationSection(
+        generatedDate = LocalDate.now().toString(),
+        summary = "",
+        picks = emptyList(),
+        trackRecords = emptyList(),
+        executionLogs = emptyList(),
+    )
+
+    private fun emptyPaperTrading() = PaperTradingSummary(
+        cash = 0, evaluation = 0L, totalReturnRate = 0.0,
+        openPositions = emptyList(), recentTrades = emptyList(),
+    )
 
     fun buildWorkspaceSnapshot(quotes: Map<String, StockQuote>, userId: UUID? = null): WorkspaceSnapshot {
         return WorkspaceSnapshot(
