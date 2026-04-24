@@ -69,9 +69,9 @@ class KrxOfficialClient(
                             periods = buildIndexChartPeriodsFromOhlc(
                                 latest = latest,
                                 changeRate = changeRate,
-                                dailyCandles = naverIndexChartClient.fetchOhlc("KOSPI", NaverIndexChartClient.PeriodType.DAILY, 30),
-                                weeklyCandles = naverIndexChartClient.fetchOhlc("KOSPI", NaverIndexChartClient.PeriodType.WEEKLY, 20),
-                                monthlyCandles = naverIndexChartClient.fetchOhlc("KOSPI", NaverIndexChartClient.PeriodType.MONTHLY, 12),
+                                dailyCandles = naverIndexChartClient.fetchOhlc("KOSPI", NaverIndexChartClient.PeriodType.DAILY, 90),
+                                weeklyCandles = naverIndexChartClient.fetchOhlc("KOSPI", NaverIndexChartClient.PeriodType.WEEKLY, 52),
+                                monthlyCandles = naverIndexChartClient.fetchOhlc("KOSPI", NaverIndexChartClient.PeriodType.MONTHLY, 36),
                             )
                         )
                     },
@@ -85,9 +85,9 @@ class KrxOfficialClient(
                             periods = buildIndexChartPeriodsFromOhlc(
                                 latest = latest,
                                 changeRate = changeRate,
-                                dailyCandles = naverIndexChartClient.fetchOhlc("KOSDAQ", NaverIndexChartClient.PeriodType.DAILY, 30),
-                                weeklyCandles = naverIndexChartClient.fetchOhlc("KOSDAQ", NaverIndexChartClient.PeriodType.WEEKLY, 20),
-                                monthlyCandles = naverIndexChartClient.fetchOhlc("KOSDAQ", NaverIndexChartClient.PeriodType.MONTHLY, 12),
+                                dailyCandles = naverIndexChartClient.fetchOhlc("KOSDAQ", NaverIndexChartClient.PeriodType.DAILY, 90),
+                                weeklyCandles = naverIndexChartClient.fetchOhlc("KOSDAQ", NaverIndexChartClient.PeriodType.WEEKLY, 52),
+                                monthlyCandles = naverIndexChartClient.fetchOhlc("KOSDAQ", NaverIndexChartClient.PeriodType.MONTHLY, 36),
                             )
                         )
                     }
