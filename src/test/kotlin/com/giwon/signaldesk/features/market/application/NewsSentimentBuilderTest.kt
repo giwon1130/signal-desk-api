@@ -75,12 +75,11 @@ class NewsSentimentBuilderTest {
     }
 
     @Test
-    fun `뉴스 0건이면 중립 score 50`() {
+    fun `뉴스 0건이면 중립 score 50 + 분석 가능 뉴스 없어 rationale`() {
         val result = NewsSentimentBuilder.build("KR", emptyList())
         assertEquals("중립", result.label)
         assertEquals(50, result.score)
         assertEquals(0, result.highlights.size)
-        // NOTE: 현재 rationale 코드의 "분석 가능한 뉴스가 없어" 분기는 unreachable
-        // (total = size.coerceAtLeast(1) 이라 0 이 안 됨). 추후 fix 대상.
+        assertTrue(result.rationale.contains("없"), "rationale=${result.rationale}")
     }
 }
