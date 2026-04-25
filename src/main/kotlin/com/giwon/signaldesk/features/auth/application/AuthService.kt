@@ -1,6 +1,9 @@
 package com.giwon.signaldesk.features.auth.application
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import jakarta.annotation.PostConstruct
+import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Conditional
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.stereotype.Service
@@ -18,10 +21,33 @@ class AuthException(message: String) : RuntimeException(message)
 class AuthService(
     private val userRepo: UserRepository,
     private val jwt: JwtProvider,
+    @Value("\${signal-desk.auth.google.allowed-audiences:}") private val rawGoogleAllowedAudiences: String,
 ) {
     private val encoder = BCryptPasswordEncoder()
     private val http = HttpClient.newHttpClient()
     private val mapper = ObjectMapper()
+    private val logger = LoggerFactory.getLogger(AuthService::class.java)
+
+    /**
+     * 화이트리스트된 Google OAuth audience(클라이언트 ID) 목록.
+     * 환경변수 `SIGNAL_DESK_AUTH_GOOGLE_ALLOWED_AUDIENCES` 콤마 구분.
+     *  · 비어있으면 audience 검증 건너뜀(과거 호환). 운영에선 반드시 채울 것.
+     *  · 채워져 있으면 token.aud 가 이 목록에 없을 때 검증 실패.
+     */
+    private val googleAllowedAudiences: Set<String> = rawGoogleAllowedAudiences
+        .split(',')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .toSet()
+
+    @PostConstruct
+    fun warnIfAudienceMissing() {
+        if (googleAllowedAudiences.isEmpty()) {
+            logger.warn("⚠️  [SECURITY] signal-desk.auth.google.allowed-audiences 미설정 — 모든 Google 클라이언트 ID 의 토큰을 통과시킴. 운영에선 반드시 화이트리스트 등록.")
+        } else {
+            logger.info("Google audience whitelist active: ${googleAllowedAudiences.size} entries")
+        }
+    }
 
     data class AuthResult(val token: String, val userId: String, val email: String, val nickname: String)
 
@@ -93,6 +119,15 @@ class AuthService(
         val res = http.send(req, HttpResponse.BodyHandlers.ofString())
         if (res.statusCode() != 200) return null
         val node = mapper.readTree(res.body())
+        // audience 검증 — 화이트리스트가 채워져 있으면 token.aud 가 그 안에 있어야 함.
+        // 비어있으면 검증 스킵 (개발 편의 + 과거 동작 호환). 운영에선 채워야 안전.
+        if (googleAllowedAudiences.isNotEmpty()) {
+            val aud = node.get("aud")?.asText()
+            if (aud == null || aud !in googleAllowedAudiences) {
+                logger.warn("Google OAuth: audience '$aud' 가 화이트리스트에 없음 → 거부")
+                return null
+            }
+        }
         GoogleUserInfo(
             id    = node.get("sub")?.asText() ?: return null,
             email = node.get("email")?.asText() ?: return null,

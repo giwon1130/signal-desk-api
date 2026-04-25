@@ -109,8 +109,9 @@ SIGNAL_DESK_STORE_MODE=jdbc \
 | `SIGNAL_DESK_STORE_MODE` | 저장 모드 | `jdbc` 권장 (운영) |
 | `JDBC_DATABASE_URL` / `DATABASE_URL` | PG 연결 | Railway PostgreSQL 어태치 시 자동 |
 | `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATABASE` | PG 보조 | `DATABASE_URL` 없을 때 폴백 |
-| `signal-desk.jwt.secret` | JWT 서명 키 | **운영에서는 반드시 32바이트 이상으로 교체.** 미설정 시 코드 내 더미 값 사용 |
+| `signal-desk.jwt.secret` | JWT 서명 키 | **운영에서는 반드시 32바이트 이상으로 교체.** 더미 값 그대로 부팅하면 시작 시 `[SECURITY]` ERROR 로그 발생 |
 | `signal-desk.jwt.expiration-hours` | 토큰 유효시간 | 기본 720h (30일) |
+| `signal-desk.auth.google.allowed-audiences` | Google OAuth audience 화이트리스트 | 콤마 구분 클라이언트 ID. 비우면 검증 스킵 + 부팅 시 WARN 로그. 운영에선 반드시 채울 것 |
 | `SIGNAL_DESK_CORS_ALLOWED_ORIGINS` | CORS 허용 패턴 | 콤마 구분, 비우면 전부 차단 |
 
 ## 배포 (Railway)
@@ -142,7 +143,7 @@ PostgreSQL은 Railway 프로젝트에 PostgreSQL 플러그인을 어태치하면
 
 체크리스트:
 - 두 엔드포인트 모두 `JdbcStoreCondition`에 묶여 있어 **JDBC 모드일 때만 활성화**된다. 파일 모드에선 404.
-- `verifyGoogleToken`은 audience(aud) 검증을 하지 않는다 — 앱이 보낸 토큰의 `sub`만 신뢰. 다른 클라이언트 ID로 발급된 토큰도 통과하므로, 운영에서 외부 노출 시 `aud` 화이트리스트를 추가할 것.
+- `verifyGoogleToken` 은 **audience 화이트리스트** 검증을 한다 (`signal-desk.auth.google.allowed-audiences` 환경변수). 비어있으면 검증 스킵 + 부팅 시 `[SECURITY]` WARN. 운영에선 GCP OAuth Client ID 들을 콤마로 등록.
 - 신규 가입 시 `userRepo.saveOAuthUser` 호출 → `users` 테이블에 `google_id`/`kakao_id` 컬럼만 채우고 `password_hash`는 NULL.
 - 같은 이메일로 일반 가입한 유저가 OAuth로 다시 들어오면 자동으로 `linkGoogleId` / `linkKakaoId`로 묶는다.
 
