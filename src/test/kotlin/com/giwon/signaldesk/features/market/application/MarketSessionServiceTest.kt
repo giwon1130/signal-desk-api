@@ -48,6 +48,34 @@ class MarketSessionServiceTest {
         assertEquals("주말 휴장", kr.note)
     }
 
+    @Test
+    fun `한국 설날 2026-02-17 화요일 - CLOSED 휴장`() {
+        // 평일이지만 KRX 휴장. 정규장 시간대(11시)에 호출.
+        val koreaUtc = ZonedDateTime.of(2026, 2, 17, 2, 0, 0, 0, ZoneId.of("UTC"))
+        val sessions = service.buildMarketSessions(koreaUtc)
+        val kr = sessions.first { it.market == "KR" }
+        assertEquals("CLOSED", kr.phase)
+        assertTrue(kr.note.contains("설날"))
+    }
+
+    @Test
+    fun `한국 어린이날 2026-05-05 화요일 - CLOSED 휴장`() {
+        val koreaUtc = ZonedDateTime.of(2026, 5, 5, 2, 0, 0, 0, ZoneId.of("UTC"))
+        val sessions = service.buildMarketSessions(koreaUtc)
+        val kr = sessions.first { it.market == "KR" }
+        assertEquals("CLOSED", kr.phase)
+        assertTrue(kr.note.contains("어린이날"))
+    }
+
+    @Test
+    fun `한국 연말폐장 2026-12-31 목요일 - CLOSED 휴장`() {
+        val koreaUtc = ZonedDateTime.of(2026, 12, 31, 2, 0, 0, 0, ZoneId.of("UTC"))
+        val sessions = service.buildMarketSessions(koreaUtc)
+        val kr = sessions.first { it.market == "KR" }
+        assertEquals("CLOSED", kr.phase)
+        assertTrue(kr.note.contains("연말"))
+    }
+
     // ── 미국 시장 ──────────────────────────────────────────────────────
 
     @Test

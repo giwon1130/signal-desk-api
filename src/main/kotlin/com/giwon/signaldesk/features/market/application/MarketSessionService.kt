@@ -17,16 +17,27 @@ class MarketSessionService {
         val koreaNow = nowUtc.withZoneSameInstant(ZoneId.of("Asia/Seoul"))
         val usNow = nowUtc.withZoneSameInstant(ZoneId.of("America/New_York"))
         return listOf(
-            resolveSession(
-                market = "KR",
-                label = "한국",
-                localNow = koreaNow,
-                preStart = null,
-                regularStart = LocalTime.of(9, 0),
-                regularEnd = LocalTime.of(15, 30),
-                afterEnd = null,
-            ),
+            resolveKrSession(koreaNow),
             resolveUsSession(usNow),
+        )
+    }
+
+    private fun resolveKrSession(localNow: ZonedDateTime): MarketSessionStatus {
+        val date = localNow.toLocalDate()
+        val isWeekend = localNow.dayOfWeek in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
+        val holiday = findKrHoliday(date)
+
+        if (isWeekend) return closedSession("KR", "한국", localNow, "주말 휴장")
+        if (holiday != null) return closedSession("KR", "한국", localNow, "${holiday.description} 휴장")
+
+        return resolveSession(
+            market = "KR",
+            label = "한국",
+            localNow = localNow,
+            preStart = null,
+            regularStart = LocalTime.of(9, 0),
+            regularEnd = LocalTime.of(15, 30),
+            afterEnd = null,
         )
     }
 
@@ -125,6 +136,20 @@ class MarketSessionService {
             note = reason,
         )
 
+    /**
+     * 한국 KRX 휴장일.
+     *
+     * 음력 기반 공휴일(설/추석/부처님오신날) + 대체휴일은 연도별로 변동돼서 자동 계산이 까다로움.
+     * → KRX 공식 휴장일 캘린더(https://open.krx.co.kr) 기반으로 매년 수동 갱신.
+     *
+     * 갱신 주기: 매년 12월 KRX 가 다음 해 캘린더 공시할 때 추가.
+     * 갱신 누락 시 효과: 음력 휴일에 시장이 "정규장"으로 잘못 표시됨 (시각만 영향, 실 데이터엔 무관).
+     */
+    private fun findKrHoliday(date: LocalDate): KrMarketSpecialDay? {
+        val description = KR_HOLIDAYS_BY_DATE[date] ?: return null
+        return KrMarketSpecialDay(date, description)
+    }
+
     private fun findUsHoliday(date: LocalDate): UsMarketSpecialDay? {
         val year = date.year
         val holidays = setOf(
@@ -183,4 +208,37 @@ class MarketSessionService {
 
     data class UsMarketSpecialDay(val date: LocalDate, val description: String)
     data class UsMarketEarlyClose(val date: LocalDate, val description: String, val closeTime: LocalTime)
+    data class KrMarketSpecialDay(val date: LocalDate, val description: String)
+
+    companion object {
+        // KRX 공식 휴장일 — 매년 12월 갱신.
+        // 음력 기반(설/추석/부처님오신날) + 대체휴일 포함. 토/일과 겹치는 날은 따로 안 적음
+        // (이미 주말 처리에서 잡힘).
+        private val KR_HOLIDAYS_BY_DATE: Map<LocalDate, String> = buildMap {
+            // 2026
+            put(LocalDate.of(2026, 1, 1),  "신정")
+            put(LocalDate.of(2026, 2, 16), "설날 연휴")
+            put(LocalDate.of(2026, 2, 17), "설날")
+            put(LocalDate.of(2026, 2, 18), "설날 연휴")
+            put(LocalDate.of(2026, 3, 2),  "삼일절 대체휴일")  // 3/1 일요일
+            put(LocalDate.of(2026, 5, 5),  "어린이날")
+            put(LocalDate.of(2026, 5, 25), "부처님오신날 대체휴일")  // 5/24 일요일
+            put(LocalDate.of(2026, 9, 24), "추석 연휴")
+            put(LocalDate.of(2026, 9, 25), "추석")
+            put(LocalDate.of(2026, 10, 5), "개천절 대체휴일")  // 10/3 토요일
+            put(LocalDate.of(2026, 10, 9), "한글날")
+            put(LocalDate.of(2026, 12, 25), "성탄절")
+            put(LocalDate.of(2026, 12, 31), "연말 폐장")  // 한 해 마지막 영업일은 KRX 휴장
+
+            // 2027 — 음력 휴일은 추후 KRX 공시 후 보정.
+            put(LocalDate.of(2027, 1, 1),  "신정")
+            put(LocalDate.of(2027, 3, 1),  "삼일절")
+            put(LocalDate.of(2027, 5, 5),  "어린이날")
+            put(LocalDate.of(2027, 6, 6),  "현충일")
+            put(LocalDate.of(2027, 8, 16), "광복절 대체휴일")  // 8/15 일요일
+            put(LocalDate.of(2027, 10, 4), "개천절 대체휴일")  // 10/3 일요일
+            put(LocalDate.of(2027, 10, 11), "한글날 대체휴일")  // 10/9 토요일
+            put(LocalDate.of(2027, 12, 31), "연말 폐장")
+        }
+    }
 }
