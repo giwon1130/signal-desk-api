@@ -26,8 +26,9 @@ object NewsSentimentBuilder {
         val classified = filtered.map { it to classifyTone(it.title) }
         val pos = classified.count { it.second == 1 }
         val neg = classified.count { it.second == -1 }
-        val total = classified.size.coerceAtLeast(1)
-        val score = (50 + (pos - neg).toDouble() / total * 40).coerceIn(0.0, 100.0).roundToInt()
+        val rawTotal = classified.size                      // 실제 필터링된 뉴스 수 (0 가능)
+        val divisor  = rawTotal.coerceAtLeast(1)            // 0 divide 가드 (score 계산용)
+        val score = (50 + (pos - neg).toDouble() / divisor * 40).coerceIn(0.0, 100.0).roundToInt()
         val label = when {
             score >= 60 -> "긍정"
             score <= 40 -> "부정"
@@ -47,9 +48,9 @@ object NewsSentimentBuilder {
             )
         }
         val rationale = when {
+            rawTotal == 0        -> "분석 가능한 뉴스가 없어"  // 실제 0 일 때만 — 이전엔 unreachable 이었음
             pos > neg && pos > 0 -> "긍정 헤드라인 ${pos}건 vs 부정 ${neg}건 — 위험자산 선호 우세"
             neg > pos && neg > 0 -> "부정 헤드라인 ${neg}건 vs 긍정 ${pos}건 — 방어 모드 권장"
-            total == 0           -> "분석 가능한 뉴스가 없어"
             else                 -> "긍정/부정 균형 — 종목별 차별화 장세 예상"
         }
         return NewsSentiment(
@@ -59,7 +60,7 @@ object NewsSentimentBuilder {
             rationale = rationale,
             positiveCount = pos,
             negativeCount = neg,
-            neutralCount = total - pos - neg,
+            neutralCount = rawTotal - pos - neg,
             highlights = highlights,
         )
     }
