@@ -200,7 +200,7 @@ class MarketOverviewService(
                 createdAt = Instant.now(),
                 generatedAt = generatedAt.toString(),
                 marketStatus = marketSessionService.buildMarketStatus(marketSessions),
-                summary = "한국주식과 미국주식을 나눠 보고, 수급·공포지표·뉴스·포트폴리오·AI 추천을 분리해서 읽는 투자 대시보드야.",
+                summary = "장 시작 전 점검 → 단타 픽 확인 → 보유 모니터까지, 오늘 하루를 한 화면에서 따라가는 개인 투자 대시보드야.",
                 marketSummary = listOf(
                     SummaryMetric("Fear Meter", calculateFearMeter(vixSnapshot), buildFearMeterState(vixSnapshot), buildFearMeterNote(vixSnapshot)),
                     SummaryMetric("KR Heat", calculateKrHeat(koreaMarket), buildKrHeatState(koreaMarket), "코스피/코스닥 등락률과 거래 강도를 기준으로 계산"),

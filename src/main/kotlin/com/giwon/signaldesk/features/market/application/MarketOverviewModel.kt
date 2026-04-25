@@ -64,6 +64,7 @@ data class NewsHighlight(
     val source: String,
     val url: String,
     val tone: String,              // 긍정 / 중립 / 부정
+    val publishedAt: String? = null,  // ISO-8601 (예: 2026-04-25T10:24:00Z). 없으면 null.
 )
 
 data class MarketSectionsResponse(
@@ -219,7 +220,8 @@ data class MarketNews(
     val title: String,
     val source: String,
     val url: String,
-    val impact: String
+    val impact: String,
+    val publishedAt: String? = null,   // RSS pubDate → ISO-8601. 없으면 null.
 )
 
 data class WatchItem(
