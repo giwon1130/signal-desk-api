@@ -11,6 +11,9 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -84,6 +87,8 @@ class GoogleNewsRssClient(
             val title = item.getElementsByTagName("title").item(0)?.textContent?.trim().orEmpty()
             val link = item.getElementsByTagName("link").item(0)?.textContent?.trim().orEmpty()
             val source = item.getElementsByTagName("source").item(0)?.textContent?.trim()?.ifBlank { "Google News" } ?: "Google News"
+            val pubDateRaw = item.getElementsByTagName("pubDate").item(0)?.textContent?.trim().orEmpty()
+            val publishedAt = parsePubDate(pubDateRaw)
 
             if (title.isBlank() || link.isBlank()) return@mapNotNull null
 
@@ -93,8 +98,27 @@ class GoogleNewsRssClient(
                 source = source,
                 url = link,
                 impact = impact,
+                publishedAt = publishedAt,
             )
         }
+    }
+
+    /**
+     * RSS pubDate (RFC 1123 e.g. "Sat, 25 Apr 2026 10:24:00 GMT") → ISO-8601 UTC ("2026-04-25T10:24:00Z").
+     * 파싱 실패하면 null. UI 는 null 이면 시각 표시를 생략한다.
+     */
+    private fun parsePubDate(raw: String): String? {
+        if (raw.isBlank()) return null
+        return runCatching {
+            ZonedDateTime.parse(raw, DateTimeFormatter.RFC_1123_DATE_TIME)
+                .toInstant()
+                .toString()
+        }.getOrNull() ?: runCatching {
+            // 일부 피드는 영문 locale 명시가 필요하기도 함
+            ZonedDateTime.parse(raw, DateTimeFormatter.RFC_1123_DATE_TIME.withLocale(Locale.ENGLISH))
+                .toInstant()
+                .toString()
+        }.getOrNull()
     }
 
     companion object {

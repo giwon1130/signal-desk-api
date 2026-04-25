@@ -43,6 +43,7 @@ object NewsSentimentBuilder {
                 source = n.source,
                 url = n.url,
                 tone = when (tone) { 1 -> "긍정"; -1 -> "부정"; else -> "중립" },
+                publishedAt = n.publishedAt,
             )
         }
         val rationale = when {
