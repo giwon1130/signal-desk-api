@@ -1,3 +1,6 @@
 .gradle/
 build/
 out/
+
+# Claude Code 로컬 권한 설정
+.claude/settings.local.json
