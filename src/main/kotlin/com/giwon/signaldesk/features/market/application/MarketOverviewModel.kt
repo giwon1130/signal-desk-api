@@ -321,6 +321,16 @@ data class RecommendationExecutionLog(
     val userStatus: String = "NEW",
     val newsUrl: String? = null,
     val newsTitle: String? = null,
+    /**
+     * 진입 가이드 — 라이브 시세 기반 산출. 시세 없으면 null.
+     *  · entryPrice: 추천 시점의 기준가 (= 현재가)
+     *  · stopLoss:  손절 라인 (entry × (1 - 0.025), -2.5% 고정)
+     *  · takeProfit: 목표가 (entry × (1 + expectedReturnRate/100), 3~20% 클램프)
+     * 어디까지나 가이드. 실제 주문은 사용자가 판단.
+     */
+    val entryPrice: Int? = null,
+    val stopLoss: Int? = null,
+    val takeProfit: Int? = null,
 )
 
 data class PaperTradingSummary(

@@ -178,7 +178,7 @@ class WorkspaceEnrichmentService(
         }
         return section.copy(
             trackRecords = refreshedTrackRecords,
-            executionLogs = buildRecommendationExecutionLogs(section.generatedDate, section.picks, refreshedTrackRecords),
+            executionLogs = buildRecommendationExecutionLogs(section.generatedDate, section.picks, refreshedTrackRecords, quotes),
         )
     }
 
@@ -191,24 +191,51 @@ class WorkspaceEnrichmentService(
         val trackRecords = (base.trackRecords + workspaceTrackRecords).sortedByDescending { it.recommendedDate }.take(20)
         return base.copy(
             picks = picks, trackRecords = trackRecords,
-            executionLogs = buildRecommendationExecutionLogs(base.generatedDate, picks, trackRecords),
+            executionLogs = buildRecommendationExecutionLogs(base.generatedDate, picks, trackRecords, emptyMap()),
         )
+    }
+
+    /**
+     * 진입/손절/목표가 산출 — 단타 가이드.
+     *  · entry = 라이브 현재가 (없으면 null)
+     *  · stop = entry × (1 - 0.025)  // -2.5% 고정 손절
+     *  · target = entry × (1 + clamp(expectedReturnRate%, 3.0..20.0) / 100)  // 기대수익률 클램프 후 적용
+     * 가격은 정수(원/센트 호환)로 반올림.
+     */
+    private fun computeTradeGuide(
+        market: String,
+        ticker: String,
+        expectedReturnRate: Double?,
+        quotes: Map<String, StockQuote>,
+    ): Triple<Int?, Int?, Int?> {
+        // 미국 종목은 라이브 quote 가 안 들어와서 가격이 0 인 경우가 많음 → null 로 떨어트림
+        if (market != "KR") return Triple(null, null, null)
+        val entry = quotes[ticker]?.currentPrice?.takeIf { it > 0 } ?: return Triple(null, null, null)
+        val stop = (entry * (1.0 - 0.025)).toInt()
+        val target = expectedReturnRate?.let {
+            val pct = it.coerceIn(3.0, 20.0)
+            (entry * (1.0 + pct / 100.0)).toInt()
+        }
+        return Triple(entry, stop, target)
     }
 
     private fun buildRecommendationExecutionLogs(
         generatedDate: String,
         picks: List<RecommendationPick>,
         trackRecords: List<RecommendationTrackRecord>,
+        quotes: Map<String, StockQuote>,
     ): List<RecommendationExecutionLog> {
         val resultByTicker = trackRecords.associateBy { "${it.market}:${it.ticker}" }
         val pickLogs = picks.map { pick ->
             val match = resultByTicker["${pick.market}:${pick.ticker}"]
+            val (entry, stop, target) = computeTradeGuide(pick.market, pick.ticker, pick.expectedReturnRate, quotes)
             RecommendationExecutionLog(
                 date = generatedDate, market = pick.market, ticker = pick.ticker, name = pick.name,
                 stage = "RECOMMEND", status = if (match != null) "검증완료" else "추적중",
                 rationale = "${pick.basis} · ${pick.note}", confidence = pick.confidence,
                 expectedReturnRate = pick.expectedReturnRate, realizedReturnRate = match?.realizedReturnRate,
                 source = pick.source,
+                entryPrice = entry, stopLoss = stop, takeProfit = target,
             )
         }
         val resultLogs = trackRecords
@@ -312,7 +339,7 @@ class WorkspaceEnrichmentService(
             generatedDate = LocalDate.now().toString(),
             summary = "수급과 뉴스, 섹터 강도 기준으로 오늘은 반도체와 빅테크 중심 추세 추종이 유리한 날로 본다.",
             picks = picks, trackRecords = trackRecords,
-            executionLogs = buildRecommendationExecutionLogs(LocalDate.now().toString(), picks, trackRecords),
+            executionLogs = buildRecommendationExecutionLogs(LocalDate.now().toString(), picks, trackRecords, emptyMap()),
         )
     }
 
