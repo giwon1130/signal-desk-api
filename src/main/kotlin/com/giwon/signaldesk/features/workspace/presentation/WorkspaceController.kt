@@ -11,6 +11,7 @@ import com.giwon.signaldesk.features.workspace.application.WorkspacePaperTrade
 import com.giwon.signaldesk.features.workspace.application.WorkspaceService
 import com.giwon.signaldesk.features.workspace.application.WorkspaceWatchItem
 import jakarta.validation.Valid
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -31,8 +32,13 @@ class WorkspaceController(
     @Autowired(required = false) private val authContext: AuthContext? = null,
 ) {
 
+    private val logger = LoggerFactory.getLogger(WorkspaceController::class.java)
+
     /** AuthContext bean 이 없으면(JDBC 모드 비활성화) null → userId 도 null (글로벌 데이터). */
     private fun userId(auth: String?) = authContext?.optionalUserId(auth)
+
+    /** 로그용 user 식별자 — 운영에서 user UUID 로 query 가능하게. 없으면 anon. */
+    private fun userTag(auth: String?): String = userId(auth)?.toString()?.take(8) ?: "anon"
 
     @GetMapping("/watchlist")
     fun getWatchlist(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<List<WorkspaceWatchItem>> =
@@ -42,12 +48,14 @@ class WorkspaceController(
     fun saveWatchlistItem(
         @RequestHeader("Authorization", required = false) auth: String?,
         @Valid @RequestBody request: SaveWatchlistItemRequest,
-    ): ApiResponse<WorkspaceWatchItem> =
-        ApiResponse(true, workspaceStore.saveWatchItem(userId(auth),
+    ): ApiResponse<WorkspaceWatchItem> {
+        val saved = workspaceStore.saveWatchItem(userId(auth),
             WorkspaceWatchItem(id = request.id, market = request.market, ticker = request.ticker,
                 name = request.name, price = request.price, changeRate = request.changeRate,
-                sector = request.sector, stance = request.stance, note = request.note)
-        ))
+                sector = request.sector, stance = request.stance, note = request.note))
+        logger.info("watchlist save user={} market={} ticker={} new={}", userTag(auth), request.market, request.ticker, request.id == null)
+        return ApiResponse(true, saved)
+    }
 
     @DeleteMapping("/watchlist/{id}")
     fun deleteWatchlistItem(
@@ -55,6 +63,7 @@ class WorkspaceController(
         @PathVariable id: String,
     ): ApiResponse<Boolean> {
         workspaceStore.deleteWatchItem(userId(auth), id)
+        logger.info("watchlist delete user={} id={}", userTag(auth), id)
         return ApiResponse(true, true)
     }
 
@@ -66,11 +75,14 @@ class WorkspaceController(
     fun savePortfolioPosition(
         @RequestHeader("Authorization", required = false) auth: String?,
         @Valid @RequestBody request: SavePortfolioPositionRequest,
-    ): ApiResponse<WorkspaceHoldingPosition> =
-        ApiResponse(true, workspaceService.savePortfolioPosition(userId(auth),
+    ): ApiResponse<WorkspaceHoldingPosition> {
+        val saved = workspaceService.savePortfolioPosition(userId(auth),
             id = request.id, market = request.market, ticker = request.ticker, name = request.name,
-            buyPrice = request.buyPrice, currentPrice = request.currentPrice, quantity = request.quantity,
-        ))
+            buyPrice = request.buyPrice, currentPrice = request.currentPrice, quantity = request.quantity)
+        logger.info("portfolio save user={} market={} ticker={} qty={} new={}",
+            userTag(auth), request.market, request.ticker, request.quantity, request.id == null)
+        return ApiResponse(true, saved)
+    }
 
     @DeleteMapping("/portfolio/{id}")
     fun deletePortfolioPosition(
@@ -78,6 +90,7 @@ class WorkspaceController(
         @PathVariable id: String,
     ): ApiResponse<Boolean> {
         workspaceStore.deletePortfolioPosition(userId(auth), id)
+        logger.info("portfolio delete user={} id={}", userTag(auth), id)
         return ApiResponse(true, true)
     }
 

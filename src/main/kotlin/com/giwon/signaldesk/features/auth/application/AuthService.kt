@@ -61,14 +61,25 @@ class AuthService(
             passwordHash = encoder.encode(password),
             nickname     = nickname.trim(),
         )
+        logger.info("signup user={} method=email", user.id.toString().take(8))
         return user.toResult()
     }
 
     fun login(email: String, password: String): AuthResult {
         val user = userRepo.findByEmail(email.trim().lowercase())
-            ?: throw AuthException("이메일 또는 비밀번호가 틀렸어요.")
-        val hash = user.passwordHash ?: throw AuthException("이 계정은 소셜 로그인으로 가입됐어요.")
-        if (!encoder.matches(password, hash)) throw AuthException("이메일 또는 비밀번호가 틀렸어요.")
+            ?: run {
+                logger.info("login fail reason=user-not-found")
+                throw AuthException("이메일 또는 비밀번호가 틀렸어요.")
+            }
+        val hash = user.passwordHash ?: run {
+            logger.info("login fail user={} reason=oauth-only", user.id.toString().take(8))
+            throw AuthException("이 계정은 소셜 로그인으로 가입됐어요.")
+        }
+        if (!encoder.matches(password, hash)) {
+            logger.info("login fail user={} reason=bad-password", user.id.toString().take(8))
+            throw AuthException("이메일 또는 비밀번호가 틀렸어요.")
+        }
+        logger.info("login success user={} method=email", user.id.toString().take(8))
         return user.toResult()
     }
 
@@ -81,14 +92,23 @@ class AuthService(
     // ── Google OAuth ──────────────────────────────────────────────────────────
 
     fun googleOAuth(idToken: String): AuthResult {
-        val info = verifyGoogleToken(idToken) ?: throw AuthException("유효하지 않은 구글 토큰이에요.")
-        val user = userRepo.findByGoogleId(info.id)
-            ?: userRepo.findByEmail(info.email)?.also { userRepo.linkGoogleId(it.id, info.id) }
+        val info = verifyGoogleToken(idToken) ?: run {
+            logger.info("oauth fail provider=google reason=invalid-token")
+            throw AuthException("유효하지 않은 구글 토큰이에요.")
+        }
+        val existing = userRepo.findByGoogleId(info.id)
+        val byEmail = if (existing == null) userRepo.findByEmail(info.email) else null
+        val user = existing
+            ?: byEmail?.also {
+                userRepo.linkGoogleId(it.id, info.id)
+                logger.info("oauth link provider=google user={} email={}", it.id.toString().take(8), info.email)
+            }
             ?: userRepo.saveOAuthUser(
                 email    = info.email,
                 nickname = info.name.ifBlank { info.email.substringBefore("@") },
                 googleId = info.id,
-            )
+            ).also { logger.info("signup user={} method=google", it.id.toString().take(8)) }
+        logger.info("login success user={} method=google", user.id.toString().take(8))
         return user.toResult()
     }
 
