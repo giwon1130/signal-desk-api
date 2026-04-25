@@ -1,5 +1,6 @@
 package com.giwon.signaldesk.features.market.application
 
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Duration
 import java.time.Instant
@@ -24,6 +25,8 @@ class MarketOverviewService(
     private val pickNewsMatcher: PickNewsMatcher,
     private val enrichmentService: WorkspaceEnrichmentService,
 ) {
+    private val logger = LoggerFactory.getLogger(MarketOverviewService::class.java)
+
     @Volatile private var cachedCore: CachedMarketCore? = null
     @Volatile private var cachedNews: CachedNewsSection? = null
 
@@ -185,10 +188,18 @@ class MarketOverviewService(
             val usIndicesFuture = CompletableFuture.supplyAsync { fredIndexClient.fetchUsIndices() }
 
             // 외부 API 장애 시 fallback으로 처리 — join() 예외가 전체 엔드포인트를 crash시키지 않도록
-            val koreaMarketBase = runCatching { koreaMarketFuture.join() }.getOrElse { defaultKoreaMarket() }
-            val vixSnapshot = runCatching { vixFuture.join() }.getOrNull()
-            val koreanQuotes = runCatching { koreanQuotesFuture.join() }.getOrDefault(emptyMap())
-            val usIndicesSnapshot = runCatching { usIndicesFuture.join() }.getOrNull()
+            val koreaMarketBase = runCatching { koreaMarketFuture.join() }
+                .onFailure { logger.warn("KRX market fetch failed → fallback to default. msg={}", it.message) }
+                .getOrElse { defaultKoreaMarket() }
+            val vixSnapshot = runCatching { vixFuture.join() }
+                .onFailure { logger.warn("VIX fetch failed. msg={}", it.message) }
+                .getOrNull()
+            val koreanQuotes = runCatching { koreanQuotesFuture.join() }
+                .onFailure { logger.warn("Naver KR quotes fetch failed. msg={}", it.message) }
+                .getOrDefault(emptyMap())
+            val usIndicesSnapshot = runCatching { usIndicesFuture.join() }
+                .onFailure { logger.warn("US indices (FRED) fetch failed. msg={}", it.message) }
+                .getOrNull()
 
             val koreaMarket = koreaMarketBase.copy(
                 leadingStocks = enrichmentService.refreshKoreanLeadingStocks(koreaMarketBase.leadingStocks, koreanQuotes)
