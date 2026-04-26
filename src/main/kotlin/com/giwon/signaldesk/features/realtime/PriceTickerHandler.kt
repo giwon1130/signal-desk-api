@@ -1,6 +1,7 @@
 package com.giwon.signaldesk.features.realtime
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.giwon.signaldesk.features.market.application.MarketSessionService
 import com.giwon.signaldesk.features.market.application.NaverFinanceQuoteClient
 import com.giwon.signaldesk.features.market.application.NaverGlobalQuoteClient
 import org.slf4j.LoggerFactory
@@ -32,6 +33,7 @@ class PriceTickerHandler(
     private val mapper: ObjectMapper,
     private val naver: NaverFinanceQuoteClient,
     private val naverGlobal: NaverGlobalQuoteClient,
+    private val marketSessionService: MarketSessionService,
 ) : TextWebSocketHandler() {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -81,8 +83,18 @@ class PriceTickerHandler(
         val allTickers = subscriptions.values.flatten().toSet()
         if (allTickers.isEmpty()) return
 
-        val krTickers = allTickers.filter { it.matches(Regex("\\d{6}")) }
-        val usTickers = allTickers.filter { it.matches(Regex("[A-Za-z][A-Za-z0-9.-]*")) }
+        // 휴장(주말/공휴일/정규장 외) 시 외부 API 호출 skip — Naver outbound 절감.
+        // 시장 세션은 cheap (메모리 계산만) 이라 매 5초 호출 OK.
+        val sessionsByMarket = marketSessionService.buildMarketSessions().associateBy { it.market }
+        val krOpen = sessionsByMarket["KR"]?.isOpen == true
+        val usOpen = sessionsByMarket["US"]?.isOpen == true
+
+        val krTickers = if (krOpen) allTickers.filter { it.matches(Regex("\\d{6}")) } else emptyList()
+        val usTickers = if (usOpen) allTickers.filter { it.matches(Regex("[A-Za-z][A-Za-z0-9.-]*")) } else emptyList()
+
+        // 양쪽 다 휴장이면 fetch 도 broadcast 도 안 함. (마지막 가격 캐시는 서버 메모리 안 함 —
+        // 클라이언트가 mount 시 받은 스냅샷 그대로 표시)
+        if (krTickers.isEmpty() && usTickers.isEmpty()) return
 
         val quotes = mutableMapOf<String, com.giwon.signaldesk.features.market.application.StockQuote>()
         if (krTickers.isNotEmpty()) {

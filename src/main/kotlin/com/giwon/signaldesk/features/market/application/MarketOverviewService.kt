@@ -30,8 +30,22 @@ class MarketOverviewService(
     @Volatile private var cachedCore: CachedMarketCore? = null
     @Volatile private var cachedNews: CachedNewsSection? = null
 
-    private val coreTtl: Duration = Duration.ofSeconds(60)
-    private val newsTtl: Duration = Duration.ofMinutes(5)
+    // 휴장 중엔 데이터가 거의 안 바뀌니 cache TTL 연장 — 외부 API 호출 / Railway compute 절감.
+    private val coreTtlOpen: Duration   = Duration.ofSeconds(60)
+    private val coreTtlClosed: Duration = Duration.ofMinutes(3)
+    private val newsTtlOpen: Duration   = Duration.ofMinutes(5)
+    private val newsTtlClosed: Duration = Duration.ofMinutes(15)
+
+    private fun coreTtl(): Duration {
+        val cached = cachedCore ?: return coreTtlOpen
+        val anyOpen = cached.marketSessions.any { it.isOpen }
+        return if (anyOpen) coreTtlOpen else coreTtlClosed
+    }
+    private fun newsTtl(): Duration {
+        val cached = cachedCore
+        val anyOpen = cached?.marketSessions?.any { it.isOpen } == true
+        return if (anyOpen) newsTtlOpen else newsTtlClosed
+    }
 
     fun getOverview(userId: UUID? = null): MarketOverviewResponse {
         val core = getCoreSnapshot()
@@ -175,11 +189,11 @@ class MarketOverviewService(
 
     private fun getCoreSnapshot(): CachedMarketCore {
         val cached = cachedCore
-        if (cached != null && Duration.between(cached.createdAt, Instant.now()) < coreTtl) return cached
+        if (cached != null && Duration.between(cached.createdAt, Instant.now()) < coreTtl()) return cached
 
         return synchronized(this) {
             val rechecked = cachedCore
-            if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < coreTtl) return@synchronized rechecked
+            if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < coreTtl()) return@synchronized rechecked
 
             val generatedAt = LocalDateTime.now()
             val koreaMarketFuture = CompletableFuture.supplyAsync { krxOfficialClient.loadKoreaMarketSection() ?: defaultKoreaMarket() }
@@ -244,11 +258,11 @@ class MarketOverviewService(
 
     private fun getCachedNews(): CachedNewsSection {
         val cached = cachedNews
-        if (cached != null && Duration.between(cached.createdAt, Instant.now()) < newsTtl) return cached
+        if (cached != null && Duration.between(cached.createdAt, Instant.now()) < newsTtl()) return cached
 
         return synchronized(this) {
             val rechecked = cachedNews
-            if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < newsTtl) return@synchronized rechecked
+            if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < newsTtl()) return@synchronized rechecked
             val snapshot = CachedNewsSection(
                 createdAt = Instant.now(),
                 generatedAt = LocalDateTime.now().toString(),
