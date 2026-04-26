@@ -2,6 +2,17 @@
 
 `SignalDesk` 백엔드(Kotlin + Spring Boot).
 
+## 📚 문서
+
+자세한 문서는 [`docs/`](docs/) 에 정리됨. 역할별 진입 경로는 [`docs/README.md`](docs/README.md) 참고.
+
+- [아키텍처 / 백엔드 / API명세 / 데이터 모델](docs/엔지니어링/) — BE
+- [배포 / 환경변수 / 장애 대응 / 보안 / 비용](docs/운영/) — DevOps / 운영
+
+제품·디자인·UX·프론트엔드 문서는 [`signal-desk-app/docs/`](https://github.com/giwon1130/signal-desk-app/tree/main/docs) 참고.
+
+자동화 에이전트(Claude 등) 용 노트는 [`AGENTS.md`](AGENTS.md).
+
 ## 1차 릴리즈 범위
 - 한국 시장: `KRX` 지수/수급/차트
 - 미국 시장: `FRED` 지수 + `CBOE VIX`
