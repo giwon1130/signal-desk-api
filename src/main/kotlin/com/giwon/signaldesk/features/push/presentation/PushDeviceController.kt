@@ -7,6 +7,7 @@ import com.giwon.signaldesk.features.push.application.PushDevice
 import com.giwon.signaldesk.features.push.application.PushRepository
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -24,6 +25,8 @@ class PushDeviceController(
     @Autowired(required = false) private val pushRepository: PushRepository? = null,
     @Autowired(required = false) private val authContext: AuthContext? = null,
 ) {
+    private val logger = LoggerFactory.getLogger(PushDeviceController::class.java)
+
     @PostMapping
     fun register(
         @RequestHeader("Authorization", required = false) auth: String?,
@@ -32,6 +35,9 @@ class PushDeviceController(
         val repo = pushRepository ?: return ApiResponse(false, null)
         val userId = authContext?.requireUserId(auth) ?: return ApiResponse(false, null)
         val device = repo.upsertDevice(userId, request.platform, request.expoToken)
+        // 토큰 전체는 안 찍고 prefix 만 (보안). user 도 첫 8자.
+        logger.info("push device register user={} platform={} tokenPrefix={}",
+            userId.toString().take(8), request.platform, request.expoToken.take(20))
         return ApiResponse(true, device)
     }
 
@@ -43,6 +49,8 @@ class PushDeviceController(
         val repo = pushRepository ?: return ApiResponse(false, false)
         val userId = authContext?.requireUserId(auth) ?: return ApiResponse(false, false)
         repo.deleteDevice(userId, token)
+        logger.info("push device unregister user={} tokenPrefix={}",
+            userId.toString().take(8), token.take(20))
         return ApiResponse(true, true)
     }
 }
