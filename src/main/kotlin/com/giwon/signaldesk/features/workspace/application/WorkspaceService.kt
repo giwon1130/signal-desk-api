@@ -12,6 +12,7 @@ class WorkspaceService(
         userId: UUID? = null,
         id: String, market: String, ticker: String, name: String,
         buyPrice: Int, currentPrice: Int, quantity: Int,
+        targetPrice: Int? = null, stopLossPrice: Int? = null,
     ): WorkspaceHoldingPosition {
         val evaluationAmount = currentPrice.toLong() * quantity
         val costAmount = buyPrice.toLong() * quantity
@@ -23,6 +24,7 @@ class WorkspaceService(
                 buyPrice = buyPrice, currentPrice = currentPrice, quantity = quantity,
                 profitAmount = profitAmount, evaluationAmount = evaluationAmount,
                 profitRate = if (costAmount == 0L) 0.0 else (profitAmount.toDouble() / costAmount) * 100,
+                targetPrice = targetPrice, stopLossPrice = stopLossPrice,
             )
         )
     }

@@ -32,6 +32,8 @@ data class WorkspaceHoldingPosition(
     val profitAmount: Long,
     val evaluationAmount: Long,
     val profitRate: Double,
+    val targetPrice: Int? = null,
+    val stopLossPrice: Int? = null,
 )
 
 data class WorkspacePaperPosition(

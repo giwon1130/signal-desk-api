@@ -26,4 +26,7 @@ interface SignalDeskWorkspaceRepository {
     fun loadAiTrackRecords(userId: UUID?): List<WorkspaceAiTrackRecord>
     fun saveAiTrackRecord(userId: UUID?, record: WorkspaceAiTrackRecord): WorkspaceAiTrackRecord
     fun deleteAiTrackRecord(userId: UUID?, id: String)
+
+    fun loadAllUserAiTrackRecords(): List<WorkspaceAiTrackRecord>
+    fun updateAiTrackRecordPrice(id: String, latestPrice: Int, realizedReturnRate: Double, success: Boolean)
 }

@@ -78,7 +78,8 @@ class WorkspaceController(
     ): ApiResponse<WorkspaceHoldingPosition> {
         val saved = workspaceService.savePortfolioPosition(userId(auth),
             id = request.id, market = request.market, ticker = request.ticker, name = request.name,
-            buyPrice = request.buyPrice, currentPrice = request.currentPrice, quantity = request.quantity)
+            buyPrice = request.buyPrice, currentPrice = request.currentPrice, quantity = request.quantity,
+            targetPrice = request.targetPrice, stopLossPrice = request.stopLossPrice)
         logger.info("portfolio save user={} market={} ticker={} qty={} new={}",
             userTag(auth), request.market, request.ticker, request.quantity, request.id == null)
         return ApiResponse(true, saved)

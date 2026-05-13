@@ -9,6 +9,8 @@ import java.util.UUID
 @Service
 class WorkspaceEnrichmentService(
     private val naverFinanceQuoteClient: NaverFinanceQuoteClient,
+    private val naverStockChartClient: NaverStockChartClient,
+    private val technicalIndicatorCalculator: TechnicalIndicatorCalculator,
     private val workspaceStore: SignalDeskWorkspaceRepository,
 ) {
 
@@ -41,7 +43,8 @@ class WorkspaceEnrichmentService(
             HoldingPosition(id = it.id, market = it.market, ticker = it.ticker, name = it.name,
                 buyPrice = it.buyPrice, currentPrice = it.currentPrice, quantity = it.quantity,
                 profitAmount = it.profitAmount, evaluationAmount = it.evaluationAmount,
-                profitRate = it.profitRate, source = "USER")
+                profitRate = it.profitRate, source = "USER",
+                targetPrice = it.targetPrice, stopLossPrice = it.stopLossPrice)
         }
         val merged = if (userId == null) {
             mergePortfolio(basePortfolio(), userPositions)
@@ -125,9 +128,17 @@ class WorkspaceEnrichmentService(
     private fun refreshWatchlist(items: List<WatchItem>, quotes: Map<String, StockQuote>): List<WatchItem> =
         items.map { item ->
             if (item.market != "KR") return@map item
-            quotes[item.ticker]?.let { quote ->
-                item.copy(price = quote.currentPrice, changeRate = quote.changeRate)
-            } ?: item
+            val quote = quotes[item.ticker] ?: return@map item
+            val bars = naverStockChartClient.fetchDailyBars(item.ticker, count = 30)
+            val technical = technicalIndicatorCalculator.calculate(bars)
+            val volumeRatio = technicalIndicatorCalculator.volumeRatio(bars)
+            item.copy(
+                price = quote.currentPrice,
+                changeRate = quote.changeRate,
+                technical = technical,
+                volume = bars.lastOrNull()?.volume ?: 0L,
+                volumeRatio = volumeRatio,
+            )
         }.sortedWith(compareBy({ it.market }, { it.name }))
 
     private fun refreshPortfolio(portfolio: PortfolioSummary, quotes: Map<String, StockQuote>): PortfolioSummary {

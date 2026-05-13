@@ -170,4 +170,6 @@ private class PassThroughWorkspaceRepository : SignalDeskWorkspaceRepository {
     override fun loadAiTrackRecords(userId: java.util.UUID?) = emptyList<WorkspaceAiTrackRecord>()
     override fun saveAiTrackRecord(userId: java.util.UUID?, record: WorkspaceAiTrackRecord) = record
     override fun deleteAiTrackRecord(userId: java.util.UUID?, id: String) = Unit
+    override fun loadAllUserAiTrackRecords() = emptyList<WorkspaceAiTrackRecord>()
+    override fun updateAiTrackRecordPrice(id: String, latestPrice: Int, realizedReturnRate: Double, success: Boolean) = Unit
 }

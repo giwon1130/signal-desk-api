@@ -77,7 +77,7 @@ class JdbcSignalDeskWorkspaceRepository(
 
     override fun loadPortfolioPositions(userId: UUID?): List<WorkspaceHoldingPosition> =
         jdbcTemplate.query(
-            "select id, market, ticker, name, buy_price, current_price, quantity, profit_amount, evaluation_amount, profit_rate from signal_desk_portfolio_positions where ${whereUser()} order by name",
+            "select id, market, ticker, name, buy_price, current_price, quantity, profit_amount, evaluation_amount, profit_rate, target_price, stop_loss_price from signal_desk_portfolio_positions where ${whereUser()} order by name",
             portfolioRowMapper, *userArgs(userId),
         )
 
@@ -85,8 +85,8 @@ class JdbcSignalDeskWorkspaceRepository(
         val nextPosition = position.copy(id = position.id.ifBlank { UUID.randomUUID().toString() })
         jdbcTemplate.update(
             """
-            insert into signal_desk_portfolio_positions (id, market, ticker, name, buy_price, current_price, quantity, profit_amount, evaluation_amount, profit_rate, user_id)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
+            insert into signal_desk_portfolio_positions (id, market, ticker, name, buy_price, current_price, quantity, profit_amount, evaluation_amount, profit_rate, target_price, stop_loss_price, user_id)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
             on conflict (id) do update set
                 market = excluded.market,
                 ticker = excluded.ticker,
@@ -96,9 +96,14 @@ class JdbcSignalDeskWorkspaceRepository(
                 quantity = excluded.quantity,
                 profit_amount = excluded.profit_amount,
                 evaluation_amount = excluded.evaluation_amount,
-                profit_rate = excluded.profit_rate
+                profit_rate = excluded.profit_rate,
+                target_price = excluded.target_price,
+                stop_loss_price = excluded.stop_loss_price
             """.trimIndent(),
-            nextPosition.id, nextPosition.market, nextPosition.ticker, nextPosition.name, nextPosition.buyPrice, nextPosition.currentPrice, nextPosition.quantity, nextPosition.profitAmount, nextPosition.evaluationAmount, nextPosition.profitRate, userId?.toString(),
+            nextPosition.id, nextPosition.market, nextPosition.ticker, nextPosition.name,
+            nextPosition.buyPrice, nextPosition.currentPrice, nextPosition.quantity,
+            nextPosition.profitAmount, nextPosition.evaluationAmount, nextPosition.profitRate,
+            nextPosition.targetPrice, nextPosition.stopLossPrice, userId?.toString(),
         )
         return nextPosition
     }
@@ -235,6 +240,19 @@ class JdbcSignalDeskWorkspaceRepository(
     override fun deleteAiTrackRecord(userId: UUID?, id: String) {
         jdbcTemplate.update("delete from signal_desk_ai_track_records where id = ? and ${whereUser()}", id, *userArgs(userId))
     }
+
+    override fun loadAllUserAiTrackRecords(): List<WorkspaceAiTrackRecord> =
+        jdbcTemplate.query(
+            "select id, recommended_date, market, ticker, name, entry_price, latest_price, realized_return_rate, success from signal_desk_ai_track_records where user_id is not null order by recommended_date desc, name",
+            aiTrackRecordRowMapper,
+        )
+
+    override fun updateAiTrackRecordPrice(id: String, latestPrice: Int, realizedReturnRate: Double, success: Boolean) {
+        jdbcTemplate.update(
+            "update signal_desk_ai_track_records set latest_price = ?, realized_return_rate = ?, success = ? where id = ?",
+            latestPrice, realizedReturnRate, success, id,
+        )
+    }
 }
 
 private val watchlistRowMapper = RowMapper { rs: ResultSet, _: Int ->
@@ -263,6 +281,8 @@ private val portfolioRowMapper = RowMapper { rs: ResultSet, _: Int ->
         profitAmount = rs.getLong("profit_amount"),
         evaluationAmount = rs.getLong("evaluation_amount"),
         profitRate = rs.getDouble("profit_rate"),
+        targetPrice = rs.getInt("target_price").takeIf { it > 0 },
+        stopLossPrice = rs.getInt("stop_loss_price").takeIf { it > 0 },
     )
 }
 

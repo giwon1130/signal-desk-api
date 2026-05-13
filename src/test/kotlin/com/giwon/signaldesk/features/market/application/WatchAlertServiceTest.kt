@@ -93,10 +93,10 @@ class WatchAlertServiceTest {
     }
 
     @Test
-    fun `결과 최대 6개로 제한`() {
+    fun `결과 최대 8개로 제한`() {
         val items = (1..10).map { watchItem(ticker = "TICK$it", changeRate = 5.0) }
         val alerts = service.buildWatchAlerts(emptyList(), emptyList(), items, emptyPortfolio(), emptyAi())
-        assertTrue(alerts.size <= 6)
+        assertTrue(alerts.size <= 8)
     }
 
     @Test

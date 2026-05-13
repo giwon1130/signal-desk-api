@@ -23,6 +23,8 @@ data class SavePortfolioPositionRequest(
     @field:Min(0) val buyPrice: Int,
     @field:Min(0) val currentPrice: Int,
     @field:Min(1) val quantity: Int,
+    val targetPrice: Int? = null,
+    val stopLossPrice: Int? = null,
 )
 
 data class SavePaperPositionRequest(

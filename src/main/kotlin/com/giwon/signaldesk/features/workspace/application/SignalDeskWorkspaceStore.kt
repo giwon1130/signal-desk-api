@@ -104,6 +104,14 @@ class SignalDeskWorkspaceStore(
         write(read().copy(aiTrackRecords = read().aiTrackRecords.filterNot { it.id == id }))
     }
 
+    override fun loadAllUserAiTrackRecords(): List<WorkspaceAiTrackRecord> = synchronized(lock) { read().aiTrackRecords }
+
+    override fun updateAiTrackRecordPrice(id: String, latestPrice: Int, realizedReturnRate: Double, success: Boolean) = synchronized(lock) {
+        write(read().copy(aiTrackRecords = read().aiTrackRecords.map {
+            if (it.id == id) it.copy(latestPrice = latestPrice, realizedReturnRate = realizedReturnRate, success = success) else it
+        }))
+    }
+
     private fun read(): StoreFile =
         if (!Files.exists(resolvedPath)) StoreFile()
         else runCatching { objectMapper.readValue<StoreFile>(resolvedPath.toFile()) }.getOrElse { StoreFile() }

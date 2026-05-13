@@ -235,6 +235,9 @@ data class WatchItem(
     val note: String,
     val source: String = "BASE",
     val id: String = "",
+    val technical: TechnicalSignal? = null,
+    val volume: Long = 0L,
+    val volumeRatio: Double? = null,
 )
 
 data class PortfolioSummary(
@@ -257,6 +260,8 @@ data class HoldingPosition(
     val profitRate: Double,
     val source: String = "BASE",
     val id: String = "",
+    val targetPrice: Int? = null,
+    val stopLossPrice: Int? = null,
 )
 
 data class AIRecommendationSection(
