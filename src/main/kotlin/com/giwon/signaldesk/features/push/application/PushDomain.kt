@@ -10,7 +10,7 @@ data class PushDevice(
     val expoToken: String,
 )
 
-enum class AlertDirection { UP, DOWN }
+enum class AlertDirection { UP, DOWN, PRICE_BELOW, PRICE_ABOVE, VOLUME_SPIKE }
 
 data class AlertLogEntry(
     val userId: UUID,
@@ -36,4 +36,7 @@ data class AlertCandidate(
     val market: String,
     val changeRate: Double,
     val direction: AlertDirection,
+    val currentPrice: Int = 0,
+    val thresholdPrice: Int? = null,
+    val volumeRatio: Double? = null,
 )

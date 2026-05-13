@@ -19,6 +19,9 @@ data class WorkspaceWatchItem(
     val sector: String,
     val stance: String,
     val note: String,
+    val alertBelow: Int? = null,
+    val alertAbove: Int? = null,
+    val volumeAlert: Boolean = false,
 )
 
 data class WorkspaceHoldingPosition(

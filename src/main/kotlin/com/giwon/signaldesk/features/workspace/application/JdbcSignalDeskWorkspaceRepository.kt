@@ -34,7 +34,7 @@ class JdbcSignalDeskWorkspaceRepository(
 
     override fun loadWatchlist(userId: UUID?): List<WorkspaceWatchItem> =
         jdbcTemplate.query(
-            "select id, market, ticker, name, price, change_rate, sector, stance, note from signal_desk_watchlist where ${whereUser()} order by name",
+            "select id, market, ticker, name, price, change_rate, sector, stance, note, alert_below, alert_above, volume_alert from signal_desk_watchlist where ${whereUser()} order by name",
             watchlistRowMapper, *userArgs(userId),
         )
 
@@ -52,8 +52,8 @@ class JdbcSignalDeskWorkspaceRepository(
         val nextItem = item.copy(id = resolvedId)
         jdbcTemplate.update(
             """
-            insert into signal_desk_watchlist (id, market, ticker, name, price, change_rate, sector, stance, note, user_id)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
+            insert into signal_desk_watchlist (id, market, ticker, name, price, change_rate, sector, stance, note, alert_below, alert_above, volume_alert, user_id)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
             on conflict (id) do update set
                 market = excluded.market,
                 ticker = excluded.ticker,
@@ -62,9 +62,14 @@ class JdbcSignalDeskWorkspaceRepository(
                 change_rate = excluded.change_rate,
                 sector = excluded.sector,
                 stance = excluded.stance,
-                note = excluded.note
+                note = excluded.note,
+                alert_below = excluded.alert_below,
+                alert_above = excluded.alert_above,
+                volume_alert = excluded.volume_alert
             """.trimIndent(),
-            nextItem.id, nextItem.market, nextItem.ticker, nextItem.name, nextItem.price, nextItem.changeRate, nextItem.sector, nextItem.stance, nextItem.note, userId?.toString(),
+            nextItem.id, nextItem.market, nextItem.ticker, nextItem.name, nextItem.price, nextItem.changeRate,
+            nextItem.sector, nextItem.stance, nextItem.note,
+            nextItem.alertBelow, nextItem.alertAbove, nextItem.volumeAlert, userId?.toString(),
         )
         return nextItem
     }
@@ -266,6 +271,9 @@ private val watchlistRowMapper = RowMapper { rs: ResultSet, _: Int ->
         sector = rs.getString("sector"),
         stance = rs.getString("stance"),
         note = rs.getString("note"),
+        alertBelow = rs.getObject("alert_below") as Int?,
+        alertAbove = rs.getObject("alert_above") as Int?,
+        volumeAlert = rs.getBoolean("volume_alert"),
     )
 }
 

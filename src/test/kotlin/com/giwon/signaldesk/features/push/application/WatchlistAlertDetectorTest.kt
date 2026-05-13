@@ -49,4 +49,47 @@ class WatchlistAlertDetectorTest {
         assertEquals(1, result.size)
         assertEquals(AlertDirection.DOWN, result[0].direction)
     }
+
+    private fun rowWithAlerts(
+        ticker: String, currentPrice: Int,
+        alertBelow: Int? = null, alertAbove: Int? = null,
+        volumeAlert: Boolean = false, volumeRatio: Double? = null,
+    ) = WatchlistAlertDetector.WatchRow(
+        userId = user, market = "KR", ticker = ticker, name = ticker, changeRate = 0.0,
+        currentPrice = currentPrice, alertBelow = alertBelow, alertAbove = alertAbove,
+        volumeAlert = volumeAlert, volumeRatio = volumeRatio,
+    )
+
+    @Test
+    fun `현재가가 하한가 이하이면 PRICE_BELOW 후보`() {
+        val result = detector.detect(listOf(rowWithAlerts("005930", 70000, alertBelow = 75000)), emptySet(), today)
+        assertEquals(1, result.size)
+        assertEquals(AlertDirection.PRICE_BELOW, result[0].direction)
+    }
+
+    @Test
+    fun `현재가가 하한가 초과이면 후보 아님`() {
+        val result = detector.detect(listOf(rowWithAlerts("005930", 80000, alertBelow = 75000)), emptySet(), today)
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun `현재가가 상한가 이상이면 PRICE_ABOVE 후보`() {
+        val result = detector.detect(listOf(rowWithAlerts("005930", 90000, alertAbove = 85000)), emptySet(), today)
+        assertEquals(1, result.size)
+        assertEquals(AlertDirection.PRICE_ABOVE, result[0].direction)
+    }
+
+    @Test
+    fun `거래량 급증 알림 켜져있고 3배 이상이면 VOLUME_SPIKE`() {
+        val result = detector.detect(listOf(rowWithAlerts("005930", 80000, volumeAlert = true, volumeRatio = 3.5)), emptySet(), today)
+        assertEquals(1, result.size)
+        assertEquals(AlertDirection.VOLUME_SPIKE, result[0].direction)
+    }
+
+    @Test
+    fun `거래량 알림 꺼져있으면 급증해도 후보 아님`() {
+        val result = detector.detect(listOf(rowWithAlerts("005930", 80000, volumeAlert = false, volumeRatio = 5.0)), emptySet(), today)
+        assertTrue(result.isEmpty())
+    }
 }

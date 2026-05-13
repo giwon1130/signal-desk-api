@@ -13,6 +13,9 @@ data class SaveWatchlistItemRequest(
     @field:NotBlank val sector: String,
     @field:NotBlank val stance: String,
     @field:NotBlank val note: String,
+    val alertBelow: Int? = null,
+    val alertAbove: Int? = null,
+    val volumeAlert: Boolean = false,
 )
 
 data class SavePortfolioPositionRequest(

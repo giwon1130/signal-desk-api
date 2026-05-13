@@ -52,7 +52,8 @@ class WorkspaceController(
         val saved = workspaceStore.saveWatchItem(userId(auth),
             WorkspaceWatchItem(id = request.id, market = request.market, ticker = request.ticker,
                 name = request.name, price = request.price, changeRate = request.changeRate,
-                sector = request.sector, stance = request.stance, note = request.note))
+                sector = request.sector, stance = request.stance, note = request.note,
+                alertBelow = request.alertBelow, alertAbove = request.alertAbove, volumeAlert = request.volumeAlert))
         logger.info("watchlist save user={} market={} ticker={} new={}", userTag(auth), request.market, request.ticker, request.id == null)
         return ApiResponse(true, saved)
     }
