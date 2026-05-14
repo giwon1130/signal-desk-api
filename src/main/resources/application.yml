@@ -57,5 +57,16 @@ signal-desk:
       base-url: https://news.google.com/rss/search
     venue-signals:
       enabled: false
+    gemini:
+      # Google AI Studio 에서 발급. 비어있으면 미디어 요약 기능 비활성.
+      api-key: ${GEMINI_API_KEY:}
+      base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+      model: ${GEMINI_MODEL:gemini-2.0-flash-exp}
+    youtube:
+      # 콤마 구분 채널 ID 목록. 비어있으면 스케줄러는 noop.
+      # ex) "UCXST0Hq6CAmG0dmo3jgrlEw" (삼프로TV — 실제 ID는 운영에서 환경변수로 주입)
+      channel-ids: ${YOUTUBE_CHANNEL_IDS:}
+      rss-base-url: ${YOUTUBE_RSS_BASE_URL:https://www.youtube.com/feeds/videos.xml}
+      transcript-base-url: ${YOUTUBE_TRANSCRIPT_BASE_URL:https://www.youtube.com/api/timedtext}
   cors:
     allowed-origin-patterns: ${SIGNAL_DESK_CORS_ALLOWED_ORIGINS:}
