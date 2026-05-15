@@ -94,18 +94,31 @@ class GeminiClient(
         val gen = root.putObject("generationConfig")
         gen.put("temperature", 0.3)
         gen.put("responseMimeType", "application/json")
-        gen.put("maxOutputTokens", 1024)
+        gen.put("maxOutputTokens", 2048)
+        // Gemini 2.5 flash 는 기본 thinking 모드라 응답 parts 가 thought + answer 로 쪼개진다.
+        // thinkingBudget=0 으로 thinking 을 끄면 항상 단일 JSON parts 가 와서 파싱이 단순해진다.
+        gen.putObject("thinkingConfig").put("thinkingBudget", 0)
 
         return objectMapper.writeValueAsString(root)
     }
 
     private fun parseResponse(body: String): MediaSummaryAnalysis? {
         val root = objectMapper.readTree(body)
-        val text = root["candidates"]?.firstOrNull()
-            ?.get("content")?.get("parts")?.firstOrNull()
-            ?.get("text")?.asText()
+        // parts 가 여러 개로 쪼개질 수 있어 (thinking 모델), thought=true 가 아닌 parts 의 text 를 모두 합친다.
+        val parts = root["candidates"]?.firstOrNull()?.get("content")?.get("parts")
             ?: return null
-        val payload = objectMapper.readTree(text) as? ObjectNode ?: return null
+        val text = buildString {
+            parts.forEach { part ->
+                if (part["thought"]?.asBoolean() == true) return@forEach
+                part["text"]?.asText()?.let { append(it) }
+            }
+        }.trim()
+        if (text.isBlank()) return null
+        val payload = runCatching { objectMapper.readTree(text) }
+            .getOrElse {
+                log.warn("Gemini response not JSON. raw={}", text.take(500))
+                return null
+            } as? ObjectNode ?: return null
 
         val sentimentRaw = payload["sentiment"]?.asText()?.uppercase().orEmpty()
         val sentiment = runCatching { MediaSentiment.valueOf(sentimentRaw) }.getOrDefault(MediaSentiment.NEUTRAL)
