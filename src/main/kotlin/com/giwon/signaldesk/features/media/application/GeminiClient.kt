@@ -104,9 +104,16 @@ class GeminiClient(
 
     private fun parseResponse(body: String): MediaSummaryAnalysis? {
         val root = objectMapper.readTree(body)
+        val candidate = root["candidates"]?.firstOrNull() ?: run {
+            log.warn("Gemini response missing candidates. body={}", body.take(500))
+            return null
+        }
         // parts 가 여러 개로 쪼개질 수 있어 (thinking 모델), thought=true 가 아닌 parts 의 text 를 모두 합친다.
-        val parts = root["candidates"]?.firstOrNull()?.get("content")?.get("parts")
-            ?: return null
+        val parts = candidate["content"]?.get("parts") ?: run {
+            log.warn("Gemini response missing parts. finishReason={} candidate={}",
+                candidate["finishReason"]?.asText(), candidate.toString().take(500))
+            return null
+        }
         val text = buildString {
             parts.forEach { part ->
                 if (part["thought"]?.asBoolean() == true) return@forEach

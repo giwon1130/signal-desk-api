@@ -33,10 +33,9 @@ class YouTubeTranscriptClient(
 
     private val webUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    private val iosUserAgent = "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)"
-
-    // yt-dlp 등이 사용하는 공개 innertube 키. 별도 자격증명 아님.
-    private val innertubeKey = "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc"
+    // TVHTML5_SIMPLY_EMBEDDED_PLAYER 는 키 없이도 동작하고 봇 차단에 가장 강한 경로.
+    private val tvUserAgent = "Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 " +
+        "(KHTML, like Gecko) Version/13.0 Safari/605.1.15"
 
     /** 자막을 평문 문자열로 반환. 없으면 빈 문자열. */
     fun fetchTranscript(videoId: String): String {
@@ -65,26 +64,27 @@ class YouTubeTranscriptClient(
     private data class CaptionTrack(val baseUrl: String, val languageCode: String, val kind: String?)
 
     /**
-     * YouTube 내부 player API(innertube)를 iOS 클라이언트로 호출.
-     * 서버 IP에서 watch 페이지가 captionTracks 없이 반환되는 경우(=봇 탐지)에도
-     * 이 엔드포인트는 보통 정상 응답한다. yt-dlp 등이 같은 패턴을 사용.
+     * YouTube 내부 player API(innertube) — TVHTML5_SIMPLY_EMBEDDED_PLAYER 클라이언트.
+     * 이 클라이언트는 키 없이도 받아주고, 서버 IP 의 봇 차단을 가장 잘 우회한다.
+     * yt-dlp 가 fallback 으로 쓰는 패턴.
      */
     private fun fetchCaptionTracksInnertube(videoId: String): List<CaptionTrack> {
         val payload = """
-            {"context":{"client":{"clientName":"IOS","clientVersion":"19.29.1","deviceMake":"Apple","deviceModel":"iPhone16,2","platform":"MOBILE","osName":"iOS","osVersion":"17.5.1.21F90","hl":"ko","gl":"KR"}},"videoId":"$videoId"}
+            {"context":{"client":{"clientName":"TVHTML5_SIMPLY_EMBEDDED_PLAYER","clientVersion":"2.0","hl":"ko","gl":"KR"}},"videoId":"$videoId"}
         """.trimIndent()
         val request = HttpRequest.newBuilder()
-            .uri(URI.create("https://www.youtube.com/youtubei/v1/player?key=$innertubeKey"))
+            .uri(URI.create("https://www.youtube.com/youtubei/v1/player"))
             .timeout(Duration.ofSeconds(15))
             .header("Content-Type", "application/json")
-            .header("User-Agent", iosUserAgent)
-            .header("X-YouTube-Client-Name", "5")
-            .header("X-YouTube-Client-Version", "19.29.1")
+            .header("User-Agent", tvUserAgent)
+            .header("X-YouTube-Client-Name", "85")
+            .header("X-YouTube-Client-Version", "2.0")
             .POST(HttpRequest.BodyPublishers.ofString(payload))
             .build()
         val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() != 200) {
-            log.warn("innertube player status={} videoId={}", response.statusCode(), videoId)
+            log.warn("innertube player status={} body={} videoId={}",
+                response.statusCode(), response.body().take(300), videoId)
             return emptyList()
         }
         return parseCaptionTracks(response.body())
