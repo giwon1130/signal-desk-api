@@ -36,21 +36,24 @@ class JdbcMediaSummaryRepository(
             """
             insert into signal_desk_media_summaries
                 (id, channel_id, channel_title, video_id, video_title, video_url, published_at,
-                 transcript_length, summary, flow_analysis, key_tickers, sentiment, has_transcript, created_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 transcript_length, summary, flow_analysis, key_tickers, sentiment, has_transcript, source, created_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             on conflict (video_id) do update set
                 summary = excluded.summary,
                 flow_analysis = excluded.flow_analysis,
                 key_tickers = excluded.key_tickers,
                 sentiment = excluded.sentiment,
                 has_transcript = excluded.has_transcript,
-                transcript_length = excluded.transcript_length
+                transcript_length = excluded.transcript_length,
+                channel_title = excluded.channel_title,
+                video_title = excluded.video_title,
+                published_at = excluded.published_at
             """.trimIndent(),
             summary.id, summary.channelId, summary.channelTitle, summary.videoId,
             summary.videoTitle, summary.videoUrl, Timestamp.from(summary.publishedAt),
             summary.transcriptLength, summary.summary, summary.flowAnalysis,
             summary.keyTickers.joinToString(","), summary.sentiment.name, summary.hasTranscript,
-            Timestamp.from(summary.createdAt),
+            summary.source.name, Timestamp.from(summary.createdAt),
         )
         return summary
     }
@@ -71,6 +74,7 @@ private val rowMapper = RowMapper { rs: ResultSet, _: Int ->
         keyTickers = rs.getString("key_tickers").split(",").map { it.trim() }.filter { it.isNotBlank() },
         sentiment = runCatching { MediaSentiment.valueOf(rs.getString("sentiment")) }.getOrDefault(MediaSentiment.NEUTRAL),
         hasTranscript = rs.getBoolean("has_transcript"),
+        source = runCatching { MediaSource.valueOf(rs.getString("source")) }.getOrDefault(MediaSource.YOUTUBE),
         createdAt = rs.getTimestamp("created_at").toInstant(),
     )
 }

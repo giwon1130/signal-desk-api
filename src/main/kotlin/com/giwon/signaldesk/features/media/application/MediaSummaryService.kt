@@ -84,6 +84,7 @@ class MediaSummaryService(
             keyTickers = analysis.keyTickers,
             sentiment = analysis.sentiment,
             hasTranscript = transcript.isNotBlank(),
+            source = MediaSource.YOUTUBE,
             createdAt = Instant.now(),
         )
         return repository.save(summary)

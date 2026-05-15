@@ -4,6 +4,8 @@ import java.time.Instant
 
 enum class MediaSentiment { BULLISH, BEARISH, NEUTRAL }
 
+enum class MediaSource { YOUTUBE, NEWS_DIGEST }
+
 data class YouTubeVideo(
     val videoId: String,
     val channelId: String,
@@ -22,7 +24,13 @@ data class MediaSummaryAnalysis(
     val sentiment: MediaSentiment,
 )
 
-/** DB에 저장/조회하는 최종 형태. */
+/**
+ * DB에 저장/조회하는 최종 형태.
+ *
+ * YOUTUBE source: channelId/videoId/videoUrl 이 실제 유튜브 값.
+ * NEWS_DIGEST source: 가상의 video_id (예: "news-2026-05-15-KR"),
+ *                     channelTitle="시장 마감 종합", videoUrl=빈 문자열.
+ */
 data class MediaSummary(
     val id: String,
     val channelId: String,
@@ -37,5 +45,6 @@ data class MediaSummary(
     val keyTickers: List<String>,
     val sentiment: MediaSentiment,
     val hasTranscript: Boolean,
+    val source: MediaSource,
     val createdAt: Instant,
 )

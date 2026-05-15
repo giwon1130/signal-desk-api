@@ -13,6 +13,7 @@ data class MediaSummaryResponse(
     val keyTickers: List<String>,
     val sentiment: String,
     val hasTranscript: Boolean,
+    val source: String,
 ) {
     companion object {
         fun from(item: MediaSummary) = MediaSummaryResponse(
@@ -26,6 +27,7 @@ data class MediaSummaryResponse(
             keyTickers = item.keyTickers,
             sentiment = item.sentiment.name,
             hasTranscript = item.hasTranscript,
+            source = item.source.name,
         )
     }
 }

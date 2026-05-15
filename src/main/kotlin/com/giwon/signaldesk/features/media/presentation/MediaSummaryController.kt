@@ -3,6 +3,7 @@ package com.giwon.signaldesk.features.media.presentation
 import com.giwon.signaldesk.features.market.presentation.ApiResponse
 import com.giwon.signaldesk.features.media.application.MediaSummaryRepository
 import com.giwon.signaldesk.features.media.application.MediaSummaryService
+import com.giwon.signaldesk.features.media.application.NewsDigestService
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController
 class MediaSummaryController(
     private val repository: MediaSummaryRepository,
     private val service: MediaSummaryService,
+    private val newsDigestService: NewsDigestService,
 ) {
 
     @GetMapping("/summaries")
@@ -43,12 +45,29 @@ class MediaSummaryController(
     }
 
     /**
-     * 수동 트리거 — 운영용.
-     * @param force true 면 이미 처리한 video_id 도 재처리 (자막 로직 검증 등 디버깅용)
+     * 수동 트리거 — 운영용. (YouTube 채널 요약)
+     * @param force true 면 이미 처리한 video_id 도 재처리
      */
     @PostMapping("/summaries/refresh")
     fun refresh(@RequestParam(defaultValue = "false") force: Boolean): ApiResponse<Int> {
         val processed = service.runDailyScan(force)
+        return ApiResponse(true, processed)
+    }
+
+    /**
+     * 뉴스 종합 요약 수동 트리거.
+     * @param market "KR" or "US". 둘 다 처리하려면 "ALL".
+     */
+    @PostMapping("/summaries/news-digest")
+    fun newsDigest(
+        @RequestParam(defaultValue = "KR") market: String,
+        @RequestParam(defaultValue = "false") force: Boolean,
+    ): ApiResponse<Int> {
+        val processed = if (market.uppercase() == "ALL") {
+            newsDigestService.runAll(force)
+        } else {
+            if (newsDigestService.runDigest(market.uppercase(), force) != null) 1 else 0
+        }
         return ApiResponse(true, processed)
     }
 }

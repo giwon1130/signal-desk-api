@@ -33,13 +33,27 @@ class GeminiClient(
 
     fun isEnabled(): Boolean = apiKey.isNotBlank()
 
-    fun summarize(videoTitle: String, transcript: String): MediaSummaryAnalysis? {
+    fun summarize(videoTitle: String, transcript: String): MediaSummaryAnalysis? =
+        callJson(buildVideoPrompt(videoTitle, transcript))
+
+    /**
+     * 마감시황 뉴스 헤드라인 묶음을 종합 요약.
+     * @param marketLabel "KR" 또는 "US"
+     * @param dateLabel "2026-05-15" 같은 날짜
+     * @param headlines (source, title, url) 튜플 리스트
+     */
+    fun summarizeNewsDigest(
+        marketLabel: String,
+        dateLabel: String,
+        headlines: List<Triple<String, String, String>>,
+    ): MediaSummaryAnalysis? = callJson(buildNewsDigestPrompt(marketLabel, dateLabel, headlines))
+
+    private fun callJson(prompt: String): MediaSummaryAnalysis? {
         if (!isEnabled()) {
             log.warn("GeminiClient disabled — GEMINI_API_KEY 미설정")
             return null
         }
-
-        val content = buildContent(videoTitle, transcript)
+        val content = buildPayload(prompt)
         return runCatching {
             val url = "$baseUrl/v1beta/models/$model:generateContent?key=$apiKey"
             val request = HttpRequest.newBuilder()
@@ -60,12 +74,12 @@ class GeminiClient(
         }
     }
 
-    private fun buildContent(videoTitle: String, transcript: String): String {
+    private fun buildVideoPrompt(videoTitle: String, transcript: String): String {
         // 자막이 너무 길면 토큰 비용/응답 시간 폭증 → 앞 80,000자로 자른다 (대략 50K 토큰).
         val safe = if (transcript.length > 80_000) transcript.substring(0, 80_000) else transcript
         val source = if (safe.isBlank()) "(자막 없음 — 영상 제목만으로 추정)" else safe
 
-        val prompt = """
+        return """
             당신은 한국 주식 투자 전문 분석가입니다.
             아래는 데일리 증시 분석 유튜브 방송의 자막(또는 제목)입니다.
             방송 내용을 분석해서 한국 개인 투자자가 빠르게 흐름을 파악할 수 있도록
@@ -84,7 +98,37 @@ class GeminiClient(
             방송 내용:
             $source
         """.trimIndent()
+    }
 
+    private fun buildNewsDigestPrompt(
+        marketLabel: String,
+        dateLabel: String,
+        headlines: List<Triple<String, String, String>>,
+    ): String {
+        // 헤드라인이 너무 많으면 토큰 폭증 → 최신 60건으로 제한.
+        val capped = headlines.take(60)
+        val lines = capped.joinToString("\n") { (source, title, _) -> "- [$source] $title" }
+        val marketKo = if (marketLabel == "KR") "한국" else "미국"
+        return """
+            당신은 한국 주식 투자 전문 분석가입니다.
+            아래는 $dateLabel 자 $marketKo 시장 관련 뉴스 헤드라인 묶음입니다 (${capped.size}건).
+            여러 매체의 헤드라인을 종합해 한국 개인 투자자가 한 눈에 시황을 파악할 수 있도록
+            아래 JSON 스키마에 맞춰 한국어로 답변하세요.
+
+            스키마:
+            {
+              "summary": "3~5문장으로 오늘 시장의 핵심 흐름 요약 (각 문장은 줄바꿈으로 구분)",
+              "flowAnalysis": "2~3문장으로 시장 흐름 해석 — 강세/약세/관망의 이유와 주목할 섹터",
+              "keyTickers": ["헤드라인에서 반복 언급된 종목명 또는 티커. 한국 종목은 6자리 코드(예: 005930), 미국 종목은 티커(예: NVDA). 최대 6개"],
+              "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나"
+            }
+
+            헤드라인:
+            $lines
+        """.trimIndent()
+    }
+
+    private fun buildPayload(prompt: String): String {
         val root = objectMapper.createObjectNode()
         val contents = root.putArray("contents")
         val msg = contents.addObject()
