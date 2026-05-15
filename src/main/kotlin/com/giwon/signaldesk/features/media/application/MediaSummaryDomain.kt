@@ -11,6 +11,7 @@ data class YouTubeVideo(
     val title: String,
     val url: String,
     val publishedAt: Instant,
+    val description: String = "",
 )
 
 /** AI 분석 결과만 담는 순수 값 객체. 영상 메타데이터와 분리해서 합성. */

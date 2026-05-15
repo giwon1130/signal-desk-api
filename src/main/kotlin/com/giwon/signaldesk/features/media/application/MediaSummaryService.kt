@@ -31,7 +31,7 @@ class MediaSummaryService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /** 스케줄러/수동 트리거 모두 이 메소드를 호출. 처리된 영상 수 반환. */
-    fun runDailyScan(): Int {
+    fun runDailyScan(force: Boolean = false): Int {
         if (!geminiClient.isEnabled()) {
             log.warn("MediaSummaryService skipped — GEMINI_API_KEY 미설정")
             return 0
@@ -44,17 +44,17 @@ class MediaSummaryService(
 
         var processed = 0
         channelIds.forEach { channelId ->
-            runCatching { processChannel(channelId)?.let { processed++ } }
+            runCatching { processChannel(channelId, force)?.let { processed++ } }
                 .onFailure { log.warn("media summary failed for channel={}", channelId, it) }
         }
         log.info("MediaSummaryService scan done. channels={}, processed={}", channelIds.size, processed)
         return processed
     }
 
-    private fun processChannel(channelId: String): MediaSummary? {
+    private fun processChannel(channelId: String, force: Boolean): MediaSummary? {
         val videos = rssClient.fetchLatestVideos(channelId)
         val latest = videos.firstOrNull() ?: return null
-        if (repository.findByVideoId(latest.videoId) != null) {
+        if (!force && repository.findByVideoId(latest.videoId) != null) {
             log.info("media summary already exists. videoId={}", latest.videoId)
             return null
         }
@@ -64,7 +64,9 @@ class MediaSummaryService(
     /** 외부에서 특정 영상만 강제 요약하고 싶을 때 사용 (수동 트리거 등). */
     fun summarizeVideo(video: YouTubeVideo): MediaSummary? {
         val transcript = transcriptClient.fetchTranscript(video.videoId)
-        val analysis = geminiClient.summarize(video.title, transcript) ?: run {
+        // 자막이 없으면 description (RSS media:description) 으로 fallback. 둘 다 빈 경우 제목만 사용.
+        val sourceText = transcript.ifBlank { video.description }
+        val analysis = geminiClient.summarize(video.title, sourceText) ?: run {
             log.warn("Gemini analysis returned null. videoId={}", video.videoId)
             return null
         }
@@ -76,7 +78,7 @@ class MediaSummaryService(
             videoTitle = video.title,
             videoUrl = video.url,
             publishedAt = video.publishedAt,
-            transcriptLength = transcript.length,
+            transcriptLength = sourceText.length,
             summary = analysis.summary,
             flowAnalysis = analysis.flowAnalysis,
             keyTickers = analysis.keyTickers,

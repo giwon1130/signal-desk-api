@@ -42,10 +42,13 @@ class MediaSummaryController(
         return ApiResponse(true, item)
     }
 
-    /** 수동 트리거 — 운영용. 실행 결과 처리된 영상 수 반환. */
+    /**
+     * 수동 트리거 — 운영용.
+     * @param force true 면 이미 처리한 video_id 도 재처리 (자막 로직 검증 등 디버깅용)
+     */
     @PostMapping("/summaries/refresh")
-    fun refresh(): ApiResponse<Int> {
-        val processed = service.runDailyScan()
+    fun refresh(@RequestParam(defaultValue = "false") force: Boolean): ApiResponse<Int> {
+        val processed = service.runDailyScan(force)
         return ApiResponse(true, processed)
     }
 }

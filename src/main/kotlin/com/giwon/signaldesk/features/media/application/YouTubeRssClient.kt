@@ -64,6 +64,10 @@ class YouTubeRssClient(
             val title = entry.getElementsByTagName("title").item(0)?.textContent?.trim().orEmpty()
             val publishedRaw = entry.getElementsByTagName("published").item(0)?.textContent?.trim().orEmpty()
             val published = runCatching { Instant.parse(publishedRaw) }.getOrNull() ?: Instant.now()
+            // media:description 은 entry > media:group > media:description 안에 있음.
+            // 자막 fetch 가 실패할 때 fallback 으로 사용한다.
+            val description = entry.getElementsByTagName("media:description")
+                .item(0)?.textContent?.trim().orEmpty()
 
             YouTubeVideo(
                 videoId = videoId,
@@ -72,6 +76,7 @@ class YouTubeRssClient(
                 title = title,
                 url = "https://www.youtube.com/watch?v=$videoId",
                 publishedAt = published,
+                description = description,
             )
         }
     }
