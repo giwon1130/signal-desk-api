@@ -31,19 +31,27 @@ class YouTubeTranscriptClient(
         .connectTimeout(Duration.ofSeconds(5))
         .build()
 
-    private val userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+    private val webUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    private val iosUserAgent = "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)"
+
+    // yt-dlp 등이 사용하는 공개 innertube 키. 별도 자격증명 아님.
+    private val innertubeKey = "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc"
 
     /** 자막을 평문 문자열로 반환. 없으면 빈 문자열. */
     fun fetchTranscript(videoId: String): String {
         if (videoId.isBlank()) return ""
         return runCatching {
-            val tracks = fetchCaptionTracks(videoId)
+            // 1차: innertube iOS 클라이언트 (서버 IP 환경에서 가장 안정적)
+            var tracks = fetchCaptionTracksInnertube(videoId)
+            if (tracks.isEmpty()) {
+                // 2차 fallback: watch 페이지 HTML 파싱 (로컬 개발/일반 IP 에서 잘 됨)
+                tracks = fetchCaptionTracksFromWatch(videoId)
+            }
             if (tracks.isEmpty()) {
                 log.info("no caption tracks. videoId={}", videoId)
                 return@runCatching ""
             }
-            // 한국어 우선 (auto 자막 ko-KR / asr 도 포함), 없으면 첫 트랙
             val track = tracks.firstOrNull { it.languageCode.startsWith("ko") } ?: tracks.first()
             downloadCaption(track.baseUrl).also {
                 log.info("transcript ok. videoId={}, lang={}, chars={}", videoId, track.languageCode, it.length)
@@ -56,11 +64,37 @@ class YouTubeTranscriptClient(
 
     private data class CaptionTrack(val baseUrl: String, val languageCode: String, val kind: String?)
 
-    private fun fetchCaptionTracks(videoId: String): List<CaptionTrack> {
+    /**
+     * YouTube 내부 player API(innertube)를 iOS 클라이언트로 호출.
+     * 서버 IP에서 watch 페이지가 captionTracks 없이 반환되는 경우(=봇 탐지)에도
+     * 이 엔드포인트는 보통 정상 응답한다. yt-dlp 등이 같은 패턴을 사용.
+     */
+    private fun fetchCaptionTracksInnertube(videoId: String): List<CaptionTrack> {
+        val payload = """
+            {"context":{"client":{"clientName":"IOS","clientVersion":"19.29.1","deviceMake":"Apple","deviceModel":"iPhone16,2","platform":"MOBILE","osName":"iOS","osVersion":"17.5.1.21F90","hl":"ko","gl":"KR"}},"videoId":"$videoId"}
+        """.trimIndent()
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create("https://www.youtube.com/youtubei/v1/player?key=$innertubeKey"))
+            .timeout(Duration.ofSeconds(15))
+            .header("Content-Type", "application/json")
+            .header("User-Agent", iosUserAgent)
+            .header("X-YouTube-Client-Name", "5")
+            .header("X-YouTube-Client-Version", "19.29.1")
+            .POST(HttpRequest.BodyPublishers.ofString(payload))
+            .build()
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        if (response.statusCode() != 200) {
+            log.warn("innertube player status={} videoId={}", response.statusCode(), videoId)
+            return emptyList()
+        }
+        return parseCaptionTracks(response.body())
+    }
+
+    private fun fetchCaptionTracksFromWatch(videoId: String): List<CaptionTrack> {
         val request = HttpRequest.newBuilder()
             .uri(URI.create("https://www.youtube.com/watch?v=$videoId&hl=ko"))
             .timeout(Duration.ofSeconds(15))
-            .header("User-Agent", userAgent)
+            .header("User-Agent", webUserAgent)
             .header("Accept-Language", "ko-KR,ko;q=0.9,en;q=0.8")
             .GET().build()
         val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
@@ -123,7 +157,7 @@ class YouTubeTranscriptClient(
         val request = HttpRequest.newBuilder()
             .uri(URI.create(urlWithFmt))
             .timeout(Duration.ofSeconds(15))
-            .header("User-Agent", userAgent)
+            .header("User-Agent", webUserAgent)
             .GET().build()
         val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() != 200 || response.body().isBlank()) return ""
