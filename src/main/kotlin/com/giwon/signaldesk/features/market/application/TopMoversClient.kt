@@ -38,6 +38,7 @@ class TopMoversClient(
         .connectTimeout(Duration.ofSeconds(3))
         .build()
 
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["top-movers"], key = "#market.toString() + ':' + #direction.toString() + ':' + #limit", unless = "#result.isEmpty()")
     fun fetchTopMovers(market: KoreanMarket, direction: Direction, limit: Int = 10): List<TopMover> {
         if (!enabled) return emptyList()
 

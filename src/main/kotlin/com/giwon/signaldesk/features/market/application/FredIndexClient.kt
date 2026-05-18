@@ -14,6 +14,7 @@ class FredIndexClient(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["macro-index"], unless = "#result == null")
     fun fetchUsIndices(): UsIndicesSnapshot? {
         if (!enabled) return null
 

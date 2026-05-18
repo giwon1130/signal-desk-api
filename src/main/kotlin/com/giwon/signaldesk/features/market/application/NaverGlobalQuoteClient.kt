@@ -35,6 +35,7 @@ class NaverGlobalQuoteClient(
         .connectTimeout(Duration.ofSeconds(3))
         .build()
 
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["quote-short"], key = "'us:' + #tickers.toSortedSet().toString()", unless = "#result.isEmpty()")
     fun fetchUsQuotes(tickers: Collection<String>): Map<String, StockQuote> {
         if (!enabled || tickers.isEmpty()) return emptyMap()
 

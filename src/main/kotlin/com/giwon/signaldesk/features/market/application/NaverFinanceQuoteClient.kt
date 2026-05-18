@@ -3,6 +3,7 @@ package com.giwon.signaldesk.features.market.application
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Component
 import java.net.URI
 import java.net.URLEncoder
@@ -23,6 +24,7 @@ class NaverFinanceQuoteClient(
         .connectTimeout(Duration.ofSeconds(3))
         .build()
 
+    @Cacheable(cacheNames = ["quote-short"], key = "#tickers.toSortedSet().toString()", unless = "#result.isEmpty()")
     fun fetchKoreanQuotes(tickers: Collection<String>): Map<String, StockQuote> {
         if (!enabled || tickers.isEmpty()) return emptyMap()
 

@@ -23,6 +23,7 @@ class KrxOfficialClient(
         .connectTimeout(Duration.ofSeconds(3))
         .build()
 
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["krx-official"], unless = "#result == null")
     fun loadKoreaMarketSection(): MarketSection? {
         if (!enabled) return null
 

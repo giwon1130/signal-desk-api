@@ -19,6 +19,7 @@ class CboeVixClient(
         .connectTimeout(Duration.ofSeconds(3))
         .build()
 
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["macro-index"], unless = "#result == null")
     fun fetchVix(): VixSnapshot? {
         if (!enabled) return null
 
