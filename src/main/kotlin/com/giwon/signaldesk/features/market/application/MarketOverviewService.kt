@@ -151,7 +151,7 @@ class MarketOverviewService(
             if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < coreTtl()) return@synchronized rechecked
 
             val generatedAt = LocalDateTime.now()
-            val koreaMarketFuture = CompletableFuture.supplyAsync { krxOfficialClient.loadKoreaMarketSection() ?: defaultKoreaMarket() }
+            val koreaMarketFuture = CompletableFuture.supplyAsync { krxOfficialClient.loadKoreaMarketSection() ?: emptyKoreaMarket() }
             val vixFuture = CompletableFuture.supplyAsync { cboeVixClient.fetchVix() }
             val koreanQuotesFuture = CompletableFuture.supplyAsync { enrichmentService.loadKoreanQuotes() }
             val usIndicesFuture = CompletableFuture.supplyAsync { fredIndexClient.fetchUsIndices() }
@@ -159,7 +159,7 @@ class MarketOverviewService(
             // 외부 API 장애 시 fallback으로 처리 — join() 예외가 전체 엔드포인트를 crash시키지 않도록
             val koreaMarketBase = runCatching { koreaMarketFuture.join() }
                 .onFailure { logger.warn("KRX market fetch failed → fallback to default. msg={}", it.message) }
-                .getOrElse { defaultKoreaMarket() }
+                .getOrElse { emptyKoreaMarket() }
             val vixSnapshot = runCatching { vixFuture.join() }
                 .onFailure { logger.warn("VIX fetch failed. msg={}", it.message) }
                 .getOrNull()
@@ -221,7 +221,7 @@ class MarketOverviewService(
             val snapshot = CachedNewsSection(
                 createdAt = Instant.now(),
                 generatedAt = LocalDateTime.now().toString(),
-                news = googleNewsRssClient.fetchMarketNews() ?: defaultNews(),
+                news = googleNewsRssClient.fetchMarketNews() ?: emptyList(),
             )
             cachedNews = snapshot
             snapshot
@@ -262,37 +262,12 @@ class MarketOverviewService(
         )
     }
 
-    private fun defaultKoreaMarket() = MarketSection(
+    private fun emptyKoreaMarket() = MarketSection(
         market = "KR", title = "한국 시장",
-        indices = listOf(
-            IndexMetric("KOSPI", 2748.32, 0.82, buildIndexChartPeriods(2748.32, 0.82, listOf(2660.0, 2688.0, 2704.0, 2719.0, 2733.0, 2748.0))),
-            IndexMetric("KOSDAQ", 882.51, -0.24, buildIndexChartPeriods(882.51, -0.24, listOf(901.0, 896.0, 891.0, 888.0, 885.0, 882.0)))
-        ),
-        sentiment = listOf(
-            SentimentMetric("변동성", "보통", 54, "공포 구간은 아니지만 코스닥은 흔들림이 남아 있음"),
-            SentimentMetric("매수심리", "강세 우위", 61, "외국인/개인 동시 유입 종목이 늘어남"),
-            SentimentMetric("추격위험", "중간", 47, "장초반 급등 추격은 여전히 부담")
-        ),
-        investorFlows = listOf(
-            InvestorFlow("개인", 1824.0, "중소형주 중심 매수", true),
-            InvestorFlow("외국인", 2431.0, "반도체/금융 대형주 유입", true),
-            InvestorFlow("기관", -1168.0, "차익실현 우위", false)
-        ),
-        leadingStocks = listOf(
-            TickerSnapshot("005930", "삼성전자", "반도체", 84200, 1.44, "관심 유지"),
-            TickerSnapshot("000660", "SK하이닉스", "반도체", 201500, 2.11, "강한 흐름"),
-            TickerSnapshot("035420", "NAVER", "플랫폼", 184300, -0.62, "눌림 체크"),
-            TickerSnapshot("068270", "셀트리온", "바이오", 176200, -1.15, "주의"),
-            TickerSnapshot("005380", "현대차", "자동차", 248500, 0.93, "추세 유지"),
-            TickerSnapshot("105560", "KB금융", "금융", 78100, 1.21, "수급 양호")
-        )
-    )
-
-    private fun defaultNews() = listOf(
-        MarketNews("KR", "반도체 수출 기대감 유지, 외국인 자금 유입 확대", "매일경제", "https://www.mk.co.kr", "반도체 대형주 강세에 우호적"),
-        MarketNews("KR", "코스닥 바이오 변동성 확대, 단기 수급 주의", "한국경제", "https://www.hankyung.com", "바이오 섹터는 눌림 확인 필요"),
-        MarketNews("US", "미국 빅테크 실적 기대감에 나스닥 강세", "Reuters", "https://www.reuters.com", "AI 대형주 모멘텀 지속"),
-        MarketNews("US", "연준 발언 앞두고 금리 민감주 혼조", "Bloomberg", "https://www.bloomberg.com", "금리 민감 업종은 변동성 대비 필요")
+        indices = emptyList(),
+        sentiment = emptyList(),
+        investorFlows = emptyList(),
+        leadingStocks = emptyList(),
     )
 
     // ─── News Linking ───────────────────────────────────────────────────────

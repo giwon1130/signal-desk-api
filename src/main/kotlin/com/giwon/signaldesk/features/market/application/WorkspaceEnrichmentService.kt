@@ -23,18 +23,13 @@ class WorkspaceEnrichmentService(
         aiPickCount = workspaceStore.loadAiPicks(userId).size,
     )
 
-    // 인증된 유저(userId != null)에게는 데모 시드(baseXxx)를 합치지 않는다.
-    // 과거에는 비로그인 데모 화면을 위해 baseWatchlist/basePortfolio/... 를 무조건 prepend 했지만,
-    // 실사용자 입장에서는 "해제해도 계속 돌아오는 유령 종목"으로 보여서 혼란이 컸다.
-    // userId == null 일 때만 데모 시드를 노출 (비로그인 미리보기 유지용).
     fun getWatchlist(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): WatchlistResponse {
-        val userItems = workspaceStore.loadWatchlist(userId).map {
+        val items = workspaceStore.loadWatchlist(userId).map {
             WatchItem(id = it.id, market = it.market, ticker = it.ticker, name = it.name,
                 price = it.price, changeRate = it.changeRate, sector = it.sector,
                 stance = it.stance, note = it.note, source = "USER")
         }
-        val merged = if (userId == null) baseWatchlist() + userItems else userItems
-        return WatchlistResponse(LocalDateTime.now().toString(), refresher.refreshWatchlist(merged, quotes))
+        return WatchlistResponse(LocalDateTime.now().toString(), refresher.refreshWatchlist(items, quotes))
     }
 
     fun getPortfolio(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): PortfolioResponse {
@@ -45,11 +40,7 @@ class WorkspaceEnrichmentService(
                 profitRate = it.profitRate, source = "USER",
                 targetPrice = it.targetPrice, stopLossPrice = it.stopLossPrice)
         }
-        val merged = if (userId == null) {
-            mergePortfolio(basePortfolio(), userPositions)
-        } else {
-            mergePortfolio(emptyPortfolio(), userPositions)
-        }
+        val merged = mergePortfolio(emptyPortfolio(), userPositions)
         return PortfolioResponse(LocalDateTime.now().toString(), refresher.refreshPortfolio(merged, quotes))
     }
 
@@ -65,11 +56,7 @@ class WorkspaceEnrichmentService(
                 latestPrice = it.latestPrice, realizedReturnRate = it.realizedReturnRate,
                 success = it.success, source = "USER", id = it.id)
         }
-        val merged = if (userId == null) {
-            mergeAiRecommendations(baseAiRecommendations(), userPicks, userTrack)
-        } else {
-            mergeAiRecommendations(emptyAiRecommendations(), userPicks, userTrack)
-        }
+        val merged = mergeAiRecommendations(emptyAiRecommendations(), userPicks, userTrack)
         return AiRecommendationsResponse(LocalDateTime.now().toString(), refresher.refreshAiRecommendations(merged, quotes))
     }
 
@@ -84,11 +71,7 @@ class WorkspaceEnrichmentService(
                 ticker = it.ticker, name = it.name, price = it.price,
                 quantity = it.quantity, source = "USER", id = it.id)
         }
-        val merged = if (userId == null) {
-            mergePaperTrading(basePaperTrading(), userPositions, userTrades)
-        } else {
-            mergePaperTrading(emptyPaperTrading(), userPositions, userTrades)
-        }
+        val merged = mergePaperTrading(emptyPaperTrading(), userPositions, userTrades)
         return PaperTradingResponse(LocalDateTime.now().toString(), refresher.refreshPaperTrading(merged, quotes))
     }
 
@@ -143,7 +126,7 @@ class WorkspaceEnrichmentService(
         )
     }
 
-    // ─── Empty defaults (인증 유저용) ─────────────────────────────────────────
+    // ─── Empty defaults (사용자 워크스페이스가 비어있을 때) ───────────────────
 
     private fun emptyPortfolio() = PortfolioSummary(
         totalCost = 0L, totalValue = 0L, totalProfit = 0L, totalProfitRate = 0.0, positions = emptyList(),
@@ -162,71 +145,12 @@ class WorkspaceEnrichmentService(
         openPositions = emptyList(), recentTrades = emptyList(),
     )
 
-    // ─── Base / Seed Data (비로그인 데모용) ───────────────────────────────────
-
     private fun buildQuoteUniverse(userId: UUID?): List<String> {
-        val baseTickers = (baseWatchlist().asSequence().map { it.ticker } +
-            basePortfolio().positions.asSequence().map { it.ticker } +
-            baseAiRecommendations().trackRecords.asSequence().map { it.ticker } +
-            basePaperTrading().openPositions.asSequence().map { it.ticker })
-            .filter { it.all(Char::isDigit) }
-
-        val userTickers = (workspaceStore.loadWatchlist(userId).asSequence().map { it.ticker } +
+        return (workspaceStore.loadWatchlist(userId).asSequence().map { it.ticker } +
             workspaceStore.loadPortfolioPositions(userId).asSequence().map { it.ticker } +
             workspaceStore.loadAiTrackRecords(userId).asSequence().map { it.ticker } +
             workspaceStore.loadPaperPositions(userId).asSequence().map { it.ticker })
             .filter { it.all(Char::isDigit) }
-
-        return (baseTickers + userTickers)
             .map { it.trim() }.filter { it.isNotBlank() }.distinct().toList()
     }
-
-    fun baseWatchlist(): List<WatchItem> = listOf(
-        WatchItem("KR", "005930", "삼성전자", 84200, 1.44, "반도체", "관심 유지", "실적 기대감이 가격 방어 역할"),
-        WatchItem("KR", "000660", "SK하이닉스", 201500, 2.11, "반도체", "강한 흐름", "AI 메모리 기대감 유지"),
-        WatchItem("US", "NVDA", "NVIDIA", 945, 2.84, "AI 반도체", "모멘텀 관찰", "신고가 부근이라 추격보다 눌림 체크"),
-        WatchItem("US", "MSFT", "Microsoft", 428, 0.91, "플랫폼", "안정 관심", "나스닥 강세 구간에서 방어적"),
-    )
-
-    fun basePortfolio(): PortfolioSummary = PortfolioSummary(
-        totalCost = 12840000L, totalValue = 13765000L, totalProfit = 925000L, totalProfitRate = 7.2,
-        positions = listOf(
-            HoldingPosition("KR", "005930", "삼성전자", 78000, 84200, 12, 74400L, 1010400L, 8.53),
-            HoldingPosition("KR", "000660", "SK하이닉스", 188000, 201500, 4, 54000L, 806000L, 7.18),
-            HoldingPosition("US", "MSFT", "Microsoft", 401, 428, 5, 135L, 2140L, 6.73),
-        ),
-    )
-
-    fun baseAiRecommendations(): AIRecommendationSection {
-        val picks = listOf(
-            RecommendationPick("KR", "000660", "SK하이닉스", "외국인 수급 + 섹터 강도 + 뉴스 일치", 78, "반도체 대형주 주도 구간에서 가장 강도가 좋음", 4.6),
-            RecommendationPick("US", "NVDA", "NVIDIA", "AI 대장주 모멘텀 유지", 74, "나스닥 강세와 섹터 뉴스가 동시에 받쳐줌", 6.8),
-            RecommendationPick("KR", "105560", "KB금융", "금융 저평가 + 수급 안정", 61, "변동성 방어 대안", 2.1),
-        )
-        val trackRecords = listOf(
-            RecommendationTrackRecord("2026-04-02", "KR", "005930", "삼성전자", 80100, 84200, 5.11, true),
-            RecommendationTrackRecord("2026-04-03", "US", "MSFT", "Microsoft", 412, 428, 3.88, true),
-            RecommendationTrackRecord("2026-04-04", "KR", "068270", "셀트리온", 181000, 176200, -2.65, false),
-        )
-        val generatedDate = LocalDate.now().toString()
-        return AIRecommendationSection(
-            generatedDate = generatedDate,
-            summary = "수급과 뉴스, 섹터 강도 기준으로 오늘은 반도체와 빅테크 중심 추세 추종이 유리한 날로 본다.",
-            picks = picks, trackRecords = trackRecords,
-            executionLogs = refresher.buildExecutionLogs(generatedDate, picks, trackRecords, emptyMap()),
-        )
-    }
-
-    fun basePaperTrading(): PaperTradingSummary = PaperTradingSummary(
-        cash = 5000000, evaluation = 5348000L, totalReturnRate = 6.96,
-        openPositions = listOf(
-            PaperPosition("KR", "005930", "삼성전자", 79000, 84200, 3, 5.06),
-            PaperPosition("US", "AMZN", "Amazon", 176, 184, 2, 4.54),
-        ),
-        recentTrades = listOf(
-            PaperTrade("2026-04-07", "BUY", "KR", "005930", "삼성전자", 79000, 3),
-            PaperTrade("2026-04-08", "BUY", "US", "AMZN", "Amazon", 176, 2),
-            PaperTrade("2026-04-08", "SELL", "KR", "NAVER", "NAVER", 186000, 1),
-        ),
-    )
 }

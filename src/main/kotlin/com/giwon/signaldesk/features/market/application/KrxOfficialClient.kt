@@ -95,7 +95,7 @@ class KrxOfficialClient(
                 ),
                 sentiment = buildSentiment(kospi, kosdaq, marketTrend),
                 investorFlows = mergeInvestorFlows(kospiFlows, kosdaqFlows),
-                leadingStocks = defaultLeadingStocks()
+                leadingStocks = emptyList(),
             )
         }.getOrNull()
     }
@@ -185,17 +185,6 @@ class KrxOfficialClient(
                 positive = total >= 0
             )
         }
-    }
-
-    private fun defaultLeadingStocks(): List<TickerSnapshot> {
-        return listOf(
-            TickerSnapshot("005930", "삼성전자", "반도체", 84200, 1.44, "관심 유지"),
-            TickerSnapshot("000660", "SK하이닉스", "반도체", 201500, 2.11, "강한 흐름"),
-            TickerSnapshot("035420", "NAVER", "플랫폼", 184300, -0.62, "눌림 체크"),
-            TickerSnapshot("068270", "셀트리온", "바이오", 176200, -1.15, "주의"),
-            TickerSnapshot("005380", "현대차", "자동차", 248500, 0.93, "추세 유지"),
-            TickerSnapshot("105560", "KB금융", "금융", 78100, 1.21, "수급 양호")
-        )
     }
 
     private fun findIndex(indices: JsonNode, keyword: String): JsonNode? {
