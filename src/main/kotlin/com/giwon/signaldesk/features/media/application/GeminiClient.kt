@@ -42,7 +42,8 @@ class GeminiClient(
         vix: VixSnapshot?,
         indices: UsIndicesSnapshot?,
         headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
-    ): MarketInsightAnalysis? = callInsightJson(buildMarketInsightPrompt(vix, indices, headlines))
+        upcomingEvents: List<com.giwon.signaldesk.features.events.application.MarketEvent> = emptyList(),
+    ): MarketInsightAnalysis? = callInsightJson(buildMarketInsightPrompt(vix, indices, headlines, upcomingEvents))
 
     /**
      * 마감시황 뉴스 헤드라인 묶음을 종합 요약.
@@ -226,12 +227,20 @@ class GeminiClient(
         vix: VixSnapshot?,
         indices: UsIndicesSnapshot?,
         headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
+        upcomingEvents: List<com.giwon.signaldesk.features.events.application.MarketEvent>,
     ): String {
         val capped = headlines.take(25)
         val headlineLines = capped.joinToString("\n") { n -> "- [${n.source}] ${n.title}" }
         val vixLine = if (vix != null) "VIX(공포지수): ${vix.currentPrice} (변화: ${vix.priceChange})" else "VIX: 데이터 없음"
         val nasdaqLine = if (indices?.nasdaq != null) "NASDAQ: ${indices.nasdaq.currentValue} (${indices.nasdaq.changeRate}%)" else "NASDAQ: 데이터 없음"
         val sp500Line = if (indices?.sp500 != null) "S&P500: ${indices.sp500.currentValue} (${indices.sp500.changeRate}%)" else "S&P500: 데이터 없음"
+        val eventsBlock = if (upcomingEvents.isNotEmpty()) {
+            val lines = upcomingEvents.take(8).joinToString("\n") { e ->
+                val time = e.time?.let { " $it" } ?: ""
+                "- [${e.date}$time · ${e.market}] ${e.title}${e.description?.let { " — $it" } ?: ""}"
+            }
+            "\n            === 다가오는 주요 이벤트 (3일내) ===\n            $lines"
+        } else ""
 
         return """
             당신은 한국 주식 투자 전문 분석가입니다.
@@ -241,16 +250,16 @@ class GeminiClient(
             $vixLine
             $nasdaqLine
             $sp500Line
-
+$eventsBlock
             === 오늘 주요 뉴스 헤드라인 (${capped.size}건) ===
             $headlineLines
 
             아래 JSON 스키마로 한국어 답변:
             {
               "headline": "오늘 시장을 한 줄로 압축 (20자 이내, 핵심 키워드 포함)",
-              "summary": "2~3문장 종합 분석. VIX·지수·뉴스를 연결해 지금 시장 분위기와 개인 투자자 행동 포인트를 설명",
+              "summary": "2~3문장 종합 분석. VIX·지수·뉴스와 다가오는 이벤트(있다면)를 연결해 지금 시장 분위기와 개인 투자자 행동 포인트를 설명",
               "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나",
-              "keyPoints": ["주목할 포인트 최대 3가지. 각 20자 이내"]
+              "keyPoints": ["주목할 포인트 최대 3가지. 각 20자 이내. 다가오는 큰 이벤트가 있으면 1개는 그것에 할당"]
             }
         """.trimIndent()
     }

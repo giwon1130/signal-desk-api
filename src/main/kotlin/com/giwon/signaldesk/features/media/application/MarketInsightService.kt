@@ -1,5 +1,6 @@
 package com.giwon.signaldesk.features.media.application
 
+import com.giwon.signaldesk.features.events.application.MarketEventService
 import com.giwon.signaldesk.features.market.application.CboeVixClient
 import com.giwon.signaldesk.features.market.application.FredIndexClient
 import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
@@ -25,6 +26,7 @@ class MarketInsightService(
     private val newsRssClient: GoogleNewsRssClient,
     private val geminiClient: GeminiClient,
     private val marketSessionService: MarketSessionService,
+    private val marketEventService: MarketEventService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -53,9 +55,11 @@ class MarketInsightService(
         val vix = runCatching { cboeVixClient.fetchVix() }.getOrNull()
         val indices = runCatching { fredIndexClient.fetchUsIndices() }.getOrNull()
         val headlines = runCatching { newsRssClient.fetchMarketNews() }.getOrNull() ?: emptyList()
+        // 다가오는 3일치 이벤트 (FOMC/실적/휴장 등) — Gemini가 시점 컨텍스트로 활용
+        val upcomingEvents = runCatching { marketEventService.upcoming(3) }.getOrNull() ?: emptyList()
 
         return runCatching {
-            geminiClient.summarizeMarketInsight(vix, indices, headlines)
+            geminiClient.summarizeMarketInsight(vix, indices, headlines, upcomingEvents)
         }.getOrElse {
             log.warn("MarketInsightService Gemini call failed", it)
             null
