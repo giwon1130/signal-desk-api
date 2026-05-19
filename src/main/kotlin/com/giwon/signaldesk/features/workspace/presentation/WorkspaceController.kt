@@ -6,8 +6,6 @@ import com.giwon.signaldesk.features.workspace.application.SignalDeskWorkspaceRe
 import com.giwon.signaldesk.features.workspace.application.WorkspaceAiPick
 import com.giwon.signaldesk.features.workspace.application.WorkspaceAiTrackRecord
 import com.giwon.signaldesk.features.workspace.application.WorkspaceHoldingPosition
-import com.giwon.signaldesk.features.workspace.application.WorkspacePaperPosition
-import com.giwon.signaldesk.features.workspace.application.WorkspacePaperTrade
 import com.giwon.signaldesk.features.workspace.application.WorkspaceService
 import com.giwon.signaldesk.features.workspace.application.WorkspaceWatchItem
 import jakarta.validation.Valid
@@ -96,98 +94,14 @@ class WorkspaceController(
         return ApiResponse(true, true)
     }
 
-    @GetMapping("/paper/positions")
-    fun getPaperPositions(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<List<WorkspacePaperPosition>> =
-        ApiResponse(true, workspaceStore.loadPaperPositions(userId(auth)))
-
-    @PostMapping("/paper/positions")
-    fun savePaperPosition(
-        @RequestHeader("Authorization", required = false) auth: String?,
-        @Valid @RequestBody request: SavePaperPositionRequest,
-    ): ApiResponse<WorkspacePaperPosition> =
-        ApiResponse(true, workspaceService.savePaperPosition(userId(auth),
-            id = request.id, market = request.market, ticker = request.ticker, name = request.name,
-            averagePrice = request.averagePrice, currentPrice = request.currentPrice, quantity = request.quantity,
-        ))
-
-    @DeleteMapping("/paper/positions/{id}")
-    fun deletePaperPosition(
-        @RequestHeader("Authorization", required = false) auth: String?,
-        @PathVariable id: String,
-    ): ApiResponse<Boolean> {
-        workspaceStore.deletePaperPosition(userId(auth), id)
-        return ApiResponse(true, true)
-    }
-
-    @GetMapping("/paper/trades")
-    fun getPaperTrades(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<List<WorkspacePaperTrade>> =
-        ApiResponse(true, workspaceStore.loadPaperTrades(userId(auth)))
-
-    @PostMapping("/paper/trades")
-    fun savePaperTrade(
-        @RequestHeader("Authorization", required = false) auth: String?,
-        @Valid @RequestBody request: SavePaperTradeRequest,
-    ): ApiResponse<WorkspacePaperTrade> =
-        ApiResponse(true, workspaceStore.savePaperTrade(userId(auth),
-            WorkspacePaperTrade(id = request.id, tradeDate = request.tradeDate, side = request.side,
-                market = request.market, ticker = request.ticker, name = request.name,
-                price = request.price, quantity = request.quantity)
-        ))
-
-    @DeleteMapping("/paper/trades/{id}")
-    fun deletePaperTrade(
-        @RequestHeader("Authorization", required = false) auth: String?,
-        @PathVariable id: String,
-    ): ApiResponse<Boolean> {
-        workspaceStore.deletePaperTrade(userId(auth), id)
-        return ApiResponse(true, true)
-    }
+    // AI picks/track-records: 시스템이 내부에서 생성하고 사용자는 읽기만 한다.
+    // 외부 노출하는 GET endpoint는 /api/v1/market/ai-recommendations (MarketOverviewController)로 통합 — 여기는 보존만.
 
     @GetMapping("/ai/picks")
     fun getAiPicks(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<List<WorkspaceAiPick>> =
         ApiResponse(true, workspaceStore.loadAiPicks(userId(auth)))
 
-    @PostMapping("/ai/picks")
-    fun saveAiPick(
-        @RequestHeader("Authorization", required = false) auth: String?,
-        @Valid @RequestBody request: SaveAiPickRequest,
-    ): ApiResponse<WorkspaceAiPick> =
-        ApiResponse(true, workspaceStore.saveAiPick(userId(auth),
-            WorkspaceAiPick(id = request.id, market = request.market, ticker = request.ticker,
-                name = request.name, basis = request.basis, confidence = request.confidence,
-                note = request.note, expectedReturnRate = request.expectedReturnRate)
-        ))
-
-    @DeleteMapping("/ai/picks/{id}")
-    fun deleteAiPick(
-        @RequestHeader("Authorization", required = false) auth: String?,
-        @PathVariable id: String,
-    ): ApiResponse<Boolean> {
-        workspaceStore.deleteAiPick(userId(auth), id)
-        return ApiResponse(true, true)
-    }
-
     @GetMapping("/ai/track-records")
     fun getAiTrackRecords(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<List<WorkspaceAiTrackRecord>> =
         ApiResponse(true, workspaceStore.loadAiTrackRecords(userId(auth)))
-
-    @PostMapping("/ai/track-records")
-    fun saveAiTrackRecord(
-        @RequestHeader("Authorization", required = false) auth: String?,
-        @Valid @RequestBody request: SaveAiTrackRecordRequest,
-    ): ApiResponse<WorkspaceAiTrackRecord> =
-        ApiResponse(true, workspaceService.saveAiTrackRecord(userId(auth),
-            id = request.id, recommendedDate = request.recommendedDate, market = request.market,
-            ticker = request.ticker, name = request.name, entryPrice = request.entryPrice,
-            latestPrice = request.latestPrice,
-        ))
-
-    @DeleteMapping("/ai/track-records/{id}")
-    fun deleteAiTrackRecord(
-        @RequestHeader("Authorization", required = false) auth: String?,
-        @PathVariable id: String,
-    ): ApiResponse<Boolean> {
-        workspaceStore.deleteAiTrackRecord(userId(auth), id)
-        return ApiResponse(true, true)
-    }
 }

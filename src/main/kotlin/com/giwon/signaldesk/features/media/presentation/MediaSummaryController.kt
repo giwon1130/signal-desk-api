@@ -26,22 +26,10 @@ class MediaSummaryController(
     private val newsDigestService: NewsDigestService,
 ) {
 
-    @GetMapping("/summaries")
-    fun getRecent(@RequestParam(defaultValue = "10") limit: Int): ApiResponse<List<MediaSummaryResponse>> {
-        val items = repository.findRecent(limit.coerceIn(1, 30)).map(MediaSummaryResponse::from)
-        return ApiResponse(true, items)
-    }
-
     @GetMapping("/summaries/latest")
     fun getLatest(): ApiResponse<MediaSummaryResponse?> {
         val latest = repository.findRecent(1).firstOrNull()?.let(MediaSummaryResponse::from)
         return ApiResponse(true, latest)
-    }
-
-    @GetMapping("/summaries/{id}")
-    fun getById(@PathVariable id: String): ApiResponse<MediaSummaryResponse?> {
-        val item = repository.findById(id)?.let(MediaSummaryResponse::from)
-        return ApiResponse(true, item)
     }
 
     /**

@@ -37,11 +37,6 @@ class MarketOverviewController(
         return ApiResponse(true, marketOverviewService.getMarketSections())
     }
 
-    @GetMapping("/news")
-    fun getNews(): ApiResponse<NewsFeedResponse> {
-        return ApiResponse(true, marketOverviewService.getNewsFeed())
-    }
-
     @GetMapping("/watchlist")
     fun getWatchlist(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<WatchlistResponse> {
         return ApiResponse(true, marketOverviewService.getWatchlist(userId(auth)))
@@ -55,19 +50,6 @@ class MarketOverviewController(
     @GetMapping("/ai-recommendations")
     fun getAiRecommendations(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<AiRecommendationsResponse> {
         return ApiResponse(true, marketOverviewService.getAiRecommendations(userId(auth)))
-    }
-
-    @GetMapping("/paper-trading")
-    fun getPaperTrading(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<PaperTradingResponse> {
-        return ApiResponse(true, marketOverviewService.getPaperTrading(userId(auth)))
-    }
-
-    @GetMapping("/overview")
-    fun getOverview(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<MarketOverviewResponse> {
-        return ApiResponse(
-            success = true,
-            data = marketOverviewService.getOverview(userId(auth))
-        )
     }
 
     /**
