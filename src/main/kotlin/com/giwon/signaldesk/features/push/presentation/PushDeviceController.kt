@@ -3,6 +3,7 @@ package com.giwon.signaldesk.features.push.presentation
 import com.giwon.signaldesk.features.auth.application.AuthContext
 import com.giwon.signaldesk.features.market.presentation.ApiResponse
 import com.giwon.signaldesk.features.push.application.AlertHistoryItem
+import com.giwon.signaldesk.features.push.application.AlertStats
 import com.giwon.signaldesk.features.push.application.PushDevice
 import com.giwon.signaldesk.features.push.application.PushRepository
 import jakarta.validation.Valid
@@ -69,6 +70,24 @@ class PushAlertHistoryController(
         val repo = pushRepository ?: return ApiResponse(false, emptyList())
         val userId = authContext?.requireUserId(auth) ?: return ApiResponse(false, emptyList())
         return ApiResponse(true, repo.listAlertHistory(userId, limit.coerceIn(1, 200)))
+    }
+}
+
+@RestController
+@RequestMapping("/api/v1/push/stats")
+class PushStatsController(
+    @Autowired(required = false) private val pushRepository: PushRepository? = null,
+) {
+    /**
+     * 최근 N일(기본 7) 알림 발송 통계. 인증 없이 운영용으로 노출.
+     * 응답: 총 발송 / 고유 사용자 / 고유 종목 / 일별·마켓별·방향별 분포 + top 종목.
+     */
+    @GetMapping
+    fun stats(
+        @RequestParam(required = false, defaultValue = "7") days: Int,
+    ): ApiResponse<AlertStats?> {
+        val repo = pushRepository ?: return ApiResponse(false, null)
+        return ApiResponse(true, repo.alertStats(days.coerceIn(1, 90)))
     }
 }
 

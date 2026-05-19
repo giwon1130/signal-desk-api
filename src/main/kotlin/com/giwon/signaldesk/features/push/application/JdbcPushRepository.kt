@@ -104,6 +104,87 @@ class JdbcPushRepository(
             userId.toString(), limit,
         )
 
+    override fun alertStats(days: Int): AlertStats {
+        val sinceDays = days.coerceIn(1, 90)
+        val sinceDate = LocalDate.now().minusDays(sinceDays.toLong() - 1)
+
+        val totalCount = jdbcTemplate.queryForObject(
+            "select count(*) from signal_desk_push_alert_log where alert_date >= ?",
+            Int::class.java, sinceDate,
+        ) ?: 0
+        val uniqueUsers = jdbcTemplate.queryForObject(
+            "select count(distinct user_id) from signal_desk_push_alert_log where alert_date >= ?",
+            Int::class.java, sinceDate,
+        ) ?: 0
+        val uniqueTickers = jdbcTemplate.queryForObject(
+            "select count(distinct (market || ':' || ticker)) from signal_desk_push_alert_log where alert_date >= ?",
+            Int::class.java, sinceDate,
+        ) ?: 0
+
+        val byDate = jdbcTemplate.query(
+            """
+            select alert_date::text as d, count(*) as c
+            from signal_desk_push_alert_log
+            where alert_date >= ?
+            group by alert_date
+            order by alert_date desc
+            """.trimIndent(),
+            { rs, _ -> DateCount(rs.getString("d"), rs.getInt("c")) },
+            sinceDate,
+        )
+        val byMarket = jdbcTemplate.query(
+            """
+            select market as k, count(*) as c
+            from signal_desk_push_alert_log
+            where alert_date >= ?
+            group by market
+            order by c desc
+            """.trimIndent(),
+            { rs, _ -> KeyCount(rs.getString("k") ?: "?", rs.getInt("c")) },
+            sinceDate,
+        )
+        val byDirection = jdbcTemplate.query(
+            """
+            select direction as k, count(*) as c
+            from signal_desk_push_alert_log
+            where alert_date >= ?
+            group by direction
+            order by c desc
+            """.trimIndent(),
+            { rs, _ -> KeyCount(rs.getString("k") ?: "?", rs.getInt("c")) },
+            sinceDate,
+        )
+        val topTickers = jdbcTemplate.query(
+            """
+            select market, ticker, coalesce(max(name), ticker) as name, count(*) as c
+            from signal_desk_push_alert_log
+            where alert_date >= ?
+            group by market, ticker
+            order by c desc
+            limit 10
+            """.trimIndent(),
+            { rs, _ ->
+                TickerCount(
+                    market = rs.getString("market") ?: "?",
+                    ticker = rs.getString("ticker"),
+                    name = rs.getString("name"),
+                    count = rs.getInt("c"),
+                )
+            },
+            sinceDate,
+        )
+
+        return AlertStats(
+            totalCount = totalCount,
+            uniqueUsers = uniqueUsers,
+            uniqueTickers = uniqueTickers,
+            byDate = byDate,
+            byMarket = byMarket,
+            byDirection = byDirection,
+            topTickers = topTickers,
+        )
+    }
+
     private val deviceRowMapper = { rs: ResultSet, _: Int ->
         PushDevice(
             id = UUID.fromString(rs.getString("id")),
