@@ -62,7 +62,7 @@ class MarketOverviewService(
         )
         val alternativeSignals = personalContextAnnotator.annotateAlternativeSignals(core.alternativeSignals, watchlist, portfolio)
         val watchAlerts = watchAlertService.buildWatchAlerts(alternativeSignals, news, watchlist, portfolio, aiRecommendations)
-        val tradingDay = buildTradingDayStatus(core.marketSessions)
+        val tradingDay = MarketTradingDayBuilder.build(core.marketSessions)
         val briefing = dailyBriefBuilder.build(
             base = core.briefing,
             watchAlerts = watchAlerts,
@@ -102,7 +102,7 @@ class MarketOverviewService(
             alternativeSignals, getCachedNews().news,
             snapshot.watchlist, snapshot.portfolio, aiRecommendations,
         )
-        val tradingDay = buildTradingDayStatus(core.marketSessions)
+        val tradingDay = MarketTradingDayBuilder.build(core.marketSessions)
         val briefing = dailyBriefBuilder.build(
             base = core.briefing,
             watchAlerts = watchAlerts,
@@ -125,51 +125,6 @@ class MarketOverviewService(
             ),
             tradingDayStatus = tradingDay,
         )
-    }
-
-    private fun buildTradingDayStatus(sessions: List<MarketSessionStatus>): TradingDayStatus {
-        val kr = sessions.firstOrNull { it.market == "KR" }
-        val us = sessions.firstOrNull { it.market == "US" }
-        val krOpen = kr?.isOpen == true
-        val usOpen = us?.isOpen == true
-        val isWeekend = (kr?.note?.contains("주말") == true) && (us?.note?.contains("주말") == true)
-        val isHoliday = !isWeekend && kr?.note?.contains("휴장") == true && us?.note?.contains("휴장") == true
-
-        val today = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Seoul"))
-        val nextKrOpen = nextKoreanOpen(today)
-        val nextLabel = "${koreanDayLabel(nextKrOpen.dayOfWeek)} ${nextKrOpen.toLocalDate()} 09:00 KST"
-
-        val (headline, advice) = when {
-            krOpen || usOpen -> "장이 열려 있어 — 평소처럼 진행" to "오늘의 단타 픽 / 보유 모니터를 그대로 사용해도 OK"
-            isWeekend -> "주말 휴장 — 다음 거래일 준비 모드" to "신규 진입은 다음 개장 후. 오늘은 관심종목 정리, AI 로그 복기, 손절·익절 라인 재설정만 해."
-            isHoliday -> "오늘은 휴장일 — 시장 재개 전 정리" to "체결은 안 되니까 시나리오만 점검하고 다음 거래일 준비."
-            else -> "정규장 종료 — 시간외/다음날 준비" to "오늘 마감 결과를 보고 내일 진입 후보 1~2개만 추려두자."
-        }
-
-        return TradingDayStatus(
-            krOpen = krOpen, usOpen = usOpen,
-            isWeekend = isWeekend, isHoliday = isHoliday,
-            headline = headline, nextTradingDay = nextLabel, advice = advice,
-        )
-    }
-
-    private fun nextKoreanOpen(now: java.time.ZonedDateTime): java.time.ZonedDateTime {
-        var candidate = now.toLocalDate()
-        if (now.toLocalTime() >= java.time.LocalTime.of(9, 0)) candidate = candidate.plusDays(1)
-        while (candidate.dayOfWeek == java.time.DayOfWeek.SATURDAY || candidate.dayOfWeek == java.time.DayOfWeek.SUNDAY) {
-            candidate = candidate.plusDays(1)
-        }
-        return candidate.atTime(9, 0).atZone(java.time.ZoneId.of("Asia/Seoul"))
-    }
-
-    private fun koreanDayLabel(day: java.time.DayOfWeek): String = when (day) {
-        java.time.DayOfWeek.MONDAY -> "월요일"
-        java.time.DayOfWeek.TUESDAY -> "화요일"
-        java.time.DayOfWeek.WEDNESDAY -> "수요일"
-        java.time.DayOfWeek.THURSDAY -> "목요일"
-        java.time.DayOfWeek.FRIDAY -> "금요일"
-        java.time.DayOfWeek.SATURDAY -> "토요일"
-        java.time.DayOfWeek.SUNDAY -> "일요일"
     }
 
     fun getMarketSections(): MarketSectionsResponse {
@@ -227,10 +182,10 @@ class MarketOverviewService(
                 marketStatus = marketSessionService.buildMarketStatus(marketSessions),
                 summary = "장 시작 전 점검 → 단타 픽 확인 → 보유 모니터까지, 오늘 하루를 한 화면에서 따라가는 개인 투자 대시보드야.",
                 marketSummary = listOf(
-                    SummaryMetric("Fear Meter", calculateFearMeter(vixSnapshot), buildFearMeterState(vixSnapshot), buildFearMeterNote(vixSnapshot)),
-                    SummaryMetric("KR Heat", calculateKrHeat(koreaMarket), buildKrHeatState(koreaMarket), "코스피/코스닥 등락률과 거래 강도를 기준으로 계산"),
-                    run { val h = calculateUsHeat(vixSnapshot, usIndicesSnapshot); SummaryMetric("US Heat", h, buildUsHeatState(h), "미국 지수와 VIX를 기준으로 계산") },
-                    SummaryMetric("Flow Bias", calculateFlowBias(koreaMarket), buildFlowBiasState(koreaMarket), "국내는 KRX 수급, 미국은 지수/변동성 기준")
+                    SummaryMetric("Fear Meter", MarketHeatCalculator.fearMeter(vixSnapshot), MarketHeatCalculator.fearMeterState(vixSnapshot), MarketHeatCalculator.fearMeterNote(vixSnapshot)),
+                    SummaryMetric("KR Heat", MarketHeatCalculator.krHeat(koreaMarket), MarketHeatCalculator.krHeatState(koreaMarket), "코스피/코스닥 등락률과 거래 강도를 기준으로 계산"),
+                    run { val h = MarketHeatCalculator.usHeat(vixSnapshot, usIndicesSnapshot); SummaryMetric("US Heat", h, MarketHeatCalculator.usHeatState(h), "미국 지수와 VIX를 기준으로 계산") },
+                    SummaryMetric("Flow Bias", MarketHeatCalculator.flowBias(koreaMarket), MarketHeatCalculator.flowBiasState(koreaMarket), "국내는 KRX 수급, 미국은 지수/변동성 기준")
                 ),
                 alternativeSignals = alternativeSignals,
                 marketSessions = marketSessions,
@@ -287,7 +242,7 @@ class MarketOverviewService(
                         sp500?.chart ?: listOf(5110.0, 5140.0, 5168.0, 5181.0, 5202.0, 5224.0))),
             ),
             sentiment = listOf(
-                SentimentMetric("VIX 기반 공포지수", buildVixState(vixSnapshot), calculateVixScore(vixSnapshot), buildVixNote(vixSnapshot)),
+                SentimentMetric("VIX 기반 공포지수", MarketHeatCalculator.vixState(vixSnapshot), MarketHeatCalculator.vixScore(vixSnapshot), MarketHeatCalculator.vixNote(vixSnapshot)),
                 SentimentMetric("빅테크 선호", "높음", 72, "AI/반도체 종목으로 자금 집중"),
                 SentimentMetric("과열 경계", "중간", 49, "실적 시즌 전후로 단기 변동성 확대 가능")
             ),
@@ -339,74 +294,6 @@ class MarketOverviewService(
         MarketNews("US", "미국 빅테크 실적 기대감에 나스닥 강세", "Reuters", "https://www.reuters.com", "AI 대형주 모멘텀 지속"),
         MarketNews("US", "연준 발언 앞두고 금리 민감주 혼조", "Bloomberg", "https://www.bloomberg.com", "금리 민감 업종은 변동성 대비 필요")
     )
-
-    // ─── Market Summary Calculations ─────────────────────────────────────────
-
-    private fun calculateFearMeter(vixSnapshot: VixSnapshot?) =
-        (100 - ((vixSnapshot?.currentPrice ?: 17.0) - 12) * 4).coerceIn(0.0, 100.0)
-
-    private fun buildFearMeterState(vixSnapshot: VixSnapshot?): String {
-        val vix = vixSnapshot?.currentPrice ?: return "중립"
-        return when { vix < 15 -> "낙관 우위"; vix < 20 -> "위험선호 우위"; vix < 26 -> "경계 구간"; else -> "공포 확대" }
-    }
-
-    private fun buildFearMeterNote(vixSnapshot: VixSnapshot?): String {
-        val vix = vixSnapshot?.currentPrice ?: return "VIX 실데이터 미연결 상태라 기본 공포 점수를 사용 중"
-        return "공식 CBOE VIX ${"%.2f".format(vix)} 기준으로 계산한 미국 시장 위험심리"
-    }
-
-    private fun calculateVixScore(vixSnapshot: VixSnapshot?) = calculateFearMeter(vixSnapshot).toInt()
-
-    private fun buildVixState(vixSnapshot: VixSnapshot?) = when (buildFearMeterState(vixSnapshot)) {
-        "낙관 우위", "위험선호 우위" -> "낮음"; "경계 구간" -> "중간"; else -> "높음"
-    }
-
-    private fun buildVixNote(vixSnapshot: VixSnapshot?): String {
-        val vix = vixSnapshot?.currentPrice ?: return "VIX 기본값 기반"
-        val change = vixSnapshot.priceChange
-        val signedChange = if (change > 0) "+${"%.2f".format(change)}" else "%.2f".format(change)
-        return "CBOE VIX ${"%.2f".format(vix)} (${signedChange}) 기준 위험심리"
-    }
-
-    private fun calculateUsHeat(vixSnapshot: VixSnapshot?, usIndicesSnapshot: UsIndicesSnapshot?): Double {
-        val nasdaq = usIndicesSnapshot?.nasdaq
-        val sp500 = usIndicesSnapshot?.sp500
-        val avgChange = listOfNotNull(nasdaq?.changeRate, sp500?.changeRate)
-            .average().takeIf { it.isFinite() } ?: 0.0
-        val vix = vixSnapshot?.currentPrice ?: 20.0
-        return (50 + avgChange * 6 - (vix - 20) * 1.5).coerceIn(0.0, 100.0)
-    }
-
-    private fun buildUsHeatState(usHeat: Double): String = when {
-        usHeat >= 65 -> "AI/빅테크 중심"
-        usHeat >= 50 -> "강세 우위"
-        usHeat >= 35 -> "혼조"
-        else -> "약세 우위"
-    }
-
-    private fun calculateKrHeat(koreaMarket: MarketSection) =
-        (50 + koreaMarket.indices.map { it.changeRate }.average() * 8).coerceIn(0.0, 100.0)
-
-    private fun buildKrHeatState(koreaMarket: MarketSection): String {
-        val kospiChange = koreaMarket.indices.firstOrNull { it.label == "KOSPI" }?.changeRate ?: 0.0
-        val kosdaqChange = koreaMarket.indices.firstOrNull { it.label == "KOSDAQ" }?.changeRate ?: 0.0
-        return when {
-            kospiChange > kosdaqChange && kospiChange >= 0 -> "코스피 강세"
-            kosdaqChange > kospiChange && kosdaqChange >= 0 -> "코스닥 강세"
-            else -> "동반 약세"
-        }
-    }
-
-    private fun calculateFlowBias(koreaMarket: MarketSection): Double {
-        val foreignFlow = koreaMarket.investorFlows.firstOrNull { it.investor == "외국인" }?.amountBillionWon ?: 0.0
-        val institutionFlow = koreaMarket.investorFlows.firstOrNull { it.investor == "기관" }?.amountBillionWon ?: 0.0
-        return (50 + ((foreignFlow + institutionFlow) / 60)).coerceIn(0.0, 100.0)
-    }
-
-    private fun buildFlowBiasState(koreaMarket: MarketSection): String {
-        val topFlow = koreaMarket.investorFlows.maxByOrNull { kotlin.math.abs(it.amountBillionWon) }
-        return topFlow?.let { "${it.investor} ${if (it.positive) "우위" else "매도 우위"}" } ?: "수급 중립"
-    }
 
     // ─── News Linking ───────────────────────────────────────────────────────
     // 추천 근거를 뉴스 헤드라인으로 뒷받침: name 이 제목에 포함되는 첫 뉴스 URL 을 붙인다.
