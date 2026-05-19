@@ -47,41 +47,6 @@ class MarketOverviewService(
         return if (anyOpen) newsTtlOpen else newsTtlClosed
     }
 
-    fun getOverview(userId: UUID? = null): MarketOverviewResponse {
-        val core = getCoreSnapshot()
-        val news = getNewsFeed().news
-        val watchlist = enrichmentService.getWatchlist(userId).watchlist
-        val portfolio = enrichmentService.getPortfolio(userId).portfolio
-        val aiRecommendationsRaw = enrichmentService.getAiRecommendations(userId).aiRecommendations
-        val paperTrading = enrichmentService.getPaperTrading(userId).paperTrading
-        val annotatedAi = personalContextAnnotator.annotateRecommendations(aiRecommendationsRaw, watchlist, portfolio)
-        val aiRecommendations = annotatedAi.copy(
-            picks = attachNewsLinks(annotatedAi.picks, news),
-            executionLogs = attachNewsLinksToLogs(annotatedAi.executionLogs, news),
-            metrics = recommendationMetricsCalculator.compute(annotatedAi.trackRecords),
-        )
-        val alternativeSignals = personalContextAnnotator.annotateAlternativeSignals(core.alternativeSignals, watchlist, portfolio)
-        val watchAlerts = watchAlertService.buildWatchAlerts(alternativeSignals, news, watchlist, portfolio, aiRecommendations)
-        val tradingDay = MarketTradingDayBuilder.build(core.marketSessions)
-        val briefing = dailyBriefBuilder.build(
-            base = core.briefing,
-            watchAlerts = watchAlerts,
-            portfolio = portfolio,
-            aiRecommendations = aiRecommendations,
-            marketSummary = core.marketSummary,
-            alternativeSignals = alternativeSignals,
-            tradingDay = tradingDay,
-        )
-        return MarketOverviewResponse(
-            generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
-            marketSummary = core.marketSummary, alternativeSignals = alternativeSignals,
-            watchAlerts = watchAlerts, marketSessions = core.marketSessions,
-            koreaMarket = core.koreaMarket, usMarket = core.usMarket, news = news,
-            watchlist = watchlist, portfolio = portfolio, aiRecommendations = aiRecommendations,
-            paperTrading = paperTrading, briefing = briefing, sourceNotes = core.sourceNotes
-        )
-    }
-
     fun getSummary(userId: UUID? = null): MarketSummaryResponse {
         val core = getCoreSnapshot()
         val quotes = enrichmentService.loadKoreanQuotes(userId)
@@ -132,15 +97,9 @@ class MarketOverviewService(
         return MarketSectionsResponse(generatedAt = core.generatedAt, koreaMarket = core.koreaMarket, usMarket = core.usMarket)
     }
 
-    fun getNewsFeed(): NewsFeedResponse {
-        val news = getCachedNews()
-        return NewsFeedResponse(generatedAt = news.generatedAt, news = news.news)
-    }
-
     fun getWatchlist(userId: UUID? = null) = enrichmentService.getWatchlist(userId)
     fun getPortfolio(userId: UUID? = null) = enrichmentService.getPortfolio(userId)
     fun getAiRecommendations(userId: UUID? = null) = enrichmentService.getAiRecommendations(userId)
-    fun getPaperTrading(userId: UUID? = null) = enrichmentService.getPaperTrading(userId)
 
     private fun getCoreSnapshot(): CachedMarketCore {
         val cached = cachedCore

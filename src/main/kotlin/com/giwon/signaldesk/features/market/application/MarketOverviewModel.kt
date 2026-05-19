@@ -99,7 +99,6 @@ data class MarketSessionStatus(
 data class WorkspaceCounts(
     val watchlistCount: Int,
     val portfolioCount: Int,
-    val paperPositionCount: Int,
     val aiPickCount: Int,
 )
 

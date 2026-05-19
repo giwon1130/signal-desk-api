@@ -19,7 +19,6 @@ class WorkspaceEnrichmentService(
     fun buildWorkspaceCounts(userId: UUID? = null) = WorkspaceCounts(
         watchlistCount = workspaceStore.loadWatchlist(userId).size,
         portfolioCount = workspaceStore.loadPortfolioPositions(userId).size,
-        paperPositionCount = workspaceStore.loadPaperPositions(userId).size,
         aiPickCount = workspaceStore.loadAiPicks(userId).size,
     )
 
@@ -60,21 +59,6 @@ class WorkspaceEnrichmentService(
         return AiRecommendationsResponse(LocalDateTime.now().toString(), refresher.refreshAiRecommendations(merged, quotes))
     }
 
-    fun getPaperTrading(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): PaperTradingResponse {
-        val userPositions = workspaceStore.loadPaperPositions(userId).map {
-            PaperPosition(market = it.market, ticker = it.ticker, name = it.name,
-                averagePrice = it.averagePrice, currentPrice = it.currentPrice,
-                quantity = it.quantity, returnRate = it.returnRate, source = "USER", id = it.id)
-        }
-        val userTrades = workspaceStore.loadPaperTrades(userId).map {
-            PaperTrade(tradeDate = it.tradeDate, side = it.side, market = it.market,
-                ticker = it.ticker, name = it.name, price = it.price,
-                quantity = it.quantity, source = "USER", id = it.id)
-        }
-        val merged = mergePaperTrading(emptyPaperTrading(), userPositions, userTrades)
-        return PaperTradingResponse(LocalDateTime.now().toString(), refresher.refreshPaperTrading(merged, quotes))
-    }
-
     fun buildWorkspaceSnapshot(quotes: Map<String, StockQuote>, userId: UUID? = null): WorkspaceSnapshot {
         return WorkspaceSnapshot(
             watchlist = getWatchlist(userId, quotes).watchlist,
@@ -113,19 +97,6 @@ class WorkspaceEnrichmentService(
         )
     }
 
-    private fun mergePaperTrading(
-        base: PaperTradingSummary,
-        workspacePositions: List<PaperPosition>,
-        workspaceTrades: List<PaperTrade>,
-    ): PaperTradingSummary {
-        val openPositions = (base.openPositions + workspacePositions).sortedWith(compareBy({ it.market }, { it.name }))
-        val trades = (base.recentTrades + workspaceTrades).sortedByDescending { it.tradeDate }.take(20)
-        return base.copy(
-            evaluation = openPositions.sumOf { it.currentPrice.toLong() * it.quantity },
-            openPositions = openPositions, recentTrades = trades,
-        )
-    }
-
     // ─── Empty defaults (사용자 워크스페이스가 비어있을 때) ───────────────────
 
     private fun emptyPortfolio() = PortfolioSummary(
@@ -140,16 +111,10 @@ class WorkspaceEnrichmentService(
         executionLogs = emptyList(),
     )
 
-    private fun emptyPaperTrading() = PaperTradingSummary(
-        cash = 0, evaluation = 0L, totalReturnRate = 0.0,
-        openPositions = emptyList(), recentTrades = emptyList(),
-    )
-
     private fun buildQuoteUniverse(userId: UUID?): List<String> {
         return (workspaceStore.loadWatchlist(userId).asSequence().map { it.ticker } +
             workspaceStore.loadPortfolioPositions(userId).asSequence().map { it.ticker } +
-            workspaceStore.loadAiTrackRecords(userId).asSequence().map { it.ticker } +
-            workspaceStore.loadPaperPositions(userId).asSequence().map { it.ticker })
+            workspaceStore.loadAiTrackRecords(userId).asSequence().map { it.ticker })
             .filter { it.all(Char::isDigit) }
             .map { it.trim() }.filter { it.isNotBlank() }.distinct().toList()
     }
