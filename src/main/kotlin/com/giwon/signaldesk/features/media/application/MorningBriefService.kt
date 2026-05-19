@@ -74,12 +74,13 @@ class MorningBriefService(
 
         val vix = runCatching { vixClient.fetchVix() }.getOrNull()
         val indices = runCatching { fredIndexClient.fetchUsIndices() }.getOrNull()
+        val macro = runCatching { fredIndexClient.fetchMacro() }.getOrNull()
         val headlines = runCatching { newsRssClient.fetchMarketNews() }.getOrNull() ?: emptyList()
         val upcomingEvents = runCatching { marketEventService.upcoming(3) }.getOrNull() ?: emptyList()
 
         val disclosureTitles = matchedDisclosures.map { "[${it.corpName}] ${it.reportNm}" }
         val analysis = runCatching {
-            geminiClient.summarizeMorningBrief(vix, indices, headlines, disclosureTitles, upcomingEvents)
+            geminiClient.summarizeMorningBrief(vix, indices, macro, headlines, disclosureTitles, upcomingEvents)
         }.getOrElse {
             log.warn("MorningBrief Gemini call failed", it)
             null

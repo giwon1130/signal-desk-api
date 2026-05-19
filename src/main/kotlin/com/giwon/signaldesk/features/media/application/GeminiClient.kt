@@ -49,11 +49,12 @@ class GeminiClient(
     fun summarizeMorningBrief(
         vix: VixSnapshot?,
         indices: UsIndicesSnapshot?,
+        macro: com.giwon.signaldesk.features.market.application.MacroSnapshot?,
         headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
         disclosureTitles: List<String>,
         upcomingEvents: List<com.giwon.signaldesk.features.events.application.MarketEvent> = emptyList(),
     ): MarketInsightAnalysis? = callInsightJson(
-        buildMorningBriefPrompt(vix, indices, headlines, disclosureTitles, upcomingEvents),
+        buildMorningBriefPrompt(vix, indices, macro, headlines, disclosureTitles, upcomingEvents),
     )
 
     /**
@@ -252,6 +253,7 @@ $eventsBlock
     private fun buildMorningBriefPrompt(
         vix: VixSnapshot?,
         indices: UsIndicesSnapshot?,
+        macro: com.giwon.signaldesk.features.market.application.MacroSnapshot?,
         headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
         disclosureTitles: List<String>,
         upcomingEvents: List<com.giwon.signaldesk.features.events.application.MarketEvent>,
@@ -261,6 +263,7 @@ $eventsBlock
         val vixLine = if (vix != null) "VIX(공포지수): ${vix.currentPrice} (변화: ${vix.priceChange})" else "VIX: 데이터 없음"
         val nasdaqLine = if (indices?.nasdaq != null) "NASDAQ: ${indices.nasdaq.currentValue} (${indices.nasdaq.changeRate}%)" else "NASDAQ: 데이터 없음"
         val sp500Line = if (indices?.sp500 != null) "S&P500: ${indices.sp500.currentValue} (${indices.sp500.changeRate}%)" else "S&P500: 데이터 없음"
+        val macroBlock = buildMacroBlock(macro)
         val disclosureBlock = if (disclosureTitles.isNotEmpty()) {
             val lines = disclosureTitles.take(15).joinToString("\n") { "- $it" }
             "\n            === 사용자 보유/관심 종목의 어젯밤 ~ 오늘 아침 공시 (${disclosureTitles.size}건) ===\n            $lines"
@@ -282,7 +285,7 @@ $eventsBlock
             $vixLine
             $nasdaqLine
             $sp500Line
-$disclosureBlock$eventsBlock
+$macroBlock$disclosureBlock$eventsBlock
             === 오늘 한국·미국 시장 뉴스 헤드라인 (${capped.size}건) ===
             $headlineLines
 
@@ -294,6 +297,19 @@ $disclosureBlock$eventsBlock
               "keyPoints": ["오늘 봐야 할 포인트 3개. 각 25자 이내. 공시·이벤트 우선 반영"]
             }
         """.trimIndent()
+    }
+
+    private fun buildMacroBlock(macro: com.giwon.signaldesk.features.market.application.MacroSnapshot?): String {
+        if (macro == null) return ""
+        val lines = buildList {
+            macro.cpi?.let { add("- CPI: ${"%.1f".format(it.currentValue)} (전월 대비 ${"%+.2f".format(it.changeRate)}%)") }
+            macro.fedFundsRate?.let { add("- Fed Funds Rate: ${"%.2f".format(it.currentValue)}% (변화 ${"%+.2f".format(it.changeRate)}%p)") }
+            macro.usdKrw?.let { add("- USD/KRW: ${"%.1f".format(it.currentValue)} (변화 ${"%+.2f".format(it.changeRate)}%)") }
+            macro.treasury10y?.let { add("- 10년물 국채: ${"%.2f".format(it.currentValue)}% (${"%+.2f".format(it.changeRate)}%p)") }
+            macro.wti?.let { add("- WTI 유가: ${"%.1f".format(it.currentValue)} (${"%+.2f".format(it.changeRate)}%)") }
+        }
+        if (lines.isEmpty()) return ""
+        return "\n            === 매크로 지표 ===\n            ${lines.joinToString("\n            ")}\n"
     }
 
     private fun parseInsightResponse(body: String): MarketInsightAnalysis? {

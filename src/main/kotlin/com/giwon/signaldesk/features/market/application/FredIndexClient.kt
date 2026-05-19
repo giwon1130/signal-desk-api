@@ -27,6 +27,23 @@ class FredIndexClient(
         )
     }
 
+    /**
+     * 매크로 스냅샷 — CPI(인플레이션), Fed Funds Rate(금리), USD/KRW(환율),
+     * 10년물 국채(장기금리), WTI(원자재). 각 시리즈는 graph CSV 에서 직접 fetch.
+     * 어느 하나 실패해도 가능한 항목만 반환.
+     */
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["macro-snapshot"], unless = "#result == null")
+    fun fetchMacro(): MacroSnapshot? {
+        if (!enabled) return null
+        val cpi = runCatching { fetchSeries("CPIAUCSL") }.getOrNull()
+        val fed = runCatching { fetchSeries("FEDFUNDS") }.getOrNull()
+        val usdKrw = runCatching { fetchSeries("DEXKOUS") }.getOrNull()
+        val treasury10 = runCatching { fetchSeries("DGS10") }.getOrNull()
+        val wti = runCatching { fetchSeries("WTISPLC") }.getOrNull()
+        if (cpi == null && fed == null && usdKrw == null && treasury10 == null && wti == null) return null
+        return MacroSnapshot(cpi = cpi, fedFundsRate = fed, usdKrw = usdKrw, treasury10y = treasury10, wti = wti)
+    }
+
     private fun fetchSeries(seriesId: String): FredSeriesSnapshot? {
         return runCatching {
             val endDate = LocalDate.now()
@@ -117,4 +134,13 @@ data class FredSeriesSnapshot(
     val currentValue: Double,
     val changeRate: Double,
     val chart: List<Double>,
+)
+
+/** FRED 매크로 스냅샷. 일부 시리즈는 null 가능. */
+data class MacroSnapshot(
+    val cpi: FredSeriesSnapshot?,
+    val fedFundsRate: FredSeriesSnapshot?,
+    val usdKrw: FredSeriesSnapshot?,
+    val treasury10y: FredSeriesSnapshot?,
+    val wti: FredSeriesSnapshot?,
 )
