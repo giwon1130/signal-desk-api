@@ -4,17 +4,10 @@ import java.time.Instant
 
 enum class MediaSentiment { BULLISH, BEARISH, NEUTRAL }
 
+/**
+ * media_summaries.source. YOUTUBE 는 폐기됐지만 과거 row 호환을 위해 enum 에 남겨둔다.
+ */
 enum class MediaSource { YOUTUBE, NEWS_DIGEST, MORNING_BRIEF }
-
-data class YouTubeVideo(
-    val videoId: String,
-    val channelId: String,
-    val channelTitle: String,
-    val title: String,
-    val url: String,
-    val publishedAt: Instant,
-    val description: String = "",
-)
 
 /** AI 분석 결과만 담는 순수 값 객체. 영상 메타데이터와 분리해서 합성. */
 data class MediaSummaryAnalysis(
@@ -26,10 +19,8 @@ data class MediaSummaryAnalysis(
 
 /**
  * DB에 저장/조회하는 최종 형태.
- *
- * YOUTUBE source: channelId/videoId/videoUrl 이 실제 유튜브 값.
- * NEWS_DIGEST source: 가상의 video_id (예: "news-2026-05-15-KR"),
- *                     channelTitle="시장 마감 종합", videoUrl=빈 문자열.
+ *  - NEWS_DIGEST: videoId="news-YYYY-MM-DD-KR" 같은 가상값, videoUrl=빈 문자열.
+ *  - MORNING_BRIEF: videoId="brief-YYYY-MM-DD", channelTitle="모닝 브리프".
  */
 data class MediaSummary(
     val id: String,

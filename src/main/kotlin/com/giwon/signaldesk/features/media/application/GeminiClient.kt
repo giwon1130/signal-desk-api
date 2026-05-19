@@ -35,9 +35,6 @@ class GeminiClient(
 
     fun isEnabled(): Boolean = apiKey.isNotBlank()
 
-    fun summarize(videoTitle: String, transcript: String): MediaSummaryAnalysis? =
-        callJson(buildVideoPrompt(videoTitle, transcript))
-
     fun summarizeMarketInsight(
         vix: VixSnapshot?,
         indices: UsIndicesSnapshot?,
@@ -121,32 +118,6 @@ class GeminiClient(
             log.warn("Gemini API call failed", it)
             null
         }
-    }
-
-    private fun buildVideoPrompt(videoTitle: String, transcript: String): String {
-        // 자막이 너무 길면 토큰 비용/응답 시간 폭증 → 앞 80,000자로 자른다 (대략 50K 토큰).
-        val safe = if (transcript.length > 80_000) transcript.substring(0, 80_000) else transcript
-        val source = if (safe.isBlank()) "(자막 없음 — 영상 제목만으로 추정)" else safe
-
-        return """
-            당신은 한국 주식 투자 전문 분석가입니다.
-            아래는 데일리 증시 분석 유튜브 방송의 자막(또는 제목)입니다.
-            방송 내용을 분석해서 한국 개인 투자자가 빠르게 흐름을 파악할 수 있도록
-            아래 JSON 스키마에 맞춰 한국어로 답변하세요.
-
-            스키마:
-            {
-              "summary": "3~5문장으로 오늘 방송의 핵심 내용을 요약 (각 문장은 줄바꿈으로 구분)",
-              "flowAnalysis": "2~3문장으로 시장 흐름 해석 — 강세/약세/관망의 이유와 주목할 섹터",
-              "keyTickers": ["방송에서 언급된 종목명 또는 티커. 한국 종목은 6자리 코드(예: 005930), 미국 종목은 티커(예: NVDA) 사용. 최대 6개"],
-              "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나"
-            }
-
-            영상 제목: $videoTitle
-
-            방송 내용:
-            $source
-        """.trimIndent()
     }
 
     private fun buildNewsDigestPrompt(

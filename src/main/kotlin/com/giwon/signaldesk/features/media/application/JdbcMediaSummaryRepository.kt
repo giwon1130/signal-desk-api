@@ -74,7 +74,7 @@ private val rowMapper = RowMapper { rs: ResultSet, _: Int ->
         keyTickers = rs.getString("key_tickers").split(",").map { it.trim() }.filter { it.isNotBlank() },
         sentiment = runCatching { MediaSentiment.valueOf(rs.getString("sentiment")) }.getOrDefault(MediaSentiment.NEUTRAL),
         hasTranscript = rs.getBoolean("has_transcript"),
-        source = runCatching { MediaSource.valueOf(rs.getString("source")) }.getOrDefault(MediaSource.YOUTUBE),
+        source = runCatching { MediaSource.valueOf(rs.getString("source")) }.getOrDefault(MediaSource.NEWS_DIGEST),
         createdAt = rs.getTimestamp("created_at").toInstant(),
     )
 }
