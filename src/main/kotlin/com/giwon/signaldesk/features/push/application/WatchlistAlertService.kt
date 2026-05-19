@@ -134,22 +134,64 @@ class WatchlistAlertService(
     private fun loadWatchRowsFor(userIds: Collection<UUID>, market: String): List<WatchlistAlertDetector.WatchRow> {
         if (userIds.isEmpty()) return emptyList()
         val placeholders = userIds.joinToString(",") { "?::uuid" }
-        val sql = """
+        val userArgs = userIds.map { it.toString() }.toTypedArray()
+
+        // 1) signal_desk_watchlist
+        val watchRows = jdbcTemplate.query(
+            """
             select user_id, market, ticker, name, change_rate, alert_below, alert_above, volume_alert
             from signal_desk_watchlist
             where market = ? and user_id in ($placeholders)
-        """.trimIndent()
-        return jdbcTemplate.query(sql, { rs, _ ->
-            WatchlistAlertDetector.WatchRow(
-                userId = UUID.fromString(rs.getString("user_id")),
-                market = rs.getString("market"),
-                ticker = rs.getString("ticker"),
-                name = rs.getString("name"),
-                changeRate = rs.getDouble("change_rate"),
-                alertBelow = rs.getObject("alert_below") as Int?,
-                alertAbove = rs.getObject("alert_above") as Int?,
-                volumeAlert = rs.getBoolean("volume_alert"),
-            )
-        }, market, *userIds.map { it.toString() }.toTypedArray())
+            """.trimIndent(),
+            { rs, _ ->
+                WatchlistAlertDetector.WatchRow(
+                    userId = UUID.fromString(rs.getString("user_id")),
+                    market = rs.getString("market"),
+                    ticker = rs.getString("ticker"),
+                    name = rs.getString("name"),
+                    changeRate = rs.getDouble("change_rate"),
+                    alertBelow = rs.getObject("alert_below") as Int?,
+                    alertAbove = rs.getObject("alert_above") as Int?,
+                    volumeAlert = rs.getBoolean("volume_alert"),
+                )
+            }, market, *userArgs,
+        )
+
+        // 2) signal_desk_portfolio_positions: target_price/stop_loss_price를 알림 트리거로
+        //    같은 (user_id, market, ticker)가 watchlist에 있으면 portfolio 값으로 덮어쓴다 (보유가 더 강한 의도).
+        val portfolioRows = jdbcTemplate.query(
+            """
+            select user_id, market, ticker, name, current_price, target_price, stop_loss_price
+            from signal_desk_portfolio_positions
+            where market = ? and user_id in ($placeholders)
+              and (target_price is not null or stop_loss_price is not null)
+            """.trimIndent(),
+            { rs, _ ->
+                WatchlistAlertDetector.WatchRow(
+                    userId = UUID.fromString(rs.getString("user_id")),
+                    market = rs.getString("market"),
+                    ticker = rs.getString("ticker"),
+                    name = rs.getString("name"),
+                    changeRate = 0.0,
+                    alertBelow = rs.getObject("stop_loss_price") as Int?,
+                    alertAbove = rs.getObject("target_price") as Int?,
+                    volumeAlert = false,
+                )
+            }, market, *userArgs,
+        )
+
+        val byKey = LinkedHashMap<Triple<UUID, String, String>, WatchlistAlertDetector.WatchRow>()
+        watchRows.forEach { byKey[Triple(it.userId, it.market, it.ticker)] = it }
+        portfolioRows.forEach { p ->
+            val k = Triple(p.userId, p.market, p.ticker)
+            val existing = byKey[k]
+            byKey[k] = if (existing != null) {
+                existing.copy(
+                    alertBelow = p.alertBelow ?: existing.alertBelow,
+                    alertAbove = p.alertAbove ?: existing.alertAbove,
+                )
+            } else p
+        }
+        return byKey.values.toList()
     }
 }
