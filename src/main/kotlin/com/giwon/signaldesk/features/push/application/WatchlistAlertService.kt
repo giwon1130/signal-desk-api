@@ -30,6 +30,7 @@ import java.util.UUID
 class WatchlistAlertService(
     private val jdbcTemplate: JdbcTemplate,
     private val pushRepository: PushRepository,
+    private val alertPreferenceService: AlertPreferenceService,
     private val quoteClient: NaverFinanceQuoteClient,
     private val globalQuoteClient: NaverGlobalQuoteClient,
     private val chartClient: NaverStockChartClient,
@@ -42,7 +43,12 @@ class WatchlistAlertService(
     private val krwFmt = NumberFormat.getNumberInstance(Locale.KOREA)
 
     fun scanAndNotify(market: String = "KR") {
-        val devicesByUser = pushRepository.listAllDevicesGroupedByUser()
+        val allDevices = pushRepository.listAllDevicesGroupedByUser()
+        if (allDevices.isEmpty()) return
+
+        // 해당 마켓 알림이 ON된 사용자만 발송 대상
+        val enabledUsers = alertPreferenceService.loadEnabledUsers(market)
+        val devicesByUser = allDevices.filterKeys { it in enabledUsers }
         if (devicesByUser.isEmpty()) return
 
         val watchRows = loadWatchRowsFor(devicesByUser.keys, market)
