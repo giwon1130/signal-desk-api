@@ -32,6 +32,7 @@ class NaverStockChartClient(
     private val log = LoggerFactory.getLogger(javaClass)
     private val httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()
 
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["chart-mid"], key = "#ticker + ':' + #count", unless = "#result.isEmpty()")
     fun fetchDailyBars(ticker: String, count: Int = 30): List<DailyBar> {
         if (!enabled) return emptyList()
         return runCatching {

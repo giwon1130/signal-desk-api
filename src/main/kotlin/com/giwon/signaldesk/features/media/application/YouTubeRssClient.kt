@@ -28,6 +28,7 @@ class YouTubeRssClient(
         .connectTimeout(Duration.ofSeconds(3))
         .build()
 
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["rss-feed"], key = "'yt:' + #channelId", unless = "#result.isEmpty()")
     fun fetchLatestVideos(channelId: String): List<YouTubeVideo> {
         if (channelId.isBlank()) return emptyList()
         return runCatching {

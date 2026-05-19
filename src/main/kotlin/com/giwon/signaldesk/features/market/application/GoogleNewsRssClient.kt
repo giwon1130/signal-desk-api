@@ -34,6 +34,7 @@ class GoogleNewsRssClient(
         .connectTimeout(Duration.ofSeconds(3))
         .build()
 
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["rss-feed"], unless = "#result == null || #result.isEmpty()")
     fun fetchMarketNews(): List<MarketNews>? {
         if (!enabled) return null
 

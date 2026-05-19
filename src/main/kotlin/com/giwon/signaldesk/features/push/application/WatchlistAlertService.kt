@@ -1,7 +1,9 @@
 package com.giwon.signaldesk.features.push.application
 
 import com.giwon.signaldesk.features.market.application.NaverFinanceQuoteClient
+import com.giwon.signaldesk.features.market.application.NaverGlobalQuoteClient
 import com.giwon.signaldesk.features.market.application.NaverStockChartClient
+import com.giwon.signaldesk.features.market.application.StockQuote
 import com.giwon.signaldesk.features.market.application.TechnicalIndicatorCalculator
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -29,6 +31,7 @@ class WatchlistAlertService(
     private val jdbcTemplate: JdbcTemplate,
     private val pushRepository: PushRepository,
     private val quoteClient: NaverFinanceQuoteClient,
+    private val globalQuoteClient: NaverGlobalQuoteClient,
     private val chartClient: NaverStockChartClient,
     private val technicalCalculator: TechnicalIndicatorCalculator,
     private val detector: WatchlistAlertDetector,
@@ -38,25 +41,30 @@ class WatchlistAlertService(
     private val log = LoggerFactory.getLogger(javaClass)
     private val krwFmt = NumberFormat.getNumberInstance(Locale.KOREA)
 
-    fun scanAndNotify() {
+    fun scanAndNotify(market: String = "KR") {
         val devicesByUser = pushRepository.listAllDevicesGroupedByUser()
         if (devicesByUser.isEmpty()) return
 
-        val watchRows = loadKrWatchRowsFor(devicesByUser.keys)
+        val watchRows = loadWatchRowsFor(devicesByUser.keys, market)
         if (watchRows.isEmpty()) return
 
         val tickers = watchRows.map { it.ticker }.toSet()
-        val quotes = quoteClient.fetchKoreanQuotes(tickers)
+        val quotes: Map<String, StockQuote> = when (market) {
+            "US" -> globalQuoteClient.fetchUsQuotes(tickers)
+            else -> quoteClient.fetchKoreanQuotes(tickers)
+        }
         if (quotes.isEmpty()) return
 
-        // 거래량 급증 알림 켜진 종목만 차트 API 조회 (비용 제한)
-        val volumeAlertTickers = watchRows.filter { it.volumeAlert }.map { it.ticker }.toSet()
-        val volumeRatioByTicker: Map<String, Double> = if (volumeAlertTickers.isNotEmpty()) {
-            volumeAlertTickers.mapNotNull { ticker ->
-                val bars = chartClient.fetchDailyBars(ticker, count = 22)
-                val ratio = technicalCalculator.volumeRatio(bars)
-                if (ratio != null) ticker to ratio else null
-            }.toMap()
+        // 거래량 급증 알림은 한국 차트 API에만 의존 — US는 가격 알림만.
+        val volumeRatioByTicker: Map<String, Double> = if (market == "KR") {
+            val volumeAlertTickers = watchRows.filter { it.volumeAlert }.map { it.ticker }.toSet()
+            if (volumeAlertTickers.isNotEmpty()) {
+                volumeAlertTickers.mapNotNull { ticker ->
+                    val bars = chartClient.fetchDailyBars(ticker, count = 22)
+                    val ratio = technicalCalculator.volumeRatio(bars)
+                    if (ratio != null) ticker to ratio else null
+                }.toMap()
+            } else emptyMap()
         } else emptyMap()
 
         val refreshed = watchRows.mapNotNull { r ->
@@ -117,13 +125,13 @@ class WatchlistAlertService(
         )
     }
 
-    private fun loadKrWatchRowsFor(userIds: Collection<UUID>): List<WatchlistAlertDetector.WatchRow> {
+    private fun loadWatchRowsFor(userIds: Collection<UUID>, market: String): List<WatchlistAlertDetector.WatchRow> {
         if (userIds.isEmpty()) return emptyList()
         val placeholders = userIds.joinToString(",") { "?::uuid" }
         val sql = """
             select user_id, market, ticker, name, change_rate, alert_below, alert_above, volume_alert
             from signal_desk_watchlist
-            where market = 'KR' and user_id in ($placeholders)
+            where market = ? and user_id in ($placeholders)
         """.trimIndent()
         return jdbcTemplate.query(sql, { rs, _ ->
             WatchlistAlertDetector.WatchRow(
@@ -136,6 +144,6 @@ class WatchlistAlertService(
                 alertAbove = rs.getObject("alert_above") as Int?,
                 volumeAlert = rs.getBoolean("volume_alert"),
             )
-        }, *userIds.map { it.toString() }.toTypedArray())
+        }, market, *userIds.map { it.toString() }.toTypedArray())
     }
 }

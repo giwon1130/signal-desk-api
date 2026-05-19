@@ -145,6 +145,24 @@ class MarketSessionService {
      * 갱신 주기: 매년 12월 KRX 가 다음 해 캘린더 공시할 때 추가.
      * 갱신 누락 시 효과: 음력 휴일에 시장이 "정규장"으로 잘못 표시됨 (시각만 영향, 실 데이터엔 무관).
      */
+    /**
+     * 한국 KRX 거래일이면 true. 주말(토/일) + 한국 휴장일이면 false.
+     * 푸시 알림 / 데이터 수집 cron이 발화 직전 호출해서 가드용으로 사용.
+     */
+    fun isKrTradingDay(date: LocalDate): Boolean {
+        if (date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY) return false
+        return findKrHoliday(date) == null
+    }
+
+    /**
+     * 미국 NYSE/NASDAQ 거래일이면 true. 주말 + 미국 정규 휴장일이면 false.
+     * Early-close 일은 거래일이라 true (단축 거래는 정상 운영).
+     */
+    fun isUsTradingDay(date: LocalDate): Boolean {
+        if (date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY) return false
+        return findUsHoliday(date) == null
+    }
+
     private fun findKrHoliday(date: LocalDate): KrMarketSpecialDay? {
         val description = KR_HOLIDAYS_BY_DATE[date] ?: return null
         return KrMarketSpecialDay(date, description)

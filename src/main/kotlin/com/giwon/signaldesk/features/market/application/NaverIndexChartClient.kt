@@ -43,6 +43,7 @@ class NaverIndexChartClient(
      * @param periodType 캔들 주기
      * @param count 가져올 캔들 개수 (Naver는 최소 110개를 항상 반환하므로 truncate는 호출자가)
      */
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["chart-mid"], key = "'idx:' + #indexCode + ':' + #periodType.toString() + ':' + #count", unless = "#result.isEmpty()")
     fun fetchOhlc(indexCode: String, periodType: PeriodType, count: Int = 30): List<IndexCandle> {
         if (!enabled) return emptyList()
 
