@@ -52,9 +52,11 @@ class GeminiClient(
         macro: com.giwon.signaldesk.features.market.application.MacroSnapshot?,
         headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
         disclosureTitles: List<String>,
+        foreignBuyTop: List<com.giwon.signaldesk.features.market.application.InvestorRankItem> = emptyList(),
+        institutionBuyTop: List<com.giwon.signaldesk.features.market.application.InvestorRankItem> = emptyList(),
         upcomingEvents: List<com.giwon.signaldesk.features.events.application.MarketEvent> = emptyList(),
     ): MarketInsightAnalysis? = callInsightJson(
-        buildMorningBriefPrompt(vix, indices, macro, headlines, disclosureTitles, upcomingEvents),
+        buildMorningBriefPrompt(vix, indices, macro, headlines, disclosureTitles, foreignBuyTop, institutionBuyTop, upcomingEvents),
     )
 
     /**
@@ -256,6 +258,8 @@ $eventsBlock
         macro: com.giwon.signaldesk.features.market.application.MacroSnapshot?,
         headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
         disclosureTitles: List<String>,
+        foreignBuyTop: List<com.giwon.signaldesk.features.market.application.InvestorRankItem>,
+        institutionBuyTop: List<com.giwon.signaldesk.features.market.application.InvestorRankItem>,
         upcomingEvents: List<com.giwon.signaldesk.features.events.application.MarketEvent>,
     ): String {
         val capped = headlines.take(20)
@@ -264,6 +268,7 @@ $eventsBlock
         val nasdaqLine = if (indices?.nasdaq != null) "NASDAQ: ${indices.nasdaq.currentValue} (${indices.nasdaq.changeRate}%)" else "NASDAQ: 데이터 없음"
         val sp500Line = if (indices?.sp500 != null) "S&P500: ${indices.sp500.currentValue} (${indices.sp500.changeRate}%)" else "S&P500: 데이터 없음"
         val macroBlock = buildMacroBlock(macro)
+        val flowBlock = buildInvestorFlowBlock(foreignBuyTop, institutionBuyTop)
         val disclosureBlock = if (disclosureTitles.isNotEmpty()) {
             val lines = disclosureTitles.take(15).joinToString("\n") { "- $it" }
             "\n            === 사용자 보유/관심 종목의 어젯밤 ~ 오늘 아침 공시 (${disclosureTitles.size}건) ===\n            $lines"
@@ -285,7 +290,7 @@ $eventsBlock
             $vixLine
             $nasdaqLine
             $sp500Line
-$macroBlock$disclosureBlock$eventsBlock
+$macroBlock$flowBlock$disclosureBlock$eventsBlock
             === 오늘 한국·미국 시장 뉴스 헤드라인 (${capped.size}건) ===
             $headlineLines
 
@@ -297,6 +302,21 @@ $macroBlock$disclosureBlock$eventsBlock
               "keyPoints": ["오늘 봐야 할 포인트 3개. 각 25자 이내. 공시·이벤트 우선 반영"]
             }
         """.trimIndent()
+    }
+
+    private fun buildInvestorFlowBlock(
+        foreignBuy: List<com.giwon.signaldesk.features.market.application.InvestorRankItem>,
+        institutionBuy: List<com.giwon.signaldesk.features.market.application.InvestorRankItem>,
+    ): String {
+        if (foreignBuy.isEmpty() && institutionBuy.isEmpty()) return ""
+        val parts = mutableListOf<String>()
+        if (foreignBuy.isNotEmpty()) {
+            parts += "- 외인 순매수 TOP: ${foreignBuy.take(5).joinToString(", ") { "${it.name}(${it.ticker})" }}"
+        }
+        if (institutionBuy.isNotEmpty()) {
+            parts += "- 기관 순매수 TOP: ${institutionBuy.take(5).joinToString(", ") { "${it.name}(${it.ticker})" }}"
+        }
+        return "\n            === 어제 수급 상위 (KOSPI) ===\n            ${parts.joinToString("\n            ")}\n"
     }
 
     private fun buildMacroBlock(macro: com.giwon.signaldesk.features.market.application.MacroSnapshot?): String {

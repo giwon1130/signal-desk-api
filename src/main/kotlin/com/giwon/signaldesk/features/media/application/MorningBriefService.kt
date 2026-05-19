@@ -5,6 +5,7 @@ import com.giwon.signaldesk.features.events.application.MarketEventService
 import com.giwon.signaldesk.features.market.application.CboeVixClient
 import com.giwon.signaldesk.features.market.application.FredIndexClient
 import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
+import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushRepository
@@ -39,6 +40,7 @@ class MorningBriefService(
     private val vixClient: CboeVixClient,
     private val fredIndexClient: FredIndexClient,
     private val newsRssClient: GoogleNewsRssClient,
+    private val investorRankClient: NaverInvestorRankClient,
     private val geminiClient: GeminiClient,
     private val marketEventService: MarketEventService,
     private val disclosureSeenRepository: DisclosureSeenRepository,
@@ -77,10 +79,17 @@ class MorningBriefService(
         val macro = runCatching { fredIndexClient.fetchMacro() }.getOrNull()
         val headlines = runCatching { newsRssClient.fetchMarketNews() }.getOrNull() ?: emptyList()
         val upcomingEvents = runCatching { marketEventService.upcoming(3) }.getOrNull() ?: emptyList()
+        val foreignBuy = runCatching { investorRankClient.fetchTop("KOSPI", "FOREIGN", "BUY", limit = 7) }.getOrNull() ?: emptyList()
+        val institutionBuy = runCatching { investorRankClient.fetchTop("KOSPI", "INSTITUTION", "BUY", limit = 7) }.getOrNull() ?: emptyList()
 
         val disclosureTitles = matchedDisclosures.map { "[${it.corpName}] ${it.reportNm}" }
         val analysis = runCatching {
-            geminiClient.summarizeMorningBrief(vix, indices, macro, headlines, disclosureTitles, upcomingEvents)
+            geminiClient.summarizeMorningBrief(
+                vix = vix, indices = indices, macro = macro, headlines = headlines,
+                disclosureTitles = disclosureTitles,
+                foreignBuyTop = foreignBuy, institutionBuyTop = institutionBuy,
+                upcomingEvents = upcomingEvents,
+            )
         }.getOrElse {
             log.warn("MorningBrief Gemini call failed", it)
             null
