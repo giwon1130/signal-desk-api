@@ -135,11 +135,11 @@ class MorningBriefService(
 
     private fun loadAllUserKrTickers(): Map<UUID, Set<String>> {
         val watch = jdbc.query(
-            "select user_id, ticker from signal_desk_watchlist where market = 'KR'",
+            "select user_id, ticker from signal_desk_watchlist where market = 'KR' and user_id is not null",
             { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker") },
         )
         val portfolio = jdbc.query(
-            "select user_id, ticker from signal_desk_portfolio_positions where market = 'KR'",
+            "select user_id, ticker from signal_desk_portfolio_positions where market = 'KR' and user_id is not null",
             { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker") },
         )
         return (watch + portfolio)

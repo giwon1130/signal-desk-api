@@ -102,14 +102,14 @@ class DartDisclosureService(
         log.info("dart disclosure push dispatched. items={}, messages={}", relevant.size, sent)
     }
 
-    /** 모든 사용자의 KR watchlist + portfolio stock_code (6자리 숫자만). */
+    /** 모든 사용자의 KR watchlist + portfolio stock_code (6자리 숫자만). user_id 가 null 인 레거시 row 는 제외. */
     private fun loadUserKrTickers(): Map<UUID, Set<String>> {
         val watch = jdbc.query(
-            "select user_id, ticker from signal_desk_watchlist where market = 'KR'",
+            "select user_id, ticker from signal_desk_watchlist where market = 'KR' and user_id is not null",
             { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker") },
         )
         val portfolio = jdbc.query(
-            "select user_id, ticker from signal_desk_portfolio_positions where market = 'KR'",
+            "select user_id, ticker from signal_desk_portfolio_positions where market = 'KR' and user_id is not null",
             { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker") },
         )
         return (watch + portfolio)
