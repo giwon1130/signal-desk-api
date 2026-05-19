@@ -52,6 +52,14 @@ signal-desk:
     fred:
       enabled: true
       base-url: https://fred.stlouisfed.org/graph/fredgraph.csv
+      # FRED Web API (CPI, FedFundsRate 등 시계열). 비어있으면 매크로 카드 비활성.
+      api-base-url: ${FRED_API_BASE_URL:https://api.stlouisfed.org/fred}
+      api-key: ${FRED_API_KEY:}
+    dart:
+      # OpenDART (https://opendart.fss.or.kr) — 한국 상장사 공시. 비어있으면 disclosure scan noop.
+      enabled: true
+      base-url: ${DART_BASE_URL:https://opendart.fss.or.kr}
+      api-key: ${DART_API_KEY:}
     google-news:
       enabled: true
       base-url: https://news.google.com/rss/search
