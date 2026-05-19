@@ -4,7 +4,7 @@ import java.time.Instant
 
 enum class MediaSentiment { BULLISH, BEARISH, NEUTRAL }
 
-enum class MediaSource { YOUTUBE, NEWS_DIGEST }
+enum class MediaSource { YOUTUBE, NEWS_DIGEST, MORNING_BRIEF }
 
 data class YouTubeVideo(
     val videoId: String,

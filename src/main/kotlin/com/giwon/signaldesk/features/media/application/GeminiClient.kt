@@ -46,6 +46,20 @@ class GeminiClient(
     ): MarketInsightAnalysis? = callInsightJson(buildMarketInsightPrompt(vix, indices, headlines, upcomingEvents))
 
     /**
+     * 모닝 브리프 — 야간 미국장 결과 + KR 뉴스 + 보유/관심 종목 공시를 합쳐
+     * 장 시작 전(08:30 KST) 한국 개인 투자자가 오늘 대응을 준비할 수 있게 종합한다.
+     */
+    fun summarizeMorningBrief(
+        vix: VixSnapshot?,
+        indices: UsIndicesSnapshot?,
+        headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
+        disclosureTitles: List<String>,
+        upcomingEvents: List<com.giwon.signaldesk.features.events.application.MarketEvent> = emptyList(),
+    ): MarketInsightAnalysis? = callInsightJson(
+        buildMorningBriefPrompt(vix, indices, headlines, disclosureTitles, upcomingEvents),
+    )
+
+    /**
      * 마감시황 뉴스 헤드라인 묶음을 종합 요약.
      * @param marketLabel "KR" 또는 "US"
      * @param dateLabel "2026-05-15" 같은 날짜
@@ -260,6 +274,53 @@ $eventsBlock
               "summary": "2~3문장 종합 분석. VIX·지수·뉴스와 다가오는 이벤트(있다면)를 연결해 지금 시장 분위기와 개인 투자자 행동 포인트를 설명",
               "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나",
               "keyPoints": ["주목할 포인트 최대 3가지. 각 20자 이내. 다가오는 큰 이벤트가 있으면 1개는 그것에 할당"]
+            }
+        """.trimIndent()
+    }
+
+    private fun buildMorningBriefPrompt(
+        vix: VixSnapshot?,
+        indices: UsIndicesSnapshot?,
+        headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
+        disclosureTitles: List<String>,
+        upcomingEvents: List<com.giwon.signaldesk.features.events.application.MarketEvent>,
+    ): String {
+        val capped = headlines.take(20)
+        val headlineLines = capped.joinToString("\n") { n -> "- [${n.source}] ${n.title}" }
+        val vixLine = if (vix != null) "VIX(공포지수): ${vix.currentPrice} (변화: ${vix.priceChange})" else "VIX: 데이터 없음"
+        val nasdaqLine = if (indices?.nasdaq != null) "NASDAQ: ${indices.nasdaq.currentValue} (${indices.nasdaq.changeRate}%)" else "NASDAQ: 데이터 없음"
+        val sp500Line = if (indices?.sp500 != null) "S&P500: ${indices.sp500.currentValue} (${indices.sp500.changeRate}%)" else "S&P500: 데이터 없음"
+        val disclosureBlock = if (disclosureTitles.isNotEmpty()) {
+            val lines = disclosureTitles.take(15).joinToString("\n") { "- $it" }
+            "\n            === 사용자 보유/관심 종목의 어젯밤 ~ 오늘 아침 공시 (${disclosureTitles.size}건) ===\n            $lines"
+        } else ""
+        val eventsBlock = if (upcomingEvents.isNotEmpty()) {
+            val lines = upcomingEvents.take(5).joinToString("\n") { e ->
+                val time = e.time?.let { " $it" } ?: ""
+                "- [${e.date}$time · ${e.market}] ${e.title}${e.description?.let { " — $it" } ?: ""}"
+            }
+            "\n            === 다가오는 주요 이벤트 (3일내) ===\n            $lines"
+        } else ""
+
+        return """
+            당신은 한국 주식 투자 전문 분석가입니다.
+            지금은 한국 장 시작 30분 전(08:30 KST). 한국 개인 투자자가 '오늘 장을 어떻게 대응할지'
+            준비할 수 있도록 야간 미국장 결과 + 한국 뉴스 + 보유/관심 종목 공시를 종합해 브리핑하세요.
+
+            === 야간 미국장 ===
+            $vixLine
+            $nasdaqLine
+            $sp500Line
+$disclosureBlock$eventsBlock
+            === 오늘 한국·미국 시장 뉴스 헤드라인 (${capped.size}건) ===
+            $headlineLines
+
+            아래 JSON 스키마로 한국어 답변:
+            {
+              "headline": "오늘 장의 핵심을 한 줄로 (20자 이내, 매수/관망/방어 같은 액션 키워드 포함)",
+              "summary": "3~4문장. 야간 미국장 → 한국장 영향 → 보유 종목 공시 → 오늘 대응 포인트 순으로 연결. 마지막 문장에 '오늘 행동' 명시",
+              "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나",
+              "keyPoints": ["오늘 봐야 할 포인트 3개. 각 25자 이내. 공시·이벤트 우선 반영"]
             }
         """.trimIndent()
     }

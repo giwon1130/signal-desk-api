@@ -1,8 +1,10 @@
 package com.giwon.signaldesk.features.media.presentation
 
 import com.giwon.signaldesk.features.market.presentation.ApiResponse
+import com.giwon.signaldesk.features.media.application.MediaSource
 import com.giwon.signaldesk.features.media.application.MediaSummaryRepository
 import com.giwon.signaldesk.features.media.application.MediaSummaryService
+import com.giwon.signaldesk.features.media.application.MorningBriefService
 import com.giwon.signaldesk.features.media.application.NewsDigestService
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.web.bind.annotation.GetMapping
@@ -24,12 +26,29 @@ class MediaSummaryController(
     private val repository: MediaSummaryRepository,
     private val service: MediaSummaryService,
     private val newsDigestService: NewsDigestService,
+    private val morningBriefService: MorningBriefService,
 ) {
 
     @GetMapping("/summaries/latest")
     fun getLatest(): ApiResponse<MediaSummaryResponse?> {
         val latest = repository.findRecent(1).firstOrNull()?.let(MediaSummaryResponse::from)
         return ApiResponse(true, latest)
+    }
+
+    /** 오늘의 모닝 브리프 (없으면 null). */
+    @GetMapping("/morning-brief")
+    fun getMorningBrief(): ApiResponse<MediaSummaryResponse?> {
+        val latest = repository.findRecent(20)
+            .firstOrNull { it.source == MediaSource.MORNING_BRIEF }
+            ?.let(MediaSummaryResponse::from)
+        return ApiResponse(true, latest)
+    }
+
+    /** 모닝 브리프 수동 트리거 — 운영용. force=true 면 기존 brief 재생성. */
+    @PostMapping("/morning-brief/refresh")
+    fun refreshMorningBrief(@RequestParam(defaultValue = "false") force: Boolean): ApiResponse<Boolean> {
+        val brief = morningBriefService.runBrief(force)
+        return ApiResponse(true, brief != null)
     }
 
     /**
