@@ -27,6 +27,7 @@ class CacheConfig {
         manager.registerCustomCache("macro-index", build(Duration.ofMinutes(30), 100))
         manager.registerCustomCache("krx-official", build(Duration.ofMinutes(5), 200))
         manager.registerCustomCache("top-movers", build(Duration.ofMinutes(2), 100))
+        manager.registerCustomCache("market-insight", build(Duration.ofMinutes(30), 10))
         return manager
     }
 

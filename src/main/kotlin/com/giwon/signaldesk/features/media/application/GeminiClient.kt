@@ -2,6 +2,8 @@ package com.giwon.signaldesk.features.media.application
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.giwon.signaldesk.features.market.application.UsIndicesSnapshot
+import com.giwon.signaldesk.features.market.application.VixSnapshot
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -36,6 +38,12 @@ class GeminiClient(
     fun summarize(videoTitle: String, transcript: String): MediaSummaryAnalysis? =
         callJson(buildVideoPrompt(videoTitle, transcript))
 
+    fun summarizeMarketInsight(
+        vix: VixSnapshot?,
+        indices: UsIndicesSnapshot?,
+        headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
+    ): MarketInsightAnalysis? = callInsightJson(buildMarketInsightPrompt(vix, indices, headlines))
+
     /**
      * 마감시황 뉴스 헤드라인 묶음을 종합 요약.
      * @param marketLabel "KR" 또는 "US"
@@ -47,6 +55,32 @@ class GeminiClient(
         dateLabel: String,
         headlines: List<Triple<String, String, String>>,
     ): MediaSummaryAnalysis? = callJson(buildNewsDigestPrompt(marketLabel, dateLabel, headlines))
+
+    private fun callInsightJson(prompt: String): MarketInsightAnalysis? {
+        if (!isEnabled()) {
+            log.warn("GeminiClient disabled — GEMINI_API_KEY 미설정")
+            return null
+        }
+        val content = buildPayload(prompt)
+        return runCatching {
+            val url = "$baseUrl/v1beta/models/$model:generateContent?key=$apiKey"
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(30))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(content))
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            if (response.statusCode() != 200) {
+                log.warn("Gemini API status={} body={}", response.statusCode(), response.body().take(500))
+                return@runCatching null
+            }
+            parseInsightResponse(response.body())
+        }.getOrElse {
+            log.warn("Gemini market insight call failed", it)
+            null
+        }
+    }
 
     private fun callJson(prompt: String): MediaSummaryAnalysis? {
         if (!isEnabled()) {
@@ -187,4 +221,75 @@ class GeminiClient(
             sentiment = sentiment,
         )
     }
+
+    private fun buildMarketInsightPrompt(
+        vix: VixSnapshot?,
+        indices: UsIndicesSnapshot?,
+        headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
+    ): String {
+        val capped = headlines.take(25)
+        val headlineLines = capped.joinToString("\n") { n -> "- [${n.source}] ${n.title}" }
+        val vixLine = if (vix != null) "VIX(공포지수): ${vix.currentPrice} (변화: ${vix.priceChange})" else "VIX: 데이터 없음"
+        val nasdaqLine = if (indices?.nasdaq != null) "NASDAQ: ${indices.nasdaq.currentValue} (${indices.nasdaq.changeRate}%)" else "NASDAQ: 데이터 없음"
+        val sp500Line = if (indices?.sp500 != null) "S&P500: ${indices.sp500.currentValue} (${indices.sp500.changeRate}%)" else "S&P500: 데이터 없음"
+
+        return """
+            당신은 한국 주식 투자 전문 분석가입니다.
+            아래 시장 지표와 뉴스 헤드라인을 종합해 한국 개인 투자자를 위한 오늘의 종합 시장 인사이트를 작성하세요.
+
+            === 시장 지표 ===
+            $vixLine
+            $nasdaqLine
+            $sp500Line
+
+            === 오늘 주요 뉴스 헤드라인 (${capped.size}건) ===
+            $headlineLines
+
+            아래 JSON 스키마로 한국어 답변:
+            {
+              "headline": "오늘 시장을 한 줄로 압축 (20자 이내, 핵심 키워드 포함)",
+              "summary": "2~3문장 종합 분석. VIX·지수·뉴스를 연결해 지금 시장 분위기와 개인 투자자 행동 포인트를 설명",
+              "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나",
+              "keyPoints": ["주목할 포인트 최대 3가지. 각 20자 이내"]
+            }
+        """.trimIndent()
+    }
+
+    private fun parseInsightResponse(body: String): MarketInsightAnalysis? {
+        val root = objectMapper.readTree(body)
+        val candidate = root["candidates"]?.firstOrNull() ?: return null
+        val parts = candidate["content"]?.get("parts") ?: return null
+        val text = buildString {
+            parts.forEach { part ->
+                if (part["thought"]?.asBoolean() == true) return@forEach
+                part["text"]?.asText()?.let { append(it) }
+            }
+        }.trim()
+        if (text.isBlank()) return null
+        val payload = runCatching { objectMapper.readTree(text) }
+            .getOrElse {
+                log.warn("Gemini insight response not JSON. raw={}", text.take(500))
+                return null
+            } as? ObjectNode ?: return null
+
+        val sentimentRaw = payload["sentiment"]?.asText()?.uppercase().orEmpty()
+        val sentiment = runCatching { MediaSentiment.valueOf(sentimentRaw) }.getOrDefault(MediaSentiment.NEUTRAL)
+        val keyPoints = payload["keyPoints"]?.mapNotNull { it.asText()?.trim() }
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+
+        return MarketInsightAnalysis(
+            headline = payload["headline"]?.asText().orEmpty().trim(),
+            summary = payload["summary"]?.asText().orEmpty().trim(),
+            sentiment = sentiment,
+            keyPoints = keyPoints,
+        )
+    }
 }
+
+data class MarketInsightAnalysis(
+    val headline: String,
+    val summary: String,
+    val sentiment: MediaSentiment,
+    val keyPoints: List<String>,
+)
