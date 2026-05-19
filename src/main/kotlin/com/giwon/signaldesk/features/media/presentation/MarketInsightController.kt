@@ -3,7 +3,6 @@ package com.giwon.signaldesk.features.media.presentation
 import com.giwon.signaldesk.features.market.presentation.ApiResponse
 import com.giwon.signaldesk.features.media.application.MarketInsightAnalysis
 import com.giwon.signaldesk.features.media.application.MarketInsightService
-import com.giwon.signaldesk.features.media.application.MediaSentiment
 import org.springframework.cache.annotation.CacheEvict
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
