@@ -24,7 +24,7 @@ class NaverFinanceQuoteClient(
         .connectTimeout(Duration.ofSeconds(3))
         .build()
 
-    @Cacheable(cacheNames = ["quote-short"], key = "#tickers.toSortedSet().toString()", unless = "#result.isEmpty()")
+    @Cacheable(cacheNames = ["quote-short"], key = "new java.util.TreeSet(#tickers).toString()", unless = "#result.isEmpty()")
     fun fetchKoreanQuotes(tickers: Collection<String>): Map<String, StockQuote> {
         if (!enabled || tickers.isEmpty()) return emptyMap()
 
