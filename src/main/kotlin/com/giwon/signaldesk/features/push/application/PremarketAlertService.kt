@@ -84,33 +84,35 @@ class PremarketAlertService(
         val majorQuotes = MAJOR_TICKERS.mapNotNull { quotes[it] }
         if (watchQuotes.isEmpty() && portfolioQuotes.isEmpty() && majorQuotes.isEmpty()) return null
 
-        val parts = mutableListOf<String>()
-        if (watchQuotes.isNotEmpty()) parts += summaryPart("관심", watchQuotes)
-        if (portfolioQuotes.isNotEmpty()) parts += summaryPart("보유", portfolioQuotes)
-        parts += summaryPart("주요", majorQuotes)
-
-        val overall = (watchQuotes + portfolioQuotes + majorQuotes).map { it.changeRate }.average()
+        // 톤 결정: 보유 + 관심 평균 (시총상위는 참고용, 톤 결정에서 빼서 개인화)
+        val personal = portfolioQuotes + watchQuotes
+        val personalAvg = if (personal.isEmpty()) 0.0 else personal.map { it.changeRate }.average()
         val emoji = when {
-            overall >= 0.5 -> "🟢"
-            overall <= -0.5 -> "🔴"
+            personalAvg >= 0.3 -> "🟢"
+            personalAvg <= -0.3 -> "🔴"
             else -> "🟡"
         }
-        val title = "$emoji 프리마켓 시황 ($label)"
+        val title = "$emoji 프리마켓 $label · ${signed(personalAvg)}"
 
-        // 가장 큰 절대 변동 종목 한 줄
+        // 본문 우선순위: 보유 → 관심 → 시총상위 → 최대 변동 종목 한 줄
+        val parts = buildList {
+            if (portfolioQuotes.isNotEmpty()) add(compactPart("보유", portfolioQuotes))
+            if (watchQuotes.isNotEmpty()) add(compactPart("관심", watchQuotes))
+            if (majorQuotes.isNotEmpty()) add(compactPart("대표", majorQuotes))
+        }
         val mover = (watchQuotes + portfolioQuotes + majorQuotes).maxByOrNull { kotlin.math.abs(it.changeRate) }
-        val moverLine = mover?.let { " · ${MAJOR_NAMES[it.ticker] ?: it.ticker} ${signed(it.changeRate)}" } ?: ""
+        val moverLine = mover?.let { "\n📊 ${MAJOR_NAMES[it.ticker] ?: it.ticker} ${signed(it.changeRate)}" } ?: ""
 
         val body = parts.joinToString(" · ") + moverLine
         return title to body
     }
 
-    private fun summaryPart(label: String, quotes: List<StockQuote>): String {
+    /** "보유 +0.85% (↑2)" — 4글자 라벨 + 평균 + 상승 카운트만, 푸시 한 줄 압축. */
+    private fun compactPart(label: String, quotes: List<StockQuote>): String {
         if (quotes.isEmpty()) return ""
         val avg = quotes.map { it.changeRate }.average()
         val up = quotes.count { it.changeRate > 0 }
-        val down = quotes.count { it.changeRate < 0 }
-        return "$label ${quotes.size}개 평균 ${signed(avg)} (↑$up ↓$down)"
+        return "$label ${signed(avg)}(↑$up/${quotes.size})"
     }
 
     private fun signed(value: Double): String =

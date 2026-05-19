@@ -99,28 +99,27 @@ class WatchlistAlertService(
     }
 
     private fun buildMessage(token: String, c: AlertCandidate): ExpoPushClient.Message {
+        val priceStr = krwFmt.format(c.currentPrice)
         val (title, body) = when (c.direction) {
             AlertDirection.UP -> {
                 val signed = String.format("%+.2f%%", c.changeRate)
-                "↑ ${c.name} $signed" to "급등 감지 — 지금 확인해보세요."
+                "🚀 ${c.name} $signed" to "${priceStr}원 · 단기 급등 — 익절 라인 짚고 가."
             }
             AlertDirection.DOWN -> {
                 val signed = String.format("%+.2f%%", c.changeRate)
-                "↓ ${c.name} $signed" to "급락 감지 — 지금 확인해보세요."
+                "⚠️ ${c.name} $signed" to "${priceStr}원 · 급락 — 손절선 확인하고 추가 매수는 신중하게."
             }
             AlertDirection.PRICE_BELOW -> {
-                val priceStr = krwFmt.format(c.currentPrice)
                 val threshStr = krwFmt.format(c.thresholdPrice)
-                "📉 ${c.name} ${priceStr}원 도달" to "설정한 하한가(${threshStr}원) 이하로 떨어졌어. 매수 타이밍을 확인해봐."
+                "📉 ${c.name} 손절 도달" to "${priceStr}원 — 설정 손절가 ${threshStr}원 이하. 들고 갈지, 빠질지 지금 결정."
             }
             AlertDirection.PRICE_ABOVE -> {
-                val priceStr = krwFmt.format(c.currentPrice)
                 val threshStr = krwFmt.format(c.thresholdPrice)
-                "📈 ${c.name} ${priceStr}원 돌파" to "설정한 상한가(${threshStr}원) 이상으로 올랐어. 지금 확인해봐."
+                "🎯 ${c.name} 목표 도달" to "${priceStr}원 — 설정 목표가 ${threshStr}원 돌파. 일부 익절 검토."
             }
             AlertDirection.VOLUME_SPIKE -> {
                 val ratioStr = c.volumeRatio?.let { String.format("%.1f", it) } ?: "?"
-                "🔥 ${c.name} 거래량 급증" to "평균 대비 ${ratioStr}배 거래량이 터졌어. 이유를 확인해봐."
+                "🔥 ${c.name} 거래량 ${ratioStr}배" to "${priceStr}원 · 이상 거래 — 뉴스/공시 1분만 확인."
             }
         }
         return ExpoPushClient.Message(
