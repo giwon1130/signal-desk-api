@@ -1,12 +1,9 @@
 package com.giwon.signaldesk.features.market.presentation
 
 import com.giwon.signaldesk.features.auth.application.AuthContext
-import com.giwon.signaldesk.features.market.application.MarketOverviewResponse
 import com.giwon.signaldesk.features.market.application.MarketSectionsResponse
 import com.giwon.signaldesk.features.market.application.MarketSummaryResponse
 import com.giwon.signaldesk.features.market.application.MarketOverviewService
-import com.giwon.signaldesk.features.market.application.NewsFeedResponse
-import com.giwon.signaldesk.features.market.application.PaperTradingResponse
 import com.giwon.signaldesk.features.market.application.PortfolioResponse
 import com.giwon.signaldesk.features.market.application.AiRecommendationsResponse
 import com.giwon.signaldesk.features.market.application.TopMoversResponse

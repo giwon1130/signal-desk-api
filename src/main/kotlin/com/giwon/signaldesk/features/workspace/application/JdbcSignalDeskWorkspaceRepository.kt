@@ -117,70 +117,6 @@ class JdbcSignalDeskWorkspaceRepository(
         jdbcTemplate.update("delete from signal_desk_portfolio_positions where id = ? and ${whereUser()}", id, *userArgs(userId))
     }
 
-    // ── paper positions ─────────────────────────────────────────────────────
-
-    override fun loadPaperPositions(userId: UUID?): List<WorkspacePaperPosition> =
-        jdbcTemplate.query(
-            "select id, market, ticker, name, average_price, current_price, quantity, return_rate from signal_desk_paper_positions where ${whereUser()} order by name",
-            paperPositionRowMapper, *userArgs(userId),
-        )
-
-    override fun savePaperPosition(userId: UUID?, position: WorkspacePaperPosition): WorkspacePaperPosition {
-        val nextPosition = position.copy(id = position.id.ifBlank { UUID.randomUUID().toString() })
-        jdbcTemplate.update(
-            """
-            insert into signal_desk_paper_positions (id, market, ticker, name, average_price, current_price, quantity, return_rate, user_id)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
-            on conflict (id) do update set
-                market = excluded.market,
-                ticker = excluded.ticker,
-                name = excluded.name,
-                average_price = excluded.average_price,
-                current_price = excluded.current_price,
-                quantity = excluded.quantity,
-                return_rate = excluded.return_rate
-            """.trimIndent(),
-            nextPosition.id, nextPosition.market, nextPosition.ticker, nextPosition.name, nextPosition.averagePrice, nextPosition.currentPrice, nextPosition.quantity, nextPosition.returnRate, userId?.toString(),
-        )
-        return nextPosition
-    }
-
-    override fun deletePaperPosition(userId: UUID?, id: String) {
-        jdbcTemplate.update("delete from signal_desk_paper_positions where id = ? and ${whereUser()}", id, *userArgs(userId))
-    }
-
-    // ── paper trades ────────────────────────────────────────────────────────
-
-    override fun loadPaperTrades(userId: UUID?): List<WorkspacePaperTrade> =
-        jdbcTemplate.query(
-            "select id, trade_date, side, market, ticker, name, price, quantity from signal_desk_paper_trades where ${whereUser()} order by trade_date desc, name",
-            paperTradeRowMapper, *userArgs(userId),
-        )
-
-    override fun savePaperTrade(userId: UUID?, trade: WorkspacePaperTrade): WorkspacePaperTrade {
-        val nextTrade = trade.copy(id = trade.id.ifBlank { UUID.randomUUID().toString() })
-        jdbcTemplate.update(
-            """
-            insert into signal_desk_paper_trades (id, trade_date, side, market, ticker, name, price, quantity, user_id)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
-            on conflict (id) do update set
-                trade_date = excluded.trade_date,
-                side = excluded.side,
-                market = excluded.market,
-                ticker = excluded.ticker,
-                name = excluded.name,
-                price = excluded.price,
-                quantity = excluded.quantity
-            """.trimIndent(),
-            nextTrade.id, nextTrade.tradeDate, nextTrade.side, nextTrade.market, nextTrade.ticker, nextTrade.name, nextTrade.price, nextTrade.quantity, userId?.toString(),
-        )
-        return nextTrade
-    }
-
-    override fun deletePaperTrade(userId: UUID?, id: String) {
-        jdbcTemplate.update("delete from signal_desk_paper_trades where id = ? and ${whereUser()}", id, *userArgs(userId))
-    }
-
     // ── ai picks ────────────────────────────────────────────────────────────
 
     override fun loadAiPicks(userId: UUID?): List<WorkspaceAiPick> =
@@ -291,32 +227,6 @@ private val portfolioRowMapper = RowMapper { rs: ResultSet, _: Int ->
         profitRate = rs.getDouble("profit_rate"),
         targetPrice = rs.getInt("target_price").takeIf { it > 0 },
         stopLossPrice = rs.getInt("stop_loss_price").takeIf { it > 0 },
-    )
-}
-
-private val paperPositionRowMapper = RowMapper { rs: ResultSet, _: Int ->
-    WorkspacePaperPosition(
-        id = rs.getString("id"),
-        market = rs.getString("market"),
-        ticker = rs.getString("ticker"),
-        name = rs.getString("name"),
-        averagePrice = rs.getInt("average_price"),
-        currentPrice = rs.getInt("current_price"),
-        quantity = rs.getInt("quantity"),
-        returnRate = rs.getDouble("return_rate"),
-    )
-}
-
-private val paperTradeRowMapper = RowMapper { rs: ResultSet, _: Int ->
-    WorkspacePaperTrade(
-        id = rs.getString("id"),
-        tradeDate = rs.getString("trade_date"),
-        side = rs.getString("side"),
-        market = rs.getString("market"),
-        ticker = rs.getString("ticker"),
-        name = rs.getString("name"),
-        price = rs.getInt("price"),
-        quantity = rs.getInt("quantity"),
     )
 }
 

@@ -115,34 +115,3 @@ data class RecommendationExecutionLog(
     val takeProfit: Int? = null,
 )
 
-data class PaperTradingSummary(
-    val cash: Int,
-    val evaluation: Long,
-    val totalReturnRate: Double,
-    val openPositions: List<PaperPosition>,
-    val recentTrades: List<PaperTrade>,
-)
-
-data class PaperPosition(
-    val market: String,
-    val ticker: String,
-    val name: String,
-    val averagePrice: Int,
-    val currentPrice: Int,
-    val quantity: Int,
-    val returnRate: Double,
-    val source: String = "BASE",
-    val id: String = "",
-)
-
-data class PaperTrade(
-    val tradeDate: String,
-    val side: String,
-    val market: String,
-    val ticker: String,
-    val name: String,
-    val price: Int,
-    val quantity: Int,
-    val source: String = "BASE",
-    val id: String = "",
-)

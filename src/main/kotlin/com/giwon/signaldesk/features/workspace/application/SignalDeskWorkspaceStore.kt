@@ -56,30 +56,6 @@ class SignalDeskWorkspaceStore(
         write(read().copy(portfolioPositions = read().portfolioPositions.filterNot { it.id == id }))
     }
 
-    override fun loadPaperPositions(userId: UUID?): List<WorkspacePaperPosition> = synchronized(lock) { read().paperPositions }
-
-    override fun savePaperPosition(userId: UUID?, position: WorkspacePaperPosition): WorkspacePaperPosition = synchronized(lock) {
-        val next = position.copy(id = position.id.ifBlank { UUID.randomUUID().toString() })
-        write(read().copy(paperPositions = read().paperPositions.filterNot { it.id == next.id }.plus(next).sortedBy { it.name }))
-        next
-    }
-
-    override fun deletePaperPosition(userId: UUID?, id: String) = synchronized(lock) {
-        write(read().copy(paperPositions = read().paperPositions.filterNot { it.id == id }))
-    }
-
-    override fun loadPaperTrades(userId: UUID?): List<WorkspacePaperTrade> = synchronized(lock) { read().paperTrades }
-
-    override fun savePaperTrade(userId: UUID?, trade: WorkspacePaperTrade): WorkspacePaperTrade = synchronized(lock) {
-        val next = trade.copy(id = trade.id.ifBlank { UUID.randomUUID().toString() })
-        write(read().copy(paperTrades = read().paperTrades.filterNot { it.id == next.id }.plus(next).sortedByDescending { it.tradeDate }))
-        next
-    }
-
-    override fun deletePaperTrade(userId: UUID?, id: String) = synchronized(lock) {
-        write(read().copy(paperTrades = read().paperTrades.filterNot { it.id == id }))
-    }
-
     override fun loadAiPicks(userId: UUID?): List<WorkspaceAiPick> = synchronized(lock) { read().aiPicks }
 
     override fun saveAiPick(userId: UUID?, pick: WorkspaceAiPick): WorkspaceAiPick = synchronized(lock) {

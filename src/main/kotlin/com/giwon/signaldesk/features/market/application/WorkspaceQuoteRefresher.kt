@@ -75,27 +75,6 @@ class WorkspaceQuoteRefresher(
         )
     }
 
-    fun refreshPaperTrading(paperTrading: PaperTradingSummary, quotes: Map<String, StockQuote>): PaperTradingSummary {
-        val previousValue = paperTrading.openPositions.associateBy({ it.ticker }) { it.currentPrice.toLong() * it.quantity }
-        val positions = paperTrading.openPositions.map { position ->
-            if (position.market != "KR") return@map position
-            val quote = quotes[position.ticker] ?: return@map position
-            val returnRate = if (position.averagePrice == 0) 0.0
-            else ((quote.currentPrice - position.averagePrice).toDouble() / position.averagePrice) * 100
-            position.copy(currentPrice = quote.currentPrice, returnRate = returnRate)
-        }
-        val delta = positions.sumOf { position ->
-            (position.currentPrice.toLong() * position.quantity) - (previousValue[position.ticker] ?: position.currentPrice.toLong() * position.quantity)
-        }
-        val evaluation = paperTrading.evaluation + delta
-        val costBasis = positions.sumOf { it.averagePrice.toLong() * it.quantity }
-        val totalReturnRate = if (costBasis == 0L) 0.0 else ((evaluation - costBasis).toDouble() / costBasis) * 100
-        return paperTrading.copy(
-            evaluation = evaluation,
-            totalReturnRate = totalReturnRate,
-            openPositions = positions.sortedWith(compareBy({ it.market }, { it.name })),
-        )
-    }
 
     fun buildExecutionLogs(
         generatedDate: String,

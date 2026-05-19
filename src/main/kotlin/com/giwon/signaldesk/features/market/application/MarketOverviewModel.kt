@@ -7,25 +7,6 @@ import java.time.Instant
 
 // ─── Response Types ──────────────────────────────────────────────────────────
 
-data class MarketOverviewResponse(
-    val generatedAt: String,
-    val marketStatus: String,
-    val summary: String,
-    val marketSummary: List<SummaryMetric>,
-    val alternativeSignals: List<AlternativeSignal>,
-    val watchAlerts: List<WatchAlert>,
-    val marketSessions: List<MarketSessionStatus>,
-    val koreaMarket: MarketSection,
-    val usMarket: MarketSection,
-    val news: List<MarketNews>,
-    val watchlist: List<WatchItem>,
-    val portfolio: PortfolioSummary,
-    val aiRecommendations: AIRecommendationSection,
-    val paperTrading: PaperTradingSummary,
-    val briefing: DailyBriefing,
-    val sourceNotes: List<SourceNote>,
-)
-
 data class MarketSummaryResponse(
     val generatedAt: String,
     val marketStatus: String,
@@ -47,11 +28,6 @@ data class MarketSectionsResponse(
     val usMarket: MarketSection,
 )
 
-data class NewsFeedResponse(
-    val generatedAt: String,
-    val news: List<MarketNews>,
-)
-
 data class WatchlistResponse(
     val generatedAt: String,
     val watchlist: List<WatchItem>,
@@ -65,11 +41,6 @@ data class PortfolioResponse(
 data class AiRecommendationsResponse(
     val generatedAt: String,
     val aiRecommendations: AIRecommendationSection,
-)
-
-data class PaperTradingResponse(
-    val generatedAt: String,
-    val paperTrading: PaperTradingSummary,
 )
 
 // ─── Sessions / Trading Day ─────────────────────────────────────────────────
