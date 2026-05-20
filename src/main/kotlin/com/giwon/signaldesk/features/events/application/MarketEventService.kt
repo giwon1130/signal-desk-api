@@ -50,6 +50,7 @@ class MarketEventService(
                     market = "KR",
                     category = EventCategory.HOLIDAY,
                     title = "한국 증시 휴장",
+                    description = marketSessionService.krHolidayName(d),
                     importance = Importance.MEDIUM,
                 )
             }
@@ -61,6 +62,7 @@ class MarketEventService(
                     market = "US",
                     category = EventCategory.HOLIDAY,
                     title = "미국 증시 휴장",
+                    description = marketSessionService.usHolidayName(d),
                     importance = Importance.MEDIUM,
                 )
             }

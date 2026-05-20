@@ -163,27 +163,35 @@ class MarketSessionService {
         return findUsHoliday(date) == null
     }
 
+    /** 해당 날짜의 한국 휴장 사유명 (예: "부처님오신날 대체휴일"). 거래일이면 null. */
+    fun krHolidayName(date: LocalDate): String? = findKrHoliday(date)?.description
+
+    /** 해당 날짜의 미국 휴장 사유명 (예: "메모리얼 데이"). 거래일이면 null. */
+    fun usHolidayName(date: LocalDate): String? = findUsHoliday(date)?.description
+
     private fun findKrHoliday(date: LocalDate): KrMarketSpecialDay? {
         val description = KR_HOLIDAYS_BY_DATE[date] ?: return null
         return KrMarketSpecialDay(date, description)
     }
 
     private fun findUsHoliday(date: LocalDate): UsMarketSpecialDay? {
-        val year = date.year
-        val holidays = setOf(
-            observedDate(LocalDate.of(year, Month.JANUARY, 1)),
-            nthWeekdayOfMonth(year, Month.JANUARY, DayOfWeek.MONDAY, 3),
-            nthWeekdayOfMonth(year, Month.FEBRUARY, DayOfWeek.MONDAY, 3),
-            easterSunday(year).minusDays(2),
-            lastWeekdayOfMonth(year, Month.MAY, DayOfWeek.MONDAY),
-            observedDate(LocalDate.of(year, Month.JUNE, 19)),
-            observedDate(LocalDate.of(year, Month.JULY, 4)),
-            firstWeekdayOfMonth(year, Month.SEPTEMBER, DayOfWeek.MONDAY),
-            nthWeekdayOfMonth(year, Month.NOVEMBER, DayOfWeek.THURSDAY, 4),
-            observedDate(LocalDate.of(year, Month.DECEMBER, 25)),
-        )
-        return if (date in holidays) UsMarketSpecialDay(date, "미국 정규 휴장일") else null
+        val name = usHolidaysOf(date.year)[date] ?: return null
+        return UsMarketSpecialDay(date, name)
     }
+
+    /** NYSE/NASDAQ 정규 휴장일 — 날짜별 휴일명. 연도별 계산식 기반. */
+    private fun usHolidaysOf(year: Int): Map<LocalDate, String> = mapOf(
+        observedDate(LocalDate.of(year, Month.JANUARY, 1)) to "신정",
+        nthWeekdayOfMonth(year, Month.JANUARY, DayOfWeek.MONDAY, 3) to "마틴 루터 킹 데이",
+        nthWeekdayOfMonth(year, Month.FEBRUARY, DayOfWeek.MONDAY, 3) to "프레지던츠 데이",
+        easterSunday(year).minusDays(2) to "성금요일",
+        lastWeekdayOfMonth(year, Month.MAY, DayOfWeek.MONDAY) to "메모리얼 데이",
+        observedDate(LocalDate.of(year, Month.JUNE, 19)) to "준틴스",
+        observedDate(LocalDate.of(year, Month.JULY, 4)) to "독립기념일",
+        firstWeekdayOfMonth(year, Month.SEPTEMBER, DayOfWeek.MONDAY) to "노동절",
+        nthWeekdayOfMonth(year, Month.NOVEMBER, DayOfWeek.THURSDAY, 4) to "추수감사절",
+        observedDate(LocalDate.of(year, Month.DECEMBER, 25)) to "성탄절",
+    )
 
     private fun findUsEarlyClose(date: LocalDate): UsMarketEarlyClose? {
         val year = date.year
