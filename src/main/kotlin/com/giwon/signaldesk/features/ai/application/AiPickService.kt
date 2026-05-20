@@ -77,9 +77,11 @@ class AiPickService(
         flow: com.giwon.signaldesk.features.market.application.InvestorFlowSnapshot?,
     ): List<PickCandidate> {
         val out = LinkedHashMap<String, PickCandidate>()
-        // 급등/급락 상위 — changeRate 보유
+        // 급등/급락 상위 — changeRate 보유.
+        // 상한가/하한가 근접(±25% 초과)은 추격매수·낙폭 리스크가 커 universe 에서 제외.
         movers?.let { m ->
             (m.kospi.gainers + m.kospi.losers + m.kosdaq.gainers + m.kosdaq.losers).forEach { mv ->
+                if (kotlin.math.abs(mv.changeRate) > 25.0) return@forEach
                 out.putIfAbsent(mv.ticker, PickCandidate(mv.market, mv.ticker, mv.name, mv.changeRate, null))
             }
         }
