@@ -48,10 +48,17 @@ class AiPickService(
             ?: return null
 
         // Gemini 가 universe 밖 종목을 환각으로 만들면 제거.
-        val validTickers = candidates.associateBy { it.ticker }
+        // ticker 매칭 시: leading zero 손실 보정(017900→17900) + 종목명 fallback.
+        val byTicker = candidates.associateBy { it.ticker }
+        val byName = candidates.associateBy { it.name.trim() }
         val picks = analysis.picks.mapNotNull { p ->
-            val c = validTickers[p.ticker] ?: return@mapNotNull null
-            p.copy(market = c.market, name = c.name)
+            val raw = p.ticker.trim()
+            val c = byTicker[raw]
+                ?: byTicker[raw.padStart(6, '0')]
+                ?: byName[raw]
+                ?: byName[p.name.trim()]
+                ?: return@mapNotNull null
+            p.copy(market = c.market, ticker = c.ticker, name = c.name)
         }
         if (picks.isEmpty()) {
             log.warn("AiPick — Gemini 픽이 모두 universe 밖. 응답 폐기")

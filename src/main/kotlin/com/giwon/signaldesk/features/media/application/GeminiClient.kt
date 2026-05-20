@@ -423,7 +423,8 @@ $macroBlock$flowBlock$disclosureBlock$eventsBlock
               "summary": "오늘 픽 전반의 시황 한 줄 (30자 이내)",
               "picks": [
                 {
-                  "ticker": "후보 목록의 6자리 코드 그대로",
+                  "ticker": "후보 목록의 6자리 코드를 문자열로, 앞자리 0 포함 (예: \"017900\")",
+                  "name": "후보 목록의 종목명 그대로",
                   "reason": "추천 근거 2~3문장 — 수급/모멘텀/뉴스 연결",
                   "expectedReturnRate": 5.0,
                   "confidence": 70,
@@ -458,7 +459,7 @@ $macroBlock$flowBlock$disclosureBlock$eventsBlock
             com.giwon.signaldesk.features.ai.application.AiPick(
                 market = "KR",  // 호출부에서 후보 기준으로 보정
                 ticker = ticker,
-                name = "",      // 호출부에서 후보 기준으로 보정
+                name = node["name"]?.asText().orEmpty().trim(),  // 호출부에서 후보 기준으로 최종 보정
                 reason = node["reason"]?.asText().orEmpty().trim(),
                 expectedReturnRate = node["expectedReturnRate"]?.asDouble(),
                 confidence = node["confidence"]?.asInt()?.coerceIn(0, 100) ?: 50,
