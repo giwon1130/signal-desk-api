@@ -61,7 +61,11 @@ class AiPickService(
             p.copy(market = c.market, ticker = c.ticker, name = c.name)
         }
         if (picks.isEmpty()) {
-            log.warn("AiPick — Gemini 픽이 모두 universe 밖. 응답 폐기")
+            log.warn(
+                "AiPick — 매칭된 픽 0. geminiPicks(ticker/name)={}, candidate ticker 샘플={}",
+                analysis.picks.map { "${it.ticker}/${it.name}" },
+                candidates.take(12).map { it.ticker },
+            )
             return null
         }
         log.info("AiPicks generated. candidates={}, picks={}", candidates.size, picks.size)
