@@ -79,15 +79,14 @@ class MorningBriefService(
         val macro = runCatching { fredIndexClient.fetchMacro() }.getOrNull()
         val headlines = runCatching { newsRssClient.fetchMarketNews() }.getOrNull() ?: emptyList()
         val upcomingEvents = runCatching { marketEventService.upcoming(3) }.getOrNull() ?: emptyList()
-        val foreignBuy = runCatching { investorRankClient.fetchTop("KOSPI", "FOREIGN", "BUY", limit = 7) }.getOrNull() ?: emptyList()
-        val institutionBuy = runCatching { investorRankClient.fetchTop("KOSPI", "INSTITUTION", "BUY", limit = 7) }.getOrNull() ?: emptyList()
+        val investorFlow = runCatching { investorRankClient.fetchFlowSnapshot(limit = 7) }.getOrNull()
 
         val disclosureTitles = matchedDisclosures.map { "[${it.corpName}] ${it.reportNm}" }
         val analysis = runCatching {
             geminiClient.summarizeMorningBrief(
                 vix = vix, indices = indices, macro = macro, headlines = headlines,
                 disclosureTitles = disclosureTitles,
-                foreignBuyTop = foreignBuy, institutionBuyTop = institutionBuy,
+                investorFlow = investorFlow,
                 upcomingEvents = upcomingEvents,
             )
         }.getOrElse {

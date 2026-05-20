@@ -52,11 +52,10 @@ class GeminiClient(
         macro: com.giwon.signaldesk.features.market.application.MacroSnapshot?,
         headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
         disclosureTitles: List<String>,
-        foreignBuyTop: List<com.giwon.signaldesk.features.market.application.InvestorRankItem> = emptyList(),
-        institutionBuyTop: List<com.giwon.signaldesk.features.market.application.InvestorRankItem> = emptyList(),
+        investorFlow: com.giwon.signaldesk.features.market.application.InvestorFlowSnapshot? = null,
         upcomingEvents: List<com.giwon.signaldesk.features.events.application.MarketEvent> = emptyList(),
     ): MarketInsightAnalysis? = callInsightJson(
-        buildMorningBriefPrompt(vix, indices, macro, headlines, disclosureTitles, foreignBuyTop, institutionBuyTop, upcomingEvents),
+        buildMorningBriefPrompt(vix, indices, macro, headlines, disclosureTitles, investorFlow, upcomingEvents),
     )
 
     /**
@@ -270,8 +269,7 @@ $eventsBlock
         macro: com.giwon.signaldesk.features.market.application.MacroSnapshot?,
         headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
         disclosureTitles: List<String>,
-        foreignBuyTop: List<com.giwon.signaldesk.features.market.application.InvestorRankItem>,
-        institutionBuyTop: List<com.giwon.signaldesk.features.market.application.InvestorRankItem>,
+        investorFlow: com.giwon.signaldesk.features.market.application.InvestorFlowSnapshot?,
         upcomingEvents: List<com.giwon.signaldesk.features.events.application.MarketEvent>,
     ): String {
         val capped = headlines.take(20)
@@ -280,7 +278,7 @@ $eventsBlock
         val nasdaqLine = if (indices?.nasdaq != null) "NASDAQ: ${indices.nasdaq.currentValue} (${indices.nasdaq.changeRate}%)" else "NASDAQ: 데이터 없음"
         val sp500Line = if (indices?.sp500 != null) "S&P500: ${indices.sp500.currentValue} (${indices.sp500.changeRate}%)" else "S&P500: 데이터 없음"
         val macroBlock = buildMacroBlock(macro)
-        val flowBlock = buildInvestorFlowBlock(foreignBuyTop, institutionBuyTop)
+        val flowBlock = buildInvestorFlowBlock(investorFlow)
         val disclosureBlock = if (disclosureTitles.isNotEmpty()) {
             val lines = disclosureTitles.take(15).joinToString("\n") { "- $it" }
             "\n            === 사용자 보유/관심 종목의 어젯밤 ~ 오늘 아침 공시 (${disclosureTitles.size}건) ===\n            $lines"
@@ -317,18 +315,21 @@ $macroBlock$flowBlock$disclosureBlock$eventsBlock
     }
 
     private fun buildInvestorFlowBlock(
-        foreignBuy: List<com.giwon.signaldesk.features.market.application.InvestorRankItem>,
-        institutionBuy: List<com.giwon.signaldesk.features.market.application.InvestorRankItem>,
+        flow: com.giwon.signaldesk.features.market.application.InvestorFlowSnapshot?,
     ): String {
-        if (foreignBuy.isEmpty() && institutionBuy.isEmpty()) return ""
-        val parts = mutableListOf<String>()
-        if (foreignBuy.isNotEmpty()) {
-            parts += "- 외인 순매수 TOP: ${foreignBuy.take(5).joinToString(", ") { "${it.name}(${it.ticker})" }}"
-        }
-        if (institutionBuy.isNotEmpty()) {
-            parts += "- 기관 순매수 TOP: ${institutionBuy.take(5).joinToString(", ") { "${it.name}(${it.ticker})" }}"
-        }
-        return "\n            === 어제 수급 상위 (KOSPI) ===\n            ${parts.joinToString("\n            ")}\n"
+        if (flow == null || flow.isEmpty()) return ""
+        fun line(label: String, items: List<com.giwon.signaldesk.features.market.application.InvestorRankItem>) =
+            if (items.isEmpty()) null
+            else "- $label: ${items.take(5).joinToString(", ") { "${it.name}(${it.ticker})" }}"
+        val parts = listOfNotNull(
+            line("KOSPI 외인 순매수", flow.kospiForeignBuy),
+            line("KOSPI 외인 순매도", flow.kospiForeignSell),
+            line("KOSPI 기관 순매수", flow.kospiInstitutionBuy),
+            line("KOSPI 기관 순매도", flow.kospiInstitutionSell),
+            line("KOSDAQ 외인 순매수", flow.kosdaqForeignBuy),
+        )
+        if (parts.isEmpty()) return ""
+        return "\n            === 어제 수급 상위 ===\n            ${parts.joinToString("\n            ")}\n"
     }
 
     private fun buildMacroBlock(macro: com.giwon.signaldesk.features.market.application.MacroSnapshot?): String {

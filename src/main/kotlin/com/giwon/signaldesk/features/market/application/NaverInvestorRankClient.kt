@@ -9,6 +9,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.Charset
 import java.time.Duration
+import java.util.concurrent.CompletableFuture
 
 /**
  * 네이버 finance 매매상위 페이지 스크래핑 — 외인/기관 순매수·매도 상위 종목.
@@ -53,6 +54,31 @@ class NaverInvestorRankClient {
             .getOrElse { emptyList() }
     }
 
+    /**
+     * 모닝 브리프용 수급 묶음 — KOSPI 외인/기관 순매수·순매도 + KOSDAQ 외인 순매수.
+     * 5개 페이지를 병렬 fetch (각각 fetchTop 캐시 활용). 어느 하나 실패해도 빈 리스트로 채워 반환.
+     */
+    fun fetchFlowSnapshot(limit: Int = 7): InvestorFlowSnapshot {
+        val tasks = mapOf(
+            "kospiForeignBuy" to Triple("KOSPI", "FOREIGN", "BUY"),
+            "kospiForeignSell" to Triple("KOSPI", "FOREIGN", "SELL"),
+            "kospiInstitutionBuy" to Triple("KOSPI", "INSTITUTION", "BUY"),
+            "kospiInstitutionSell" to Triple("KOSPI", "INSTITUTION", "SELL"),
+            "kosdaqForeignBuy" to Triple("KOSDAQ", "FOREIGN", "BUY"),
+        ).mapValues { (_, t) ->
+            CompletableFuture.supplyAsync {
+                runCatching { fetchTop(t.first, t.second, t.third, limit) }.getOrElse { emptyList() }
+            }
+        }
+        return InvestorFlowSnapshot(
+            kospiForeignBuy = tasks.getValue("kospiForeignBuy").join(),
+            kospiForeignSell = tasks.getValue("kospiForeignSell").join(),
+            kospiInstitutionBuy = tasks.getValue("kospiInstitutionBuy").join(),
+            kospiInstitutionSell = tasks.getValue("kospiInstitutionSell").join(),
+            kosdaqForeignBuy = tasks.getValue("kosdaqForeignBuy").join(),
+        )
+    }
+
     private fun parseFirstTable(body: String): List<InvestorRankItem> {
         // 첫 번째 표 항목은 `rdr.list', 'XXXXXX', 'N'` 패턴. 이후 다른 표는 `rpk.list` 등으로 구분됨.
         val pattern = Regex(
@@ -76,3 +102,17 @@ data class InvestorRankItem(
     val rank: Int,
     val name: String,
 )
+
+/** 모닝 브리프 수급 묶음. 각 리스트는 비어있을 수 있음 (스크래핑 실패 허용). */
+data class InvestorFlowSnapshot(
+    val kospiForeignBuy: List<InvestorRankItem>,
+    val kospiForeignSell: List<InvestorRankItem>,
+    val kospiInstitutionBuy: List<InvestorRankItem>,
+    val kospiInstitutionSell: List<InvestorRankItem>,
+    val kosdaqForeignBuy: List<InvestorRankItem>,
+) {
+    fun isEmpty(): Boolean =
+        kospiForeignBuy.isEmpty() && kospiForeignSell.isEmpty() &&
+            kospiInstitutionBuy.isEmpty() && kospiInstitutionSell.isEmpty() &&
+            kosdaqForeignBuy.isEmpty()
+}
