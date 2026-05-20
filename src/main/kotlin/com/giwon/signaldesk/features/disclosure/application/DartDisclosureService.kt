@@ -76,13 +76,12 @@ class DartDisclosureService(
         val devicesByUser = pushRepo.listAllDevicesGroupedByUser()
         val enabledUsers = alertPrefs.loadEnabledUsers(market = "KR")
 
-        var sent = 0
-        relevant.forEach { item ->
-            tickersByUser.forEach userLoop@{ (userId, tickers) ->
-                if (item.stockCode !in tickers) return@userLoop
-                if (userId !in enabledUsers) return@userLoop
-                val devices = devicesByUser[userId] ?: return@userLoop
-                val msgs = devices.map { d ->
+        // 공시 × 사용자 × 기기 메시지를 모두 모아 한 번에 발송 — Expo Push API 배치 전송.
+        val messages = relevant.flatMap { item ->
+            tickersByUser.flatMap userMap@{ (userId, tickers) ->
+                if (item.stockCode !in tickers || userId !in enabledUsers) return@userMap emptyList()
+                val devices = devicesByUser[userId] ?: return@userMap emptyList()
+                devices.map { d ->
                     ExpoPushClient.Message(
                         to = d.expoToken,
                         title = "📢 ${item.corpName}",
@@ -95,11 +94,10 @@ class DartDisclosureService(
                         ),
                     )
                 }
-                expoPushClient.send(msgs)
-                sent += msgs.size
             }
         }
-        log.info("dart disclosure push dispatched. items={}, messages={}", relevant.size, sent)
+        expoPushClient.send(messages)
+        log.info("dart disclosure push dispatched. items={}, messages={}", relevant.size, messages.size)
     }
 
     /** 모든 사용자의 KR watchlist + portfolio stock_code (6자리 숫자만). user_id 가 null 인 레거시 row 는 제외. */

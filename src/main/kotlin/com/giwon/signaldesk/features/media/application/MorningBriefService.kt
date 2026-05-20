@@ -19,6 +19,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 
 /**
  * 08:30 KST 모닝 브리프 — 야간 미국장 + KR/US 뉴스 + 보유/관심 종목 공시를 Gemini 가 종합.
@@ -74,12 +75,20 @@ class MorningBriefService(
                 .filter { isWithinOvernightWindow(it.rceptDt, today) }
         } else emptyList()
 
-        val vix = runCatching { vixClient.fetchVix() }.getOrNull()
-        val indices = runCatching { fredIndexClient.fetchUsIndices() }.getOrNull()
-        val macro = runCatching { fredIndexClient.fetchMacro() }.getOrNull()
-        val headlines = runCatching { newsRssClient.fetchMarketNews() }.getOrNull() ?: emptyList()
-        val upcomingEvents = runCatching { marketEventService.upcoming(3) }.getOrNull() ?: emptyList()
-        val investorFlow = runCatching { investorRankClient.fetchFlowSnapshot(limit = 7) }.getOrNull()
+        // 외부 API 6종을 병렬 수집 — 순차 호출 시 수십 초가 걸려 Gemini 타임아웃 위험.
+        val vixF = supplyAsync { vixClient.fetchVix() }
+        val indicesF = supplyAsync { fredIndexClient.fetchUsIndices() }
+        val macroF = supplyAsync { fredIndexClient.fetchMacro() }
+        val headlinesF = supplyAsync { newsRssClient.fetchMarketNews() }
+        val eventsF = supplyAsync { marketEventService.upcoming(3) }
+        val flowF = supplyAsync { investorRankClient.fetchFlowSnapshot(limit = 7) }
+
+        val vix = vixF.join()
+        val indices = indicesF.join()
+        val macro = macroF.join()
+        val headlines = headlinesF.join() ?: emptyList()
+        val upcomingEvents = eventsF.join() ?: emptyList()
+        val investorFlow = flowF.join()
 
         val disclosureTitles = matchedDisclosures.map { "[${it.corpName}] ${it.reportNm}" }
         val analysis = runCatching {
@@ -160,12 +169,12 @@ class MorningBriefService(
         if (targets.isEmpty()) return
 
         val disclosuresByTicker = disclosures.groupBy { it.stockCode }
-        var sent = 0
-        for ((userId, devices) in targets) {
+        // 사용자별 메시지를 모두 모아 한 번에 발송 — Expo Push API 는 배치 전송 지원.
+        val messages = targets.flatMap { (userId, devices) ->
             val myTickers = userTickers[userId].orEmpty()
             val myDisclosures = myTickers.flatMap { disclosuresByTicker[it].orEmpty() }
             val (title, body) = buildPushMessage(analysis, myDisclosures)
-            val msgs = devices.map { d ->
+            devices.map { d ->
                 ExpoPushClient.Message(
                     to = d.expoToken,
                     title = title,
@@ -173,11 +182,13 @@ class MorningBriefService(
                     data = mapOf("type" to "MORNING_BRIEF"),
                 )
             }
-            expoPushClient.send(msgs)
-            sent += msgs.size
         }
-        log.info("MorningBrief push dispatched. recipients={}, messages={}", targets.size, sent)
+        expoPushClient.send(messages)
+        log.info("MorningBrief push dispatched. recipients={}, messages={}", targets.size, messages.size)
     }
+
+    private fun <T> supplyAsync(block: () -> T?): CompletableFuture<T?> =
+        CompletableFuture.supplyAsync { runCatching(block).getOrNull() }
 
     private fun buildPushMessage(
         analysis: MarketInsightAnalysis,

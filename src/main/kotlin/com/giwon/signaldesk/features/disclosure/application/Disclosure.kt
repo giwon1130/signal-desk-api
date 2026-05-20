@@ -15,10 +15,3 @@ data class Disclosure(
     val rceptDt: String,
     val flrNm: String,
 )
-
-/** corpCode.xml 1행. listed company 만 (stockCode 6자리). */
-data class CorpCodeEntry(
-    val corpCode: String,
-    val corpName: String,
-    val stockCode: String,
-)
