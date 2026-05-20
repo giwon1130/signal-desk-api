@@ -76,23 +76,9 @@ class GeminiClient(
             log.warn("GeminiClient disabled — GEMINI_API_KEY 미설정")
             return null
         }
-        val content = buildPayload(prompt)
-        return runCatching {
-            val url = "$baseUrl/v1beta/models/$model:generateContent?key=$apiKey"
-            val request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(30))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(content))
-                .build()
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-            if (response.statusCode() != 200) {
-                log.warn("Gemini API status={} body={}", response.statusCode(), response.body().take(500))
-                return@runCatching null
-            }
-            parseInsightResponse(response.body())
-        }.getOrElse {
-            log.warn("Gemini market insight call failed", it)
+        val body = postWithRetry(prompt, timeoutSeconds = 30) ?: return null
+        return runCatching { parseInsightResponse(body) }.getOrElse {
+            log.warn("Gemini market insight parse failed", it)
             null
         }
     }
@@ -102,25 +88,51 @@ class GeminiClient(
             log.warn("GeminiClient disabled — GEMINI_API_KEY 미설정")
             return null
         }
-        val content = buildPayload(prompt)
-        return runCatching {
-            val url = "$baseUrl/v1beta/models/$model:generateContent?key=$apiKey"
-            val request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(45))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(content))
-                .build()
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-            if (response.statusCode() != 200) {
-                log.warn("Gemini API status={} body={}", response.statusCode(), response.body().take(500))
-                return@runCatching null
-            }
-            parseResponse(response.body())
-        }.getOrElse {
-            log.warn("Gemini API call failed", it)
+        val body = postWithRetry(prompt, timeoutSeconds = 45) ?: return null
+        return runCatching { parseResponse(body) }.getOrElse {
+            log.warn("Gemini API parse failed", it)
             null
         }
+    }
+
+    /**
+     * Gemini generateContent 호출 + 재시도. 성공 시 응답 body, 실패 시 null.
+     *
+     * 503(UNAVAILABLE, 모델 과부하) / 429(쿼터) / 500 은 일시적이라 지수 백오프(1s→2s→4s)로
+     * 최대 [MAX_ATTEMPTS]회 재시도. 08:30 모닝 브리프 자동 트리거가 1회뿐이라 한 번의 503에
+     * 그날 브리프가 통째로 날아가는 것을 막는다. 400 등 비재시도 상태는 즉시 종료.
+     */
+    private fun postWithRetry(prompt: String, timeoutSeconds: Long): String? {
+        val content = buildPayload(prompt)
+        val url = "$baseUrl/v1beta/models/$model:generateContent?key=$apiKey"
+        for (attempt in 1..MAX_ATTEMPTS) {
+            val result = runCatching {
+                val request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(timeoutSeconds))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(content))
+                    .build()
+                httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            }.getOrElse {
+                log.warn("Gemini API call failed (attempt {}/{})", attempt, MAX_ATTEMPTS, it)
+                null
+            }
+
+            if (result != null && result.statusCode() == 200) return result.body()
+
+            val status = result?.statusCode() ?: -1
+            val retryable = result == null || status in RETRYABLE_STATUSES
+            if (!retryable || attempt == MAX_ATTEMPTS) {
+                log.warn("Gemini API giving up. status={} attempt={}/{} body={}",
+                    status, attempt, MAX_ATTEMPTS, result?.body()?.take(300))
+                return null
+            }
+            val backoffMs = 1000L shl (attempt - 1) // 1s, 2s, 4s
+            log.warn("Gemini API status={} — retry {}/{} after {}ms", status, attempt, MAX_ATTEMPTS, backoffMs)
+            runCatching { Thread.sleep(backoffMs) }
+        }
+        return null
     }
 
     private fun buildNewsDigestPrompt(
@@ -361,6 +373,12 @@ $macroBlock$flowBlock$disclosureBlock$eventsBlock
             sentiment = sentiment,
             keyPoints = keyPoints,
         )
+    }
+
+    companion object {
+        private const val MAX_ATTEMPTS = 3
+        // 503 과부하 / 429 쿼터 / 500 내부오류 — 일시적이라 재시도 가치 있음.
+        private val RETRYABLE_STATUSES = setOf(429, 500, 503)
     }
 }
 
