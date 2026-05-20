@@ -31,6 +31,7 @@ class CacheConfig {
         // FRED 매크로·네이버 수급 — 일 단위로 갱신되는 데이터. 미등록 시 TTL 없는 영구 캐시가 됨.
         manager.registerCustomCache("macro-snapshot", build(Duration.ofHours(6), 10))
         manager.registerCustomCache("investor-rank", build(Duration.ofHours(6), 50))
+        manager.registerCustomCache("ai-picks", build(Duration.ofMinutes(30), 5))
         return manager
     }
 

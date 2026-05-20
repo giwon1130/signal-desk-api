@@ -70,6 +70,25 @@ class GeminiClient(
         headlines: List<Triple<String, String, String>>,
     ): MediaSummaryAnalysis? = callJson(buildNewsDigestPrompt(marketLabel, dateLabel, headlines))
 
+    /**
+     * 오늘의 AI 픽 — 후보 종목 universe 안에서 단타 관점 주목 종목 3~5개를 골라 이유와 함께 반환.
+     * candidates 밖 종목은 환각이므로 호출부(AiPickService)에서 추가 필터한다.
+     */
+    fun summarizeAiPicks(
+        candidates: List<com.giwon.signaldesk.features.ai.application.PickCandidate>,
+        headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
+    ): AiPicksAnalysis? {
+        if (!isEnabled()) {
+            log.warn("GeminiClient disabled — GEMINI_API_KEY 미설정")
+            return null
+        }
+        val body = postWithRetry(buildAiPickPrompt(candidates, headlines), timeoutSeconds = 30) ?: return null
+        return runCatching { parseAiPicksResponse(body) }.getOrElse {
+            log.warn("Gemini AI picks parse failed", it)
+            null
+        }
+    }
+
     private fun callInsightJson(prompt: String): MarketInsightAnalysis? {
         if (!isEnabled()) {
             log.warn("GeminiClient disabled — GEMINI_API_KEY 미설정")
@@ -376,6 +395,83 @@ $macroBlock$flowBlock$disclosureBlock$eventsBlock
         )
     }
 
+    private fun buildAiPickPrompt(
+        candidates: List<com.giwon.signaldesk.features.ai.application.PickCandidate>,
+        headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
+    ): String {
+        val candidateLines = candidates.take(50).joinToString("\n") { c ->
+            val rate = c.changeRate?.let { " ${"%+.2f".format(it)}%" } ?: ""
+            val flow = c.flowTag?.let { " [$it]" } ?: ""
+            "- ${c.name}(${c.ticker})$rate$flow"
+        }
+        val headlineLines = headlines.take(20).joinToString("\n") { "- [${it.source}] ${it.title}" }
+
+        return """
+            당신은 한국 주식 단타 전문 분석가입니다.
+            아래는 오늘 시장에서 움직임이 큰 종목 후보 목록입니다 (급등/급락 상위 + 외인·기관 순매수 상위).
+            이 목록 안에서만 골라 오늘 단타 관점에서 주목할 종목 3~5개를 추천하세요.
+            **목록에 없는 종목(ticker)은 절대 추천하지 마세요.**
+
+            === 종목 후보 (이 안에서만 선택) ===
+            $candidateLines
+
+            === 오늘 시장 뉴스 헤드라인 ===
+            $headlineLines
+
+            아래 JSON 스키마로 한국어 답변:
+            {
+              "summary": "오늘 픽 전반의 시황 한 줄 (30자 이내)",
+              "picks": [
+                {
+                  "ticker": "후보 목록의 6자리 코드 그대로",
+                  "reason": "추천 근거 2~3문장 — 수급/모멘텀/뉴스 연결",
+                  "expectedReturnRate": 5.0,
+                  "confidence": 70,
+                  "riskNote": "리스크 한 줄 (20자 이내)"
+                }
+              ]
+            }
+            confidence 는 0~100 정수, expectedReturnRate 는 % 숫자(3~20 권장).
+        """.trimIndent()
+    }
+
+    private fun parseAiPicksResponse(body: String): AiPicksAnalysis? {
+        val root = objectMapper.readTree(body)
+        val candidate = root["candidates"]?.firstOrNull() ?: return null
+        val parts = candidate["content"]?.get("parts") ?: return null
+        val text = buildString {
+            parts.forEach { part ->
+                if (part["thought"]?.asBoolean() == true) return@forEach
+                part["text"]?.asText()?.let { append(it) }
+            }
+        }.trim()
+        if (text.isBlank()) return null
+        val payload = runCatching { objectMapper.readTree(text) }
+            .getOrElse {
+                log.warn("Gemini AI picks response not JSON. raw={}", text.take(500))
+                return null
+            } as? ObjectNode ?: return null
+
+        val picks = payload["picks"]?.mapNotNull { node ->
+            val ticker = node["ticker"]?.asText()?.trim().orEmpty()
+            if (ticker.isBlank()) return@mapNotNull null
+            com.giwon.signaldesk.features.ai.application.AiPick(
+                market = "KR",  // 호출부에서 후보 기준으로 보정
+                ticker = ticker,
+                name = "",      // 호출부에서 후보 기준으로 보정
+                reason = node["reason"]?.asText().orEmpty().trim(),
+                expectedReturnRate = node["expectedReturnRate"]?.asDouble(),
+                confidence = node["confidence"]?.asInt()?.coerceIn(0, 100) ?: 50,
+                riskNote = node["riskNote"]?.asText().orEmpty().trim(),
+            )
+        } ?: emptyList()
+
+        return AiPicksAnalysis(
+            summary = payload["summary"]?.asText().orEmpty().trim(),
+            picks = picks,
+        )
+    }
+
     companion object {
         private const val MAX_ATTEMPTS = 3
         // 503 과부하 / 429 쿼터 / 500 내부오류 — 일시적이라 재시도 가치 있음.
@@ -388,4 +484,9 @@ data class MarketInsightAnalysis(
     val summary: String,
     val sentiment: MediaSentiment,
     val keyPoints: List<String>,
+)
+
+data class AiPicksAnalysis(
+    val summary: String,
+    val picks: List<com.giwon.signaldesk.features.ai.application.AiPick>,
 )
