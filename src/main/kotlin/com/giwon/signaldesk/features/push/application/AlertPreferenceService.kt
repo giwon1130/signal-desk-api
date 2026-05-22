@@ -9,6 +9,8 @@ data class AlertPreferences(
     val krEnabled: Boolean,
     val usEnabled: Boolean,
     val premarketEnabled: Boolean,
+    // 합성 위험도 알림. 구버전 앱이 이 필드 없이 PUT 해도 깨지지 않도록 기본값을 둔다.
+    val compositeRiskEnabled: Boolean = true,
 )
 
 @Service
@@ -17,12 +19,13 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
 
     fun get(userId: UUID): AlertPreferences {
         val row = jdbc.query(
-            "select kr_enabled, us_enabled, premarket_enabled from signal_desk_alert_preferences where user_id = ?::uuid",
+            "select kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled from signal_desk_alert_preferences where user_id = ?::uuid",
             { rs, _ ->
                 AlertPreferences(
                     krEnabled = rs.getBoolean("kr_enabled"),
                     usEnabled = rs.getBoolean("us_enabled"),
                     premarketEnabled = rs.getBoolean("premarket_enabled"),
+                    compositeRiskEnabled = rs.getBoolean("composite_risk_enabled"),
                 )
             },
             userId.toString(),
@@ -33,15 +36,16 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
     fun update(userId: UUID, request: AlertPreferences): AlertPreferences {
         jdbc.update(
             """
-            insert into signal_desk_alert_preferences (user_id, kr_enabled, us_enabled, premarket_enabled, updated_at)
-            values (?::uuid, ?, ?, ?, now())
+            insert into signal_desk_alert_preferences (user_id, kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, updated_at)
+            values (?::uuid, ?, ?, ?, ?, now())
             on conflict (user_id) do update set
                 kr_enabled = excluded.kr_enabled,
                 us_enabled = excluded.us_enabled,
                 premarket_enabled = excluded.premarket_enabled,
+                composite_risk_enabled = excluded.composite_risk_enabled,
                 updated_at = now()
             """.trimIndent(),
-            userId.toString(), request.krEnabled, request.usEnabled, request.premarketEnabled,
+            userId.toString(), request.krEnabled, request.usEnabled, request.premarketEnabled, request.compositeRiskEnabled,
         )
         return request
     }
@@ -66,7 +70,19 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
         return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, defaultValue).toSet()
     }
 
+    /** 합성 위험도 알림(composite_risk_enabled) ON 사용자. 미등록 사용자는 DEFAULT 적용. */
+    fun loadCompositeRiskEnabledUsers(): Set<UUID> {
+        val sql = """
+            select u.id from signal_desk_users u
+            left join signal_desk_alert_preferences p on p.user_id = u.id
+            where coalesce(p.composite_risk_enabled, ?) = true
+        """.trimIndent()
+        return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, DEFAULT.compositeRiskEnabled).toSet()
+    }
+
     companion object {
-        val DEFAULT = AlertPreferences(krEnabled = true, usEnabled = false, premarketEnabled = true)
+        val DEFAULT = AlertPreferences(
+            krEnabled = true, usEnabled = false, premarketEnabled = true, compositeRiskEnabled = true,
+        )
     }
 }
