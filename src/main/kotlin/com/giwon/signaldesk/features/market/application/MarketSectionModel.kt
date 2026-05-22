@@ -89,6 +89,30 @@ data class AlternativeSignal(
     val personalImpact: String? = null,  // 내 관심/보유 종목과 연결된 한 줄 해석
 )
 
+/**
+ * 합성 위험도 — PizzINT 종합 / VIX / 뉴스 키워드 빈도를 가중 합산한 1~10 단일 지표.
+ * 개별 실험 지표를 따로 노출하는 대신 "오늘 시장이 얼마나 불안정한가"를 한 숫자로 본다.
+ */
+data class CompositeRiskSignal(
+    val score: Int,            // 1~10 위험도
+    val score100: Int,         // 0~100 내부 정규화 점수 (게이지/디버그용)
+    val level: String,         // 안정 / 관망 / 주의 / 경계 / 고위험
+    val headline: String,      // 한 줄 요약
+    val components: List<RiskComponent>,
+    val description: String,   // 모달: 이게 뭐야
+    val methodology: String,   // 모달: 점수 계산 방식
+    val asOf: String,          // 생성 시각 (ISO LocalDateTime)
+    val personalImpact: String? = null,  // 내 보유/관심 종목 기준 한 줄 해석
+)
+
+data class RiskComponent(
+    val label: String,    // "VIX 변동성" / "PizzINT 종합" / "뉴스 키워드"
+    val score: Int,       // 0~100 sub-score
+    val weight: Double,   // 합성 가중치 (0.5 / 0.3 / 0.2)
+    val state: String,    // 짧은 상태 문구
+    val detail: String,   // 관측치 한 줄 설명
+)
+
 data class WatchAlert(
     val severity: String,
     val category: String,

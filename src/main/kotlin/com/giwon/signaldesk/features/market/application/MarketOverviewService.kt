@@ -9,16 +9,19 @@ import java.time.Month
 import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
+import kotlin.math.roundToInt
 
 @Service
 class MarketOverviewService(
     private val krxOfficialClient: KrxOfficialClient,
     private val cboeVixClient: CboeVixClient,
     private val fredIndexClient: FredIndexClient,
+    private val naverGlobalQuoteClient: NaverGlobalQuoteClient,
     private val googleNewsRssClient: GoogleNewsRssClient,
     private val marketSessionService: MarketSessionService,
     private val alternativeSignalService: AlternativeSignalService,
     private val watchAlertService: WatchAlertService,
+    private val compositeRiskService: CompositeRiskService,
     private val dailyBriefBuilder: DailyBriefBuilder,
     private val personalContextAnnotator: PersonalContextAnnotator,
     private val recommendationMetricsCalculator: RecommendationMetricsCalculator,
@@ -78,9 +81,17 @@ class MarketOverviewService(
             tradingDay = tradingDay,
         )
         val news = getCachedNews().news
+        val compositeRisk = compositeRiskService.build(
+            alternativeSignals = alternativeSignals,
+            vix = core.vixSnapshot,
+            news = news,
+            watchlist = snapshot.watchlist,
+            portfolio = snapshot.portfolio,
+        )
         return MarketSummaryResponse(
             generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
             marketSummary = core.marketSummary, alternativeSignals = alternativeSignals,
+            compositeRisk = compositeRisk,
             watchAlerts = watchAlerts, marketSessions = core.marketSessions,
             briefing = briefing, sourceNotes = core.sourceNotes,
             workspaceCounts = enrichmentService.buildWorkspaceCounts(userId),
@@ -114,6 +125,7 @@ class MarketOverviewService(
             val vixFuture = CompletableFuture.supplyAsync { cboeVixClient.fetchVix() }
             val koreanQuotesFuture = CompletableFuture.supplyAsync { enrichmentService.loadKoreanQuotes() }
             val usIndicesFuture = CompletableFuture.supplyAsync { fredIndexClient.fetchUsIndices() }
+            val usLeadingQuotesFuture = CompletableFuture.supplyAsync { naverGlobalQuoteClient.fetchUsQuotes(US_LEADING_TICKERS) }
 
             // 외부 API 장애 시 fallback으로 처리 — join() 예외가 전체 엔드포인트를 crash시키지 않도록
             val koreaMarketBase = runCatching { koreaMarketFuture.join() }
@@ -128,6 +140,9 @@ class MarketOverviewService(
             val usIndicesSnapshot = runCatching { usIndicesFuture.join() }
                 .onFailure { logger.warn("US indices (FRED) fetch failed. msg={}", it.message) }
                 .getOrNull()
+            val usLeadingQuotes = runCatching { usLeadingQuotesFuture.join() }
+                .onFailure { logger.warn("US leading quotes (Naver global) fetch failed. msg={}", it.message) }
+                .getOrDefault(emptyMap())
 
             val koreaMarket = koreaMarketBase.copy(
                 leadingStocks = enrichmentService.refreshKoreanLeadingStocks(koreaMarketBase.leadingStocks, koreanQuotes)
@@ -147,9 +162,10 @@ class MarketOverviewService(
                     SummaryMetric("Flow Bias", MarketHeatCalculator.flowBias(koreaMarket), MarketHeatCalculator.flowBiasState(koreaMarket), "국내는 KRX 수급, 미국은 지수/변동성 기준")
                 ),
                 alternativeSignals = alternativeSignals,
+                vixSnapshot = vixSnapshot,
                 marketSessions = marketSessions,
                 koreaMarket = koreaMarket,
-                usMarket = buildUsMarket(vixSnapshot, usIndicesSnapshot),
+                usMarket = buildUsMarket(vixSnapshot, usIndicesSnapshot, usLeadingQuotes),
                 briefing = DailyBriefing(
                     headline = "오늘은 한국은 반도체, 미국은 빅테크가 중심이고, 과열 추격보다는 눌림 확인 후 진입이 맞아.",
                     preMarket = listOf("한국/미국 관심 종목 각각 3개만 우선순위 설정", "KOSPI/KOSDAQ, NASDAQ/S&P 방향과 VIX 같이 확인", "외국인/기관 수급이 붙는 종목만 먼저 본다"),
@@ -161,7 +177,7 @@ class MarketOverviewService(
                     SourceNote("미국 공포지수", "CBOE VIX", "https://www.cboe.com/tradable_products/vix/"),
                     SourceNote("한국/미국 주요 뉴스", "Google News RSS", "https://news.google.com"),
                     SourceNote("미국 지수", "FRED", "https://fred.stlouisfed.org"),
-                    SourceNote("미국 지연 시세 확장 후보", "Alpha Vantage", "https://www.alphavantage.co/documentation/"),
+                    SourceNote("미국 종목 현재가", "Naver 해외주식", "https://m.stock.naver.com"),
                     SourceNote("실험 지표", "PizzINT", "https://www.pizzint.watch/")
                 )
             )
@@ -187,37 +203,69 @@ class MarketOverviewService(
         }
     }
 
-    private fun buildUsMarket(vixSnapshot: VixSnapshot?, usIndicesSnapshot: UsIndicesSnapshot?): MarketSection {
-        val nasdaq = usIndicesSnapshot?.nasdaq
-        val sp500 = usIndicesSnapshot?.sp500
+    /**
+     * 미국 시장 섹션. 더미값을 두지 않고 실데이터만 채운다.
+     * - indices: FRED 응답이 있을 때만. 실패하면 빈 리스트 (KR 의 emptyKoreaMarket 과 동일 원칙).
+     * - leadingStocks: Naver 해외주식 실시세. 응답 없는 종목은 제외.
+     * - sentiment: VIX(실데이터) + 빅테크 평균 등락에서 파생.
+     * - investorFlows: 미국 투자자 수급은 무료 실데이터 소스가 없어 비운다 (가짜값 금지).
+     */
+    private fun buildUsMarket(
+        vixSnapshot: VixSnapshot?,
+        usIndicesSnapshot: UsIndicesSnapshot?,
+        usLeadingQuotes: Map<String, StockQuote>,
+    ): MarketSection {
+        val indices = buildList {
+            usIndicesSnapshot?.nasdaq?.let {
+                add(IndexMetric("NASDAQ", it.currentValue, it.changeRate, buildIndexChartPeriods(it.currentValue, it.changeRate, it.chart)))
+            }
+            usIndicesSnapshot?.sp500?.let {
+                add(IndexMetric("S&P 500", it.currentValue, it.changeRate, buildIndexChartPeriods(it.currentValue, it.changeRate, it.chart)))
+            }
+        }
+        val leadingStocks = US_LEADING_CATALOG.mapNotNull { entry ->
+            val quote = usLeadingQuotes[entry.ticker] ?: return@mapNotNull null
+            TickerSnapshot(
+                ticker = entry.ticker, name = entry.name, sector = entry.sector,
+                price = quote.currentPrice, changeRate = quote.changeRate,
+                stance = usStance(quote.changeRate),
+            )
+        }
+        val sentiment = buildList {
+            add(SentimentMetric("VIX 기반 공포지수", MarketHeatCalculator.vixState(vixSnapshot), MarketHeatCalculator.vixScore(vixSnapshot), MarketHeatCalculator.vixNote(vixSnapshot)))
+            bigtechSentiment(leadingStocks)?.let { add(it) }
+        }
         return MarketSection(
             market = "US", title = "미국 시장",
-            indices = listOf(
-                IndexMetric("NASDAQ", nasdaq?.currentValue ?: 18342.40, nasdaq?.changeRate ?: 1.12,
-                    buildIndexChartPeriods(nasdaq?.currentValue ?: 18342.40, nasdaq?.changeRate ?: 1.12,
-                        nasdaq?.chart ?: listOf(17840.0, 17910.0, 18040.0, 18160.0, 18250.0, 18342.0))),
-                IndexMetric("S&P 500", sp500?.currentValue ?: 5224.60, sp500?.changeRate ?: 0.74,
-                    buildIndexChartPeriods(sp500?.currentValue ?: 5224.60, sp500?.changeRate ?: 0.74,
-                        sp500?.chart ?: listOf(5110.0, 5140.0, 5168.0, 5181.0, 5202.0, 5224.0))),
-            ),
-            sentiment = listOf(
-                SentimentMetric("VIX 기반 공포지수", MarketHeatCalculator.vixState(vixSnapshot), MarketHeatCalculator.vixScore(vixSnapshot), MarketHeatCalculator.vixNote(vixSnapshot)),
-                SentimentMetric("빅테크 선호", "높음", 72, "AI/반도체 종목으로 자금 집중"),
-                SentimentMetric("과열 경계", "중간", 49, "실적 시즌 전후로 단기 변동성 확대 가능")
-            ),
-            investorFlows = listOf(
-                InvestorFlow("기관", 3180.0, "나스닥 대형주 유입", true),
-                InvestorFlow("리테일", 1240.0, "테마 추종 매수", true),
-                InvestorFlow("헤지성 자금", -860.0, "이익실현·헤지 혼재", false)
-            ),
-            leadingStocks = listOf(
-                TickerSnapshot("NVDA", "NVIDIA", "AI 반도체", 945, 2.84, "모멘텀 강세"),
-                TickerSnapshot("MSFT", "Microsoft", "플랫폼", 428, 0.91, "추세 유지"),
-                TickerSnapshot("AAPL", "Apple", "하드웨어", 188, -0.34, "관망"),
-                TickerSnapshot("AMZN", "Amazon", "커머스/클라우드", 184, 1.08, "양호"),
-                TickerSnapshot("TSLA", "Tesla", "전기차", 171, -1.92, "변동성 주의"),
-                TickerSnapshot("META", "Meta", "광고/플랫폼", 503, 1.31, "실적 기대")
-            )
+            indices = indices,
+            sentiment = sentiment,
+            investorFlows = emptyList(),
+            leadingStocks = leadingStocks,
+        )
+    }
+
+    /** 등락률 기반 stance 문구 — 하드코딩 대신 실시세에서 파생. */
+    private fun usStance(changeRate: Double): String = when {
+        changeRate >= 2.0 -> "모멘텀 강세"
+        changeRate >= 0.3 -> "추세 유지"
+        changeRate <= -2.0 -> "변동성 주의"
+        changeRate <= -0.3 -> "약세"
+        else -> "관망"
+    }
+
+    /** 주요 빅테크 평균 등락률에서 "빅테크 선호" 심리 지표를 파생. 종목이 없으면 생략. */
+    private fun bigtechSentiment(leadingStocks: List<TickerSnapshot>): SentimentMetric? {
+        if (leadingStocks.isEmpty()) return null
+        val avg = leadingStocks.map { it.changeRate }.average()
+        val score = (50 + avg * 9).roundToInt().coerceIn(0, 100)
+        val state = when {
+            avg >= 1.0 -> "높음"
+            avg <= -1.0 -> "약함"
+            else -> "중립"
+        }
+        return SentimentMetric(
+            "빅테크 선호", state, score,
+            "주요 빅테크 ${leadingStocks.size}종목 평균 등락률 ${"%.2f".format(avg)}% 기준",
         )
     }
 
@@ -247,5 +295,20 @@ class MarketOverviewService(
             val match = pickNewsMatcher.findMatch(l.market, l.name, l.ticker, news)
             if (match == null) l else l.copy(newsUrl = match.url, newsTitle = match.title)
         }
+    }
+
+    /** 미국 주도주 종목명/섹터 — 고정 메타데이터. 가격/등락은 Naver 해외주식 실시세로 채운다. */
+    private data class UsLeader(val ticker: String, val name: String, val sector: String)
+
+    companion object {
+        private val US_LEADING_CATALOG = listOf(
+            UsLeader("NVDA", "NVIDIA", "AI 반도체"),
+            UsLeader("MSFT", "Microsoft", "플랫폼"),
+            UsLeader("AAPL", "Apple", "하드웨어"),
+            UsLeader("AMZN", "Amazon", "커머스/클라우드"),
+            UsLeader("TSLA", "Tesla", "전기차"),
+            UsLeader("META", "Meta", "광고/플랫폼"),
+        )
+        private val US_LEADING_TICKERS: List<String> = US_LEADING_CATALOG.map { it.ticker }
     }
 }
