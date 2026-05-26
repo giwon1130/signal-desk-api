@@ -17,6 +17,7 @@ class MarketOverviewService(
     private val cboeVixClient: CboeVixClient,
     private val fredIndexClient: FredIndexClient,
     private val naverGlobalQuoteClient: NaverGlobalQuoteClient,
+    private val yahooFinanceScreenerClient: YahooFinanceScreenerClient,
     private val googleNewsRssClient: GoogleNewsRssClient,
     private val marketSessionService: MarketSessionService,
     private val alternativeSignalService: AlternativeSignalService,
@@ -125,7 +126,10 @@ class MarketOverviewService(
             val vixFuture = CompletableFuture.supplyAsync { cboeVixClient.fetchVix() }
             val koreanQuotesFuture = CompletableFuture.supplyAsync { enrichmentService.loadKoreanQuotes() }
             val usIndicesFuture = CompletableFuture.supplyAsync { fredIndexClient.fetchUsIndices() }
-            val usLeadingQuotesFuture = CompletableFuture.supplyAsync { naverGlobalQuoteClient.fetchUsQuotes(US_LEADING_TICKERS) }
+            // 빅테크 6종 (NVDA/MSFT/AAPL/AMZN/TSLA/META) — 빅테크 sentiment 산출 baseline
+            val usBigtechQuotesFuture = CompletableFuture.supplyAsync { naverGlobalQuoteClient.fetchUsQuotes(US_BIGTECH_TICKERS) }
+            // 미국 거래량 상위 — leadingStocks 동적화용
+            val usMostActivesFuture = CompletableFuture.supplyAsync { yahooFinanceScreenerClient.fetchMostActives(8) }
 
             // 외부 API 장애 시 fallback으로 처리 — join() 예외가 전체 엔드포인트를 crash시키지 않도록
             val koreaMarketBase = runCatching { koreaMarketFuture.join() }
@@ -140,9 +144,12 @@ class MarketOverviewService(
             val usIndicesSnapshot = runCatching { usIndicesFuture.join() }
                 .onFailure { logger.warn("US indices (FRED) fetch failed. msg={}", it.message) }
                 .getOrNull()
-            val usLeadingQuotes = runCatching { usLeadingQuotesFuture.join() }
-                .onFailure { logger.warn("US leading quotes (Naver global) fetch failed. msg={}", it.message) }
+            val usBigtechQuotes = runCatching { usBigtechQuotesFuture.join() }
+                .onFailure { logger.warn("US bigtech quotes (Naver global) fetch failed. msg={}", it.message) }
                 .getOrDefault(emptyMap())
+            val usMostActives = runCatching { usMostActivesFuture.join() }
+                .onFailure { logger.warn("US most_actives (Yahoo screener) fetch failed. msg={}", it.message) }
+                .getOrDefault(emptyList())
 
             val koreaMarket = koreaMarketBase.copy(
                 leadingStocks = enrichmentService.refreshKoreanLeadingStocks(koreaMarketBase.leadingStocks, koreanQuotes)
@@ -165,7 +172,7 @@ class MarketOverviewService(
                 vixSnapshot = vixSnapshot,
                 marketSessions = marketSessions,
                 koreaMarket = koreaMarket,
-                usMarket = buildUsMarket(vixSnapshot, usIndicesSnapshot, usLeadingQuotes),
+                usMarket = buildUsMarket(vixSnapshot, usIndicesSnapshot, usBigtechQuotes, usMostActives),
                 briefing = DailyBriefing(
                     headline = "오늘은 한국은 반도체, 미국은 빅테크가 중심이고, 과열 추격보다는 눌림 확인 후 진입이 맞아.",
                     preMarket = listOf("한국/미국 관심 종목 각각 3개만 우선순위 설정", "KOSPI/KOSDAQ, NASDAQ/S&P 방향과 VIX 같이 확인", "외국인/기관 수급이 붙는 종목만 먼저 본다"),
@@ -206,14 +213,16 @@ class MarketOverviewService(
     /**
      * 미국 시장 섹션. 더미값을 두지 않고 실데이터만 채운다.
      * - indices: FRED 응답이 있을 때만. 실패하면 빈 리스트 (KR 의 emptyKoreaMarket 과 동일 원칙).
-     * - leadingStocks: Naver 해외주식 실시세. 응답 없는 종목은 제외.
-     * - sentiment: VIX(실데이터) + 빅테크 평균 등락에서 파생.
+     * - leadingStocks: Yahoo Finance most_actives (거래량 상위) — 동적 갱신.
+     * - sentiment: VIX(실데이터) + 빅테크 6종(고정 catalog) 평균 등락 파생.
+     *   leadingStocks와 분리한 이유: 빅테크 sentiment는 정의가 안정적이어야 해서 most_actives 변동에 휘둘리면 안 됨.
      * - investorFlows: 미국 투자자 수급은 무료 실데이터 소스가 없어 비운다 (가짜값 금지).
      */
     private fun buildUsMarket(
         vixSnapshot: VixSnapshot?,
         usIndicesSnapshot: UsIndicesSnapshot?,
-        usLeadingQuotes: Map<String, StockQuote>,
+        usBigtechQuotes: Map<String, StockQuote>,
+        usMostActives: List<YahooQuote>,
     ): MarketSection {
         val indices = buildList {
             usIndicesSnapshot?.nasdaq?.let {
@@ -223,17 +232,29 @@ class MarketOverviewService(
                 add(IndexMetric("S&P 500", it.currentValue, it.changeRate, buildIndexChartPeriods(it.currentValue, it.changeRate, it.chart)))
             }
         }
-        val leadingStocks = US_LEADING_CATALOG.mapNotNull { entry ->
-            val quote = usLeadingQuotes[entry.ticker] ?: return@mapNotNull null
+        // 빅테크 sentiment 산출용 (정의 안정성)
+        val bigtechSnapshots = US_BIGTECH_CATALOG.mapNotNull { entry ->
+            val quote = usBigtechQuotes[entry.ticker] ?: return@mapNotNull null
             TickerSnapshot(
                 ticker = entry.ticker, name = entry.name, sector = entry.sector,
                 price = quote.currentPrice, changeRate = quote.changeRate,
                 stance = usStance(quote.changeRate),
             )
         }
+        // 화면에 노출되는 leadingStocks 는 Yahoo most_actives 동적 ranking
+        val leadingStocks = usMostActives.map { q ->
+            TickerSnapshot(
+                ticker = q.ticker,
+                name = q.name,
+                sector = q.exchange.ifBlank { "US Stock" },
+                price = q.price.roundToInt(),
+                changeRate = q.changeRate,
+                stance = usStance(q.changeRate),
+            )
+        }
         val sentiment = buildList {
             add(SentimentMetric("VIX 기반 공포지수", MarketHeatCalculator.vixState(vixSnapshot), MarketHeatCalculator.vixScore(vixSnapshot), MarketHeatCalculator.vixNote(vixSnapshot)))
-            bigtechSentiment(leadingStocks)?.let { add(it) }
+            bigtechSentiment(bigtechSnapshots)?.let { add(it) }
         }
         return MarketSection(
             market = "US", title = "미국 시장",
@@ -297,18 +318,18 @@ class MarketOverviewService(
         }
     }
 
-    /** 미국 주도주 종목명/섹터 — 고정 메타데이터. 가격/등락은 Naver 해외주식 실시세로 채운다. */
-    private data class UsLeader(val ticker: String, val name: String, val sector: String)
+    /** 빅테크 6종 — 빅테크 sentiment 산출용 고정 catalog. leadingStocks는 Yahoo most_actives로 동적 갱신. */
+    private data class UsBigtech(val ticker: String, val name: String, val sector: String)
 
     companion object {
-        private val US_LEADING_CATALOG = listOf(
-            UsLeader("NVDA", "NVIDIA", "AI 반도체"),
-            UsLeader("MSFT", "Microsoft", "플랫폼"),
-            UsLeader("AAPL", "Apple", "하드웨어"),
-            UsLeader("AMZN", "Amazon", "커머스/클라우드"),
-            UsLeader("TSLA", "Tesla", "전기차"),
-            UsLeader("META", "Meta", "광고/플랫폼"),
+        private val US_BIGTECH_CATALOG = listOf(
+            UsBigtech("NVDA", "NVIDIA", "AI 반도체"),
+            UsBigtech("MSFT", "Microsoft", "플랫폼"),
+            UsBigtech("AAPL", "Apple", "하드웨어"),
+            UsBigtech("AMZN", "Amazon", "커머스/클라우드"),
+            UsBigtech("TSLA", "Tesla", "전기차"),
+            UsBigtech("META", "Meta", "광고/플랫폼"),
         )
-        private val US_LEADING_TICKERS: List<String> = US_LEADING_CATALOG.map { it.ticker }
+        private val US_BIGTECH_TICKERS: List<String> = US_BIGTECH_CATALOG.map { it.ticker }
     }
 }
