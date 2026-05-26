@@ -14,6 +14,7 @@ import java.time.ZoneId
 @Service
 class MarketEventService(
     private val marketSessionService: MarketSessionService,
+    private val finnhubClient: FinnhubClient,
 ) {
 
     /** 오늘 ~ +days 까지의 이벤트. 가까운 날짜 순으로 정렬. */
@@ -26,9 +27,42 @@ class MarketEventService(
             val d = LocalDate.parse(it.date)
             !d.isBefore(today) && !d.isAfter(until)
         }
+        val earnings = fetchBigtechEarnings(today, until)
 
-        return (holidays + statics)
+        return (holidays + statics + earnings)
             .sortedWith(compareBy({ it.date }, { it.time ?: "" }, { it.title }))
+    }
+
+    /**
+     * Finnhub 무료 API로 빅테크 7종(NVDA/MSFT/AAPL/AMZN/TSLA/META/GOOGL)의 실적 발표 일정을 가져온다.
+     * FINNHUB_API_KEY env 가 비어있으면 client 가 빈 리스트 반환 → no-op.
+     * 향후 확장: 사용자별 watchlist/portfolio US 종목으로 동적 확장 가능.
+     */
+    private fun fetchBigtechEarnings(from: LocalDate, until: LocalDate): List<MarketEvent> {
+        val tickers = listOf("NVDA", "MSFT", "AAPL", "AMZN", "TSLA", "META", "GOOGL")
+        val fromStr = from.toString()
+        val toStr = until.toString()
+        return tickers.flatMap { ticker ->
+            finnhubClient.fetchEarningsCalendar(fromStr, toStr, ticker)
+        }.distinctBy { "${it.symbol}-${it.date}" }
+            .map { e ->
+                MarketEvent(
+                    id = "us-earnings-${e.symbol}-${e.date}",
+                    date = e.date,
+                    time = when (e.hour) {
+                        "bmo" -> "장 시작 전 (ET)"
+                        "amc" -> "장 마감 후 (ET)"
+                        "dmh" -> "장중 (ET)"
+                        else -> null
+                    },
+                    market = "US",
+                    category = EventCategory.EARNINGS,
+                    title = "${e.symbol} 실적 발표 (Q${e.quarter})",
+                    description = e.epsEstimate?.let { "EPS 컨센서스 ${"%.2f".format(it)}" },
+                    importance = Importance.HIGH,
+                    tickers = listOf(e.symbol),
+                )
+            }
     }
 
     /** 오늘 발생하는 이벤트만. */
