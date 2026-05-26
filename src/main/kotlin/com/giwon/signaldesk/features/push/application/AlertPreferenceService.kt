@@ -14,6 +14,8 @@ data class AlertPreferences(
     // 투자 시장 선호 — UI 필터링. "KR" | "US" | "BOTH" (기본 BOTH=양쪽 다 노출).
     // 푸시 알림 토글(kr/us_enabled)과 별개로 화면 노출 범위만 결정.
     val marketPreference: String = "BOTH",
+    // US 이브닝 브리프 (06:30 KST = NY 장 마감 직후). 디폴트 false.
+    val eveningBriefEnabled: Boolean = false,
 )
 
 @Service
@@ -22,7 +24,7 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
 
     fun get(userId: UUID): AlertPreferences {
         val row = jdbc.query(
-            "select kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference from signal_desk_alert_preferences where user_id = ?::uuid",
+            "select kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference, evening_brief_enabled from signal_desk_alert_preferences where user_id = ?::uuid",
             { rs, _ ->
                 AlertPreferences(
                     krEnabled = rs.getBoolean("kr_enabled"),
@@ -30,6 +32,7 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
                     premarketEnabled = rs.getBoolean("premarket_enabled"),
                     compositeRiskEnabled = rs.getBoolean("composite_risk_enabled"),
                     marketPreference = rs.getString("market_preference") ?: "BOTH",
+                    eveningBriefEnabled = rs.getBoolean("evening_brief_enabled"),
                 )
             },
             userId.toString(),
@@ -40,18 +43,20 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
     fun update(userId: UUID, request: AlertPreferences): AlertPreferences {
         jdbc.update(
             """
-            insert into signal_desk_alert_preferences (user_id, kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference, updated_at)
-            values (?::uuid, ?, ?, ?, ?, ?, now())
+            insert into signal_desk_alert_preferences (user_id, kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference, evening_brief_enabled, updated_at)
+            values (?::uuid, ?, ?, ?, ?, ?, ?, now())
             on conflict (user_id) do update set
                 kr_enabled = excluded.kr_enabled,
                 us_enabled = excluded.us_enabled,
                 premarket_enabled = excluded.premarket_enabled,
                 composite_risk_enabled = excluded.composite_risk_enabled,
                 market_preference = excluded.market_preference,
+                evening_brief_enabled = excluded.evening_brief_enabled,
                 updated_at = now()
             """.trimIndent(),
             userId.toString(), request.krEnabled, request.usEnabled, request.premarketEnabled, request.compositeRiskEnabled,
             request.marketPreference.uppercase().takeIf { it in setOf("KR", "US", "BOTH") } ?: "BOTH",
+            request.eveningBriefEnabled,
         )
         return request
     }
@@ -86,10 +91,20 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
         return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, DEFAULT.compositeRiskEnabled).toSet()
     }
 
+    /** US 이브닝 브리프(evening_brief_enabled) ON 사용자. 미등록은 DEFAULT(false) 적용. */
+    fun loadEveningBriefEnabledUsers(): Set<UUID> {
+        val sql = """
+            select u.id from signal_desk_users u
+            left join signal_desk_alert_preferences p on p.user_id = u.id
+            where coalesce(p.evening_brief_enabled, ?) = true
+        """.trimIndent()
+        return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, DEFAULT.eveningBriefEnabled).toSet()
+    }
+
     companion object {
         val DEFAULT = AlertPreferences(
             krEnabled = true, usEnabled = false, premarketEnabled = true, compositeRiskEnabled = true,
-            marketPreference = "BOTH",
+            marketPreference = "BOTH", eveningBriefEnabled = false,
         )
     }
 }
