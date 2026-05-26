@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.get
         "signal-desk.integrations.pizzint.enabled=false",
         "signal-desk.integrations.naver-global.enabled=false",
         "signal-desk.integrations.yahoo-screener.enabled=false",
+        "signal-desk.integrations.sec-edgar.enabled=false",
     ]
 )
 @AutoConfigureMockMvc
