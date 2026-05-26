@@ -70,5 +70,22 @@ signal-desk:
       api-key: ${GEMINI_API_KEY:}
       base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
       model: ${GEMINI_MODEL:gemini-2.0-flash-exp}
+    finnhub:
+      # finnhub.io 무료 가입 후 발급. 비어있으면 earnings 캘린더 비활성.
+      enabled: true
+      base-url: ${FINNHUB_BASE_URL:https://finnhub.io/api/v1}
+      api-key: ${FINNHUB_API_KEY:}
+    sec-edgar:
+      # SEC EDGAR 공시 폴링. user-agent 에 연락처 포함 필수 (SEC fair-access).
+      enabled: true
+      tickers-url: ${SEC_EDGAR_TICKERS_URL:https://www.sec.gov/files/company_tickers.json}
+      recent-url: ${SEC_EDGAR_RECENT_URL:https://www.sec.gov/cgi-bin/browse-edgar}
+      user-agent: ${SEC_EDGAR_USER_AGENT:signal-desk-personal gwim113000@gmail.com}
+    yahoo-screener:
+      enabled: true
+      base-url: ${YAHOO_FINANCE_BASE_URL:https://query1.finance.yahoo.com}
+    naver-global:
+      enabled: true
+      base-url: ${NAVER_GLOBAL_BASE_URL:https://api.stock.naver.com}
   cors:
     allowed-origin-patterns: ${SIGNAL_DESK_CORS_ALLOWED_ORIGINS:}
