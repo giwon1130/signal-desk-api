@@ -1,10 +1,12 @@
 package com.giwon.signaldesk.features.media.application
 
 import com.giwon.signaldesk.features.events.application.FinnhubClient
+import com.giwon.signaldesk.features.market.application.CboeVixClient
 import com.giwon.signaldesk.features.market.application.FredIndexClient
+import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
+import com.giwon.signaldesk.features.market.application.UsIndicesSnapshot
 import com.giwon.signaldesk.features.market.application.YahooFinanceScreenerClient
 import com.giwon.signaldesk.features.market.application.YahooQuote
-import com.giwon.signaldesk.features.market.application.UsIndicesSnapshot
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushRepository
@@ -14,17 +16,21 @@ import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.concurrent.CompletableFuture
 
 /**
- * US 이브닝 브리프 — NY 장 마감 직후(06:30 KST) NASDAQ/S&P 변동·주도주·실적을 한 줄로 푸시.
- * 현재 template 기반 합성 (follow-up: Gemini 합성 업그레이드).
+ * US 이브닝 브리프 — NY 장 마감 직후(06:30 KST) NASDAQ/S&P 변동·주도주·실적·뉴스를 Gemini로 종합해 한 줄 푸시.
+ * Gemini 키 없으면 template 합성으로 fallback.
  */
 @Service
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class EveningBriefService(
+    private val cboeVixClient: CboeVixClient,
     private val fredIndexClient: FredIndexClient,
     private val yahooFinanceScreenerClient: YahooFinanceScreenerClient,
     private val finnhubClient: FinnhubClient,
+    private val googleNewsRssClient: GoogleNewsRssClient,
+    private val geminiClient: GeminiClient,
     private val expoPushClient: ExpoPushClient,
     private val pushRepository: PushRepository,
     private val alertPreferenceService: AlertPreferenceService,
@@ -42,13 +48,41 @@ class EveningBriefService(
             return
         }
 
-        val indices = fredIndexClient.fetchUsIndices()
-        val gainers = yahooFinanceScreenerClient.fetchGainers(3)
-        val losers = yahooFinanceScreenerClient.fetchLosers(3)
+        // 외부 데이터 병렬 수집 — 모닝 브리프와 동일 패턴.
+        val vixF = supplyAsync { cboeVixClient.fetchVix() }
+        val indicesF = supplyAsync { fredIndexClient.fetchUsIndices() }
+        val gainersF = supplyAsync { yahooFinanceScreenerClient.fetchGainers(5) }
+        val losersF = supplyAsync { yahooFinanceScreenerClient.fetchLosers(5) }
         val today = LocalDate.now(clock)
-        val earnings = finnhubClient.fetchEarningsCalendar(today.minusDays(1).toString(), today.toString())
+        val earningsF = supplyAsync {
+            finnhubClient.fetchEarningsCalendar(today.minusDays(1).toString(), today.toString())
+        }
+        val headlinesF = supplyAsync { googleNewsRssClient.fetchMarketNews() }
 
-        val (title, body) = buildPushMessage(indices, gainers, losers, earnings.size)
+        val vix = vixF.join()
+        val indices = indicesF.join()
+        val gainers = gainersF.join() ?: emptyList()
+        val losers = losersF.join() ?: emptyList()
+        val earnings = earningsF.join() ?: emptyList()
+        val headlines = headlinesF.join() ?: emptyList()
+
+        // Gemini 합성 시도 → 실패 시 template fallback.
+        val analysis = if (geminiClient.isEnabled()) {
+            geminiClient.summarizeEveningBrief(
+                vix = vix,
+                indices = indices,
+                topGainers = gainers,
+                topLosers = losers,
+                earningsSymbols = earnings.map { it.symbol }.distinct(),
+                headlines = headlines,
+            )
+        } else null
+
+        val (title, body) = if (analysis != null) {
+            buildGeminiMessage(analysis)
+        } else {
+            buildTemplateMessage(indices, gainers, losers, earnings.size)
+        }
 
         val messages = targets.flatMap { (_, devices) ->
             devices.map { d ->
@@ -61,10 +95,24 @@ class EveningBriefService(
             }
         }
         expoPushClient.send(messages)
-        log.info("Evening brief dispatched. recipients={}, messages={}", targets.size, messages.size)
+        log.info(
+            "Evening brief dispatched. recipients={}, messages={}, source={}",
+            targets.size, messages.size, if (analysis != null) "gemini" else "template",
+        )
     }
 
-    private fun buildPushMessage(
+    private fun buildGeminiMessage(analysis: MarketInsightAnalysis): Pair<String, String> {
+        val emoji = when (analysis.sentiment) {
+            MediaSentiment.BULLISH -> "🟢"
+            MediaSentiment.BEARISH -> "🔴"
+            MediaSentiment.NEUTRAL -> "🟡"
+        }
+        val title = "$emoji ${analysis.headline.ifBlank { "미장 이브닝 브리프" }}"
+        val body = analysis.summary.take(180)
+        return title to body
+    }
+
+    private fun buildTemplateMessage(
         indices: UsIndicesSnapshot?,
         gainers: List<YahooQuote>,
         losers: List<YahooQuote>,
@@ -94,4 +142,7 @@ class EveningBriefService(
     }
 
     private fun formatRate(r: Double): String = if (r >= 0) "+${"%.2f".format(r)}%" else "${"%.2f".format(r)}%"
+
+    private fun <T> supplyAsync(block: () -> T?): CompletableFuture<T?> =
+        CompletableFuture.supplyAsync { runCatching(block).getOrNull() }
 }

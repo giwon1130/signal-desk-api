@@ -59,6 +59,21 @@ class GeminiClient(
     )
 
     /**
+     * 미장 이브닝 브리프 — NY 장 마감 직후(06:30 KST). 야간 미국장 결과 + top movers + 실적 + 헤드라인을
+     * 종합해 한국 투자자에게 "어제 미국장 어땠고 오늘 한국장에 어떤 영향 있을지" 한 줄 요약.
+     */
+    fun summarizeEveningBrief(
+        vix: VixSnapshot?,
+        indices: UsIndicesSnapshot?,
+        topGainers: List<com.giwon.signaldesk.features.market.application.YahooQuote>,
+        topLosers: List<com.giwon.signaldesk.features.market.application.YahooQuote>,
+        earningsSymbols: List<String>,
+        headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
+    ): MarketInsightAnalysis? = callInsightJson(
+        buildEveningBriefPrompt(vix, indices, topGainers, topLosers, earningsSymbols, headlines),
+    )
+
+    /**
      * 마감시황 뉴스 헤드라인 묶음을 종합 요약.
      * @param marketLabel "KR" 또는 "US"
      * @param dateLabel "2026-05-15" 같은 날짜
@@ -278,6 +293,54 @@ $eventsBlock
               "summary": "2~3문장 종합 분석. VIX·지수·뉴스와 다가오는 이벤트(있다면)를 연결해 지금 시장 분위기와 개인 투자자 행동 포인트를 설명",
               "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나",
               "keyPoints": ["주목할 포인트 최대 3가지. 각 20자 이내. 다가오는 큰 이벤트가 있으면 1개는 그것에 할당"]
+            }
+        """.trimIndent()
+    }
+
+    private fun buildEveningBriefPrompt(
+        vix: VixSnapshot?,
+        indices: UsIndicesSnapshot?,
+        topGainers: List<com.giwon.signaldesk.features.market.application.YahooQuote>,
+        topLosers: List<com.giwon.signaldesk.features.market.application.YahooQuote>,
+        earningsSymbols: List<String>,
+        headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
+    ): String {
+        val capped = headlines.filter { it.market == "US" }.take(15)
+        val headlineLines = if (capped.isEmpty()) "(미국 뉴스 데이터 없음)"
+            else capped.joinToString("\n") { n -> "- [${n.source}] ${n.title}" }
+        val vixLine = if (vix != null) "VIX: ${vix.currentPrice} (전일대비 ${vix.priceChange})" else "VIX: 데이터 없음"
+        val nasdaqLine = if (indices?.nasdaq != null) "NASDAQ: ${indices.nasdaq.currentValue} (${indices.nasdaq.changeRate}%)" else "NASDAQ: 데이터 없음"
+        val sp500Line = if (indices?.sp500 != null) "S&P500: ${indices.sp500.currentValue} (${indices.sp500.changeRate}%)" else "S&P500: 데이터 없음"
+        val gainersBlock = if (topGainers.isNotEmpty()) {
+            "\n            === 급등 Top (Yahoo most_actives gainers) ===\n            " +
+                topGainers.take(5).joinToString("\n") { q -> "- ${q.ticker} (${q.name}) ${"%+.2f".format(q.changeRate)}%" }
+        } else ""
+        val losersBlock = if (topLosers.isNotEmpty()) {
+            "\n            === 급락 Top ===\n            " +
+                topLosers.take(5).joinToString("\n") { q -> "- ${q.ticker} (${q.name}) ${"%+.2f".format(q.changeRate)}%" }
+        } else ""
+        val earningsBlock = if (earningsSymbols.isNotEmpty()) {
+            "\n            === 오늘 실적 발표 (${earningsSymbols.size}건) ===\n            " + earningsSymbols.take(15).joinToString(", ")
+        } else ""
+
+        return """
+            당신은 미국 주식 시장 전문 분석가입니다.
+            지금은 NY 장 마감 직후 (06:30 KST). 한국 개인 투자자가 '어제 미국장 어땠고 오늘 한국장에 어떤 영향 있을지'를 알 수 있게 이브닝 브리프를 작성하세요.
+
+            === 미국 시장 마감 ===
+            $vixLine
+            $nasdaqLine
+            $sp500Line
+$gainersBlock$losersBlock$earningsBlock
+            === 미국 시장 뉴스 헤드라인 (${capped.size}건) ===
+            $headlineLines
+
+            아래 JSON 스키마로 한국어 답변:
+            {
+              "headline": "미국장 마감을 한 줄로 (20자 이내, 강세/약세/혼조 같은 키워드 포함)",
+              "summary": "3~4문장. 지수 마감 → 주도주·급등락 → 실적 이슈 → 오늘 한국장 시사점 순으로 연결",
+              "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나",
+              "keyPoints": ["오늘 봐야 할 미국장 포인트 3개. 각 25자 이내"]
             }
         """.trimIndent()
     }
