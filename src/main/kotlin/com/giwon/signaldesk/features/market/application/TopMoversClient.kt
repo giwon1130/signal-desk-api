@@ -124,6 +124,8 @@ data class TopMoversResponse(
     val generatedAt: String,
     val kospi: TopMoversBlock,
     val kosdaq: TopMoversBlock,
+    // 미국 시장 — Yahoo Finance screener 기반. 구버전 앱 호환 위해 기본 빈 블록.
+    val us: TopMoversBlock = TopMoversBlock(emptyList(), emptyList()),
 )
 
 data class TopMoversBlock(
