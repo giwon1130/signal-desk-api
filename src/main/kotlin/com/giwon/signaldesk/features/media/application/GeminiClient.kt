@@ -462,24 +462,29 @@ $macroBlock$flowBlock$disclosureBlock$eventsBlock
         candidates: List<com.giwon.signaldesk.features.ai.application.PickCandidate>,
         headlines: List<com.giwon.signaldesk.features.market.application.MarketNews>,
     ): String {
-        val candidateLines = candidates.take(50).joinToString("\n") { c ->
+        // [KR] / [US] 마켓 태그를 줄 앞에 노출해 Gemini 가 시장 구분 + ticker 포맷 (6자리 숫자 vs 영문) 을 정확히 따르게 한다.
+        val candidateLines = candidates.take(60).joinToString("\n") { c ->
             val rate = c.changeRate?.let { " ${"%+.2f".format(it)}%" } ?: ""
             val flow = c.flowTag?.let { " [$it]" } ?: ""
-            "- ${c.name}(${c.ticker})$rate$flow"
+            "- [${c.market}] ${c.name}(${c.ticker})$rate$flow"
         }
         val headlineLines = headlines.take(20).joinToString("\n") { "- [${it.source}] ${it.title}" }
 
         return """
-            당신은 한국 주식 단타 전문 분석가입니다.
-            아래는 오늘 시장에서 움직임이 큰 종목 후보 목록입니다 (급등/급락 상위 + 외인·기관 순매수 상위).
+            당신은 한국·미국 주식 단타 전문 분석가입니다.
+            아래는 오늘 시장에서 움직임이 큰 종목 후보 목록입니다.
+            - KR: 급등/급락 상위 + 외인·기관 순매수 상위 (ticker 는 6자리 숫자, 앞자리 0 포함)
+            - US: Yahoo top gainers/losers (ticker 는 영문 심볼 — NVDA/TSLA 등)
             이 목록 안에서만 골라 오늘 단타 관점에서 주목할 종목 3~5개를 추천하세요.
             **목록에 없는 종목(ticker)은 절대 추천하지 마세요.**
+            가급적 KR/US 가 섞이도록 다양성을 확보하되, 근거가 약한 종목은 빼고 강한 것만 골라도 됩니다.
 
             선정 원칙:
             - 이미 +15% 이상 급등한 종목은 추격매수 리스크가 크다. 단순 급등률만 보고 고르지 말 것.
               추천한다면 riskNote 에 추격 리스크를 명시.
-            - [외인 순매수] / [기관 순매수] 태그가 붙은 종목을 우선 고려하라 —
+            - [외인 순매수] / [기관 순매수] 태그가 붙은 종목(KR)을 우선 고려하라 —
               수급이 뒷받침돼야 모멘텀이 지속된다. 급등률보다 수급·뉴스 근거가 우선.
+            - US 는 수급 태그가 없으므로 뉴스 헤드라인·섹터 흐름과 연결지어 근거를 만들 것.
             - confidence 는 보수적으로. 수급·뉴스 근거 없이 급등만으론 60 이하.
 
             === 종목 후보 (이 안에서만 선택) ===
@@ -493,7 +498,7 @@ $macroBlock$flowBlock$disclosureBlock$eventsBlock
               "summary": "오늘 픽 전반의 시황 한 줄 (30자 이내)",
               "picks": [
                 {
-                  "ticker": "후보 목록의 6자리 코드를 문자열로, 앞자리 0 포함 (예: \"017900\")",
+                  "ticker": "후보 목록의 ticker 그대로 — KR 은 6자리 숫자(앞자리 0 포함, 예: \"017900\"), US 는 영문 심볼(예: \"NVDA\")",
                   "name": "후보 목록의 종목명 그대로",
                   "reason": "추천 근거 2~3문장 — 수급/모멘텀/뉴스 연결",
                   "expectedReturnRate": 5.0,

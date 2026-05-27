@@ -12,8 +12,11 @@ import java.time.Instant
 /**
  * 오늘의 AI 픽 — Gemini 가 단타 관점에서 종목을 추천.
  *
- * 종목 universe: 급등/급락 상위(TopMovers) + 외인·기관 순매수 상위.
+ * 종목 universe:
+ *  - KR: TopMovers(kospi/kosdaq gainers/losers) + 외인·기관 순매수 상위
+ *  - US: TopMovers(Yahoo most actives/gainers/losers)
  * "오늘 시장이 실제로 주목하는" 풀 안에서만 Gemini 가 고르게 해 환각을 방지한다.
+ * App 단에서 사용자 marketPreference 에 따라 KR/US 픽이 필터링됨.
  *
  * 캐시 TTL 30분 (ai-picks). 장중 시세 변동을 어느 정도 따라가되 Gemini 호출 비용은 절감.
  */
@@ -79,8 +82,11 @@ class AiPickService(
         val out = LinkedHashMap<String, PickCandidate>()
         // 급등/급락 상위 — changeRate 보유.
         // 상한가/하한가 근접(±25% 초과)은 추격매수·낙폭 리스크가 커 universe 에서 제외.
+        // US 는 가격제한폭이 없지만 일중 ±25% 급변은 어차피 단기 노이즈가 커 같은 컷 적용.
         movers?.let { m ->
-            (m.kospi.gainers + m.kospi.losers + m.kosdaq.gainers + m.kosdaq.losers).forEach { mv ->
+            val krMovers = m.kospi.gainers + m.kospi.losers + m.kosdaq.gainers + m.kosdaq.losers
+            val usMovers = m.us?.let { it.gainers + it.losers } ?: emptyList()
+            (krMovers + usMovers).forEach { mv ->
                 if (kotlin.math.abs(mv.changeRate) > 25.0) return@forEach
                 out.putIfAbsent(mv.ticker, PickCandidate(mv.market, mv.ticker, mv.name, mv.changeRate, null))
             }
