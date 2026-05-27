@@ -91,12 +91,17 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
         return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, DEFAULT.compositeRiskEnabled).toSet()
     }
 
-    /** US 이브닝 브리프(evening_brief_enabled) ON 사용자. 미등록은 DEFAULT(false) 적용. */
+    /**
+     * US 이브닝 브리프(evening_brief_enabled) ON 사용자. 미등록은 DEFAULT(false) 적용.
+     * 추가 가드: marketPreference 가 'KR' 인 사용자는 미장 안 보는 사람이라 자동 제외.
+     * (사용자가 토글을 안 끈 채로 KR-only 로 바꿔도 무의미한 푸시 안 가게)
+     */
     fun loadEveningBriefEnabledUsers(): Set<UUID> {
         val sql = """
             select u.id from signal_desk_users u
             left join signal_desk_alert_preferences p on p.user_id = u.id
             where coalesce(p.evening_brief_enabled, ?) = true
+              and coalesce(p.market_preference, 'BOTH') in ('US', 'BOTH')
         """.trimIndent()
         return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, DEFAULT.eveningBriefEnabled).toSet()
     }
