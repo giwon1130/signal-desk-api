@@ -18,6 +18,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import java.time.Instant
 
 /**
  * Google Gemini API (generativeContent) 클라이언트.
@@ -44,7 +45,23 @@ class GeminiClient(
         .connectTimeout(Duration.ofSeconds(5))
         .build()
 
+    // Fallback chain: 주 모델 503 시 다음 모델 시도. 마지막은 안정성 높은 1.5-flash.
+    // primary 가 fallback 과 중복되면 distinct 로 제거.
+    private val modelChain: List<String> = listOf(model, "gemini-2.0-flash-exp", "gemini-1.5-flash").distinct()
+
+    // 시스템 헬스 — 마지막 모든 모델 실패 시각. 사용자에게 "일시 장애" 안내용.
+    // 성공 호출이 한 번이라도 들어오면 자가 회복 — null 로 reset.
+    @Volatile private var lastFailureAt: Instant? = null
+
     fun isEnabled(): Boolean = apiKey.isNotBlank()
+
+    /** 최근 5분 내 모든 모델 fallback 실패 없었으면 healthy. */
+    fun isHealthy(): Boolean {
+        val t = lastFailureAt ?: return true
+        return Duration.between(t, Instant.now()).toMinutes() >= 5
+    }
+
+    fun lastFailureAt(): Instant? = lastFailureAt
 
     // ─── public API: 시나리오별 요약 ──────────────────────────────────────────
 
@@ -141,15 +158,41 @@ class GeminiClient(
     }
 
     /**
-     * Gemini generateContent 호출 + 재시도. 성공 시 응답 body, 실패 시 null.
+     * Gemini generateContent 호출 + 재시도 + 모델 fallback chain.
      *
-     * 503(UNAVAILABLE, 모델 과부하) / 429(쿼터) / 500 은 일시적이라 지수 백오프(1s→2s→4s)로
-     * 최대 [MAX_ATTEMPTS]회 재시도. 08:30 모닝 브리프 자동 트리거가 1회뿐이라 한 번의 503에
-     * 그날 브리프가 통째로 날아가는 것을 막는다. 400 등 비재시도 상태는 즉시 종료.
+     * 흐름:
+     *  1. primary model 3회 재시도 (지수 백오프 1→2→4초)
+     *  2. 다 실패 시 다음 모델로 (gemini-2.0-flash-exp)
+     *  3. 또 실패 시 다음 (gemini-1.5-flash)
+     *  4. 모든 모델 실패 → lastFailureAt set, null 반환
+     *
+     * 한 번 성공하면 lastFailureAt reset (자가 회복 시그널).
+     * 503/429/500 은 재시도, 400 같은 hard error 는 즉시 다음 모델로.
      */
     private fun postWithRetry(prompt: String, timeoutSeconds: Long): String? {
         val content = buildPayload(prompt)
-        val url = "$baseUrl/v1beta/models/$model:generateContent?key=$apiKey"
+        for ((modelIndex, m) in modelChain.withIndex()) {
+            val body = postToModel(content, timeoutSeconds, m)
+            if (body != null) {
+                // 성공 — 자가 회복.
+                if (lastFailureAt != null) {
+                    log.info("Gemini recovered via model={} (chain idx={})", m, modelIndex)
+                    lastFailureAt = null
+                }
+                return body
+            }
+            if (modelIndex < modelChain.size - 1) {
+                log.warn("Gemini model {} exhausted — trying next fallback", m)
+            }
+        }
+        log.error("Gemini API all {} models exhausted — marking degraded", modelChain.size)
+        lastFailureAt = Instant.now()
+        return null
+    }
+
+    /** 단일 모델로 3회 재시도. 성공 body or null. */
+    private fun postToModel(content: String, timeoutSeconds: Long, modelName: String): String? {
+        val url = "$baseUrl/v1beta/models/$modelName:generateContent?key=$apiKey"
         for (attempt in 1..MAX_ATTEMPTS) {
             val result = runCatching {
                 val request = HttpRequest.newBuilder()
@@ -160,7 +203,7 @@ class GeminiClient(
                     .build()
                 httpClient.send(request, HttpResponse.BodyHandlers.ofString())
             }.getOrElse {
-                log.warn("Gemini API call failed (attempt {}/{})", attempt, MAX_ATTEMPTS, it)
+                log.warn("Gemini API call failed model={} (attempt {}/{})", modelName, attempt, MAX_ATTEMPTS, it)
                 null
             }
 
@@ -169,12 +212,12 @@ class GeminiClient(
             val status = result?.statusCode() ?: -1
             val retryable = result == null || status in RETRYABLE_STATUSES
             if (!retryable || attempt == MAX_ATTEMPTS) {
-                log.warn("Gemini API giving up. status={} attempt={}/{} body={}",
-                    status, attempt, MAX_ATTEMPTS, result?.body()?.take(300))
+                log.warn("Gemini API model={} giving up. status={} attempt={}/{} body={}",
+                    modelName, status, attempt, MAX_ATTEMPTS, result?.body()?.take(200))
                 return null
             }
             val backoffMs = 1000L shl (attempt - 1) // 1s, 2s, 4s
-            log.warn("Gemini API status={} — retry {}/{} after {}ms", status, attempt, MAX_ATTEMPTS, backoffMs)
+            log.warn("Gemini API model={} status={} — retry {}/{} after {}ms", modelName, status, attempt, MAX_ATTEMPTS, backoffMs)
             runCatching { Thread.sleep(backoffMs) }
         }
         return null
