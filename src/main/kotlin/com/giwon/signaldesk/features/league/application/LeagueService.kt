@@ -84,14 +84,19 @@ class LeagueService(
         return league
     }
 
-    /** DRAFT → OPEN. 참가자 모집 시작. */
+    /**
+     * DRAFT → OPEN (모집) 또는 → RUNNING (즉시 시작).
+     * startedAt 이 이미 지났으면 cron 1분 대기 없이 즉시 RUNNING — UX 개선.
+     */
     fun openForJoining(leagueId: UUID, requesterUserId: UUID): League {
         val l = leagues.findById(leagueId) ?: error("league not found")
         require(l.hostUserId == requesterUserId) { "only host can open league" }
         require(l.status == LeagueStatus.DRAFT) { "league must be DRAFT (was ${l.status})" }
-        leagues.updateStatus(leagueId, LeagueStatus.OPEN)
-        log.info("league opened — id={}", leagueId)
-        return l.copy(status = LeagueStatus.OPEN)
+        // 시작 시각이 이미 지났으면 OPEN 건너뛰고 바로 RUNNING — '지금부터' 만든 league 즉시 매수 가능.
+        val newStatus = if (!l.startedAt.isAfter(Instant.now())) LeagueStatus.RUNNING else LeagueStatus.OPEN
+        leagues.updateStatus(leagueId, newStatus)
+        log.info("league opened — id={} status={}", leagueId, newStatus)
+        return l.copy(status = newStatus)
     }
 
     /** joinCode 로 참가. */
