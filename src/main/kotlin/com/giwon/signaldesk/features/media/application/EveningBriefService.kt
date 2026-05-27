@@ -14,8 +14,11 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import java.time.Clock
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 
 /**
@@ -34,9 +37,11 @@ class EveningBriefService(
     private val expoPushClient: ExpoPushClient,
     private val pushRepository: PushRepository,
     private val alertPreferenceService: AlertPreferenceService,
+    private val mediaSummaryRepository: MediaSummaryRepository,
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul")),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+    private val dateFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
     fun runBrief() {
         val devicesByUser = pushRepository.listAllDevicesGroupedByUser()
@@ -82,6 +87,12 @@ class EveningBriefService(
             buildGeminiMessage(analysis)
         } else {
             buildTemplateMessage(indices, gainers, losers, earnings.size)
+        }
+
+        // Gemini 합성 성공한 경우만 MediaSummary 저장 — template fallback 은 keyPoints 등이 없어 카드 UI 가 빈약함.
+        // /api/v1/media/summaries/latest 가 EVENING_BRIEF 도 자동으로 픽업.
+        if (analysis != null) {
+            saveMediaSummary(today, analysis, gainers, losers)
         }
 
         val messages = targets.flatMap { (_, devices) ->
@@ -142,6 +153,45 @@ class EveningBriefService(
     }
 
     private fun formatRate(r: Double): String = if (r >= 0) "+${"%.2f".format(r)}%" else "${"%.2f".format(r)}%"
+
+    /**
+     * MediaSummary 로 저장 — 앱 TodayTab 의 MediaSummaryCard 가 /summaries/latest 로 받아 렌더.
+     * 같은 날 재실행 시 같은 videoId 로 upsert (Repository.save 가 upsert 처리).
+     */
+    private fun saveMediaSummary(
+        today: LocalDate,
+        analysis: MarketInsightAnalysis,
+        gainers: List<YahooQuote>,
+        losers: List<YahooQuote>,
+    ) {
+        val videoId = "evening-${today.format(dateFmt)}"
+        if (mediaSummaryRepository.findByVideoId(videoId) != null) {
+            log.info("EveningBrief MediaSummary already exists. videoId={}", videoId)
+            return
+        }
+        val title = "${today.format(DateTimeFormatter.ofPattern("M월 d일"))} 미장 이브닝 브리프"
+        // 주도주(상승·하락) 상위 6개를 keyTickers 로 — MediaSummaryCard 에서 chip 으로 렌더.
+        val keyTickers = (gainers + losers).take(6).map { it.ticker }.distinct()
+        val summary = MediaSummary(
+            id = UUID.randomUUID().toString(),
+            channelId = "evening-brief",
+            channelTitle = "미장 이브닝 브리프",
+            videoId = videoId,
+            videoTitle = title,
+            videoUrl = "",
+            publishedAt = Instant.now(),
+            transcriptLength = analysis.summary.length + analysis.keyPoints.sumOf { it.length },
+            summary = analysis.headline + "\n\n" + analysis.summary,
+            flowAnalysis = analysis.keyPoints.joinToString("\n") { "• $it" },
+            keyTickers = keyTickers,
+            sentiment = analysis.sentiment,
+            hasTranscript = true,
+            source = MediaSource.EVENING_BRIEF,
+            createdAt = Instant.now(),
+        )
+        mediaSummaryRepository.save(summary)
+        log.info("EveningBrief MediaSummary saved. videoId={}, keyTickers={}", videoId, keyTickers.size)
+    }
 
     private fun <T> supplyAsync(block: () -> T?): CompletableFuture<T?> =
         CompletableFuture.supplyAsync { runCatching(block).getOrNull() }
