@@ -2,6 +2,15 @@ package com.giwon.signaldesk.features.market.application
 
 import org.springframework.stereotype.Service
 
+/**
+ * 관심종목 UI 카드 빌더 — `WatchAlert` 데이터 객체를 만들어 MarketOverview 응답에 실어 보낸다.
+ *
+ * **푸시 알림과 무관** — 푸시 실발송은 `features.push.application.WatchlistAlertService` 책임.
+ * 본 클래스는 화면에 "왜 이 종목이 주목할 만한가" 텍스트를 렌더링하기 위한 데이터만 생성한다.
+ *
+ * 입력: alternative signals, 뉴스, watchlist, portfolio, AI 픽
+ * 출력: 관심종목별 WatchAlert (severity/category/title/note/score/tags)
+ */
 @Service
 class WatchAlertService {
 
