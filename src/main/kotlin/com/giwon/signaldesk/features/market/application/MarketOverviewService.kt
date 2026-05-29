@@ -113,13 +113,25 @@ class MarketOverviewService(
     fun getPortfolio(userId: UUID? = null) = enrichmentService.getPortfolio(userId)
     fun getAiRecommendations(userId: UUID? = null) = enrichmentService.getAiRecommendations(userId)
 
-    private fun getCoreSnapshot(): CachedMarketCore {
+    /**
+     * 코어 스냅샷 캐시 워밍 — 스케줄러가 호출. 사용자 요청이 콜드 리빌드(최대 11s)를 떠안지 않도록
+     * 백그라운드에서 만료 전 미리 갱신한다. (refreshAhead=true → TTL 절반만 지나도 리빌드)
+     */
+    fun warmUp() {
+        runCatching { getCoreSnapshot(refreshAhead = true) }
+            .onFailure { logger.warn("core warm-up failed: {}", it.message) }
+        runCatching { getCachedNews(refreshAhead = true) }
+            .onFailure { logger.warn("news warm-up failed: {}", it.message) }
+    }
+
+    private fun getCoreSnapshot(refreshAhead: Boolean = false): CachedMarketCore {
+        val effectiveTtl = if (refreshAhead) coreTtl().dividedBy(2) else coreTtl()
         val cached = cachedCore
-        if (cached != null && Duration.between(cached.createdAt, Instant.now()) < coreTtl()) return cached
+        if (cached != null && Duration.between(cached.createdAt, Instant.now()) < effectiveTtl) return cached
 
         return synchronized(this) {
             val rechecked = cachedCore
-            if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < coreTtl()) return@synchronized rechecked
+            if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < effectiveTtl) return@synchronized rechecked
 
             val generatedAt = LocalDateTime.now()
             val koreaMarketFuture = CompletableFuture.supplyAsync { krxOfficialClient.loadKoreaMarketSection() ?: emptyKoreaMarket() }
@@ -193,13 +205,14 @@ class MarketOverviewService(
         }
     }
 
-    private fun getCachedNews(): CachedNewsSection {
+    private fun getCachedNews(refreshAhead: Boolean = false): CachedNewsSection {
+        val effectiveTtl = if (refreshAhead) newsTtl().dividedBy(2) else newsTtl()
         val cached = cachedNews
-        if (cached != null && Duration.between(cached.createdAt, Instant.now()) < newsTtl()) return cached
+        if (cached != null && Duration.between(cached.createdAt, Instant.now()) < effectiveTtl) return cached
 
         return synchronized(this) {
             val rechecked = cachedNews
-            if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < newsTtl()) return@synchronized rechecked
+            if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < effectiveTtl) return@synchronized rechecked
             val snapshot = CachedNewsSection(
                 createdAt = Instant.now(),
                 generatedAt = LocalDateTime.now().toString(),
