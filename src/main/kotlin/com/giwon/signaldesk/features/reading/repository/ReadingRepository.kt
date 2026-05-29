@@ -24,6 +24,7 @@ interface ReadingRepository {
     fun follow(f: Follow)
     fun unfollow(leaderUserId: UUID, followerUserId: UUID)
     fun followingLeaderIds(followerUserId: UUID): List<UUID>
+    fun followerIds(leaderUserId: UUID): List<UUID>
     fun followerCount(leaderUserId: UUID): Int
 
     // Post

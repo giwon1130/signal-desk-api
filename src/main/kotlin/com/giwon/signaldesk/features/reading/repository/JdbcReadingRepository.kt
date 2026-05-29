@@ -118,6 +118,13 @@ class JdbcReadingRepository(
             followerUserId.toString(),
         )
 
+    override fun followerIds(leaderUserId: UUID): List<UUID> =
+        jdbc.query(
+            "select follower_user_id from signal_desk_reading_follow where leader_user_id = ?::uuid",
+            { rs, _ -> UUID.fromString(rs.getString("follower_user_id")) },
+            leaderUserId.toString(),
+        )
+
     override fun followerCount(leaderUserId: UUID): Int =
         jdbc.queryForObject(
             "select count(*) from signal_desk_reading_follow where leader_user_id = ?::uuid",
