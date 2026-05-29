@@ -101,7 +101,9 @@ class WatchlistAlertService(
 
         val today = LocalDate.now(clock)
         val alreadySent = pushRepository.loadRecentAlertLog(today)
-        val candidates = detector.detect(refreshed, alreadySent, today)
+        // 급등/급락 단계적 재알림 — 최근 3일 마지막 알림 강도 대비 +5%p 이상일 때만.
+        val recentMaxRate = pushRepository.loadRecentAlertedRates(today.minusDays(2))
+        val candidates = detector.detect(refreshed, alreadySent, today, recentMaxRate)
         if (candidates.isEmpty()) return
 
         val messages = candidates.flatMap { c ->
@@ -111,6 +113,12 @@ class WatchlistAlertService(
         expoPushClient.send(messages)
         candidates.forEach { c ->
             pushRepository.recordAlert(c.userId, c.market, c.ticker, c.name, c.direction, today, c.changeRate)
+            // 목표가/손절 도달 알림은 1회 발송 후 자동 해제 — 재설정 전까진 재알림 X.
+            when (c.direction) {
+                AlertDirection.PRICE_ABOVE -> pushRepository.clearPriceAlert(c.userId, c.ticker, clearAbove = true)
+                AlertDirection.PRICE_BELOW -> pushRepository.clearPriceAlert(c.userId, c.ticker, clearAbove = false)
+                else -> { /* 급등락/거래량은 해제 안 함 */ }
+            }
         }
         log.info("Watchlist alert dispatched. candidates={}, messages={}", candidates.size, messages.size)
     }

@@ -16,6 +16,15 @@ interface PushRepository {
     )
     fun listAlertHistory(userId: UUID, limit: Int): List<AlertHistoryItem>
 
+    /**
+     * 급등/급락 단계적 재알림용 — 최근 sinceDate 이후 (user,ticker,direction) 별
+     * 마지막 알림 시점의 abs(changeRate) 최대값. 현재 변동이 이 값 + STEP 이상일 때만 재알림.
+     */
+    fun loadRecentAlertedRates(sinceDate: LocalDate): Map<AlertRateKey, Double>
+
+    /** 목표가/손절 도달 알림 1회 발송 후 해당 alert 설정 자동 해제 (alert_above/alert_below = null). */
+    fun clearPriceAlert(userId: UUID, ticker: String, clearAbove: Boolean)
+
     /** 최근 N일 알림 발송 통계 (전체 사용자 합산). */
     fun alertStats(days: Int): AlertStats
 }
@@ -29,6 +38,9 @@ data class AlertStats(
     val byDirection: List<KeyCount>,
     val topTickers: List<TickerCount>,
 )
+
+/** 급등/급락 단계 비교 key — (userId, ticker, direction). */
+data class AlertRateKey(val userId: UUID, val ticker: String, val direction: AlertDirection)
 
 data class DateCount(val date: String, val count: Int)
 data class KeyCount(val key: String, val count: Int)

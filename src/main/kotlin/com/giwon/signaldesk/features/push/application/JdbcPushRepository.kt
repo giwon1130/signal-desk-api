@@ -81,6 +81,34 @@ class JdbcPushRepository(
         )
     }
 
+    override fun loadRecentAlertedRates(sinceDate: LocalDate): Map<AlertRateKey, Double> {
+        val rows = jdbcTemplate.query(
+            """
+            select user_id, ticker, direction, max(abs(change_rate)) as max_rate
+            from signal_desk_push_alert_log
+            where alert_date >= ? and direction in ('UP','DOWN')
+            group by user_id, ticker, direction
+            """.trimIndent(),
+            { rs, _ ->
+                AlertRateKey(
+                    userId = UUID.fromString(rs.getString("user_id")),
+                    ticker = rs.getString("ticker"),
+                    direction = AlertDirection.valueOf(rs.getString("direction")),
+                ) to rs.getDouble("max_rate")
+            },
+            java.sql.Date.valueOf(sinceDate),
+        )
+        return rows.toMap()
+    }
+
+    override fun clearPriceAlert(userId: UUID, ticker: String, clearAbove: Boolean) {
+        val column = if (clearAbove) "alert_above" else "alert_below"
+        jdbcTemplate.update(
+            "update signal_desk_watchlist set $column = null where user_id = ?::uuid and ticker = ?",
+            userId.toString(), ticker,
+        )
+    }
+
     override fun listAlertHistory(userId: UUID, limit: Int): List<AlertHistoryItem> =
         jdbcTemplate.query(
             """
