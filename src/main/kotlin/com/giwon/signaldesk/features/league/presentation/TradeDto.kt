@@ -1,5 +1,6 @@
 package com.giwon.signaldesk.features.league.presentation
 
+import com.giwon.signaldesk.features.league.application.PositionService
 import com.giwon.signaldesk.features.league.domain.LeagueCurrency
 import com.giwon.signaldesk.features.league.domain.Position
 import com.giwon.signaldesk.features.league.domain.Trade
@@ -10,6 +11,7 @@ import jakarta.validation.constraints.NotBlank
 data class PlaceTradeRequest(
     @field:NotBlank val market: String,        // "KR" | "US"
     @field:NotBlank val ticker: String,
+    val name: String = "",                     // 클라이언트가 검색 결과의 종목명 전달 (없으면 ticker fallback)
     val side: TradeSide,
     @field:Min(1) val quantity: Int,
 )
@@ -51,12 +53,21 @@ data class PositionResponse(
     val quantity: Int,
     val averageCost: Double,
     val realizedPnl: Long,
+    val currentPrice: Double?,   // league 통화, 1주당 (시세 없으면 null)
+    val returnPct: Double?,      // 평단 대비 수익률 % (시세 없으면 null)
 ) {
     companion object {
         fun from(p: Position) = PositionResponse(
             market = p.market, ticker = p.ticker, name = p.name,
             quantity = p.quantity, averageCost = p.averageCost.toDouble(),
-            realizedPnl = p.realizedPnl,
+            realizedPnl = p.realizedPnl, currentPrice = null, returnPct = null,
+        )
+
+        fun from(v: PositionService.PositionView) = PositionResponse(
+            market = v.position.market, ticker = v.position.ticker, name = v.position.name,
+            quantity = v.position.quantity, averageCost = v.position.averageCost.toDouble(),
+            realizedPnl = v.position.realizedPnl,
+            currentPrice = v.currentPrice?.toDouble(), returnPct = v.returnPct,
         )
     }
 }

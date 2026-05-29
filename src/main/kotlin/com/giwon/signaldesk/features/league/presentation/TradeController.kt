@@ -50,6 +50,7 @@ class TradeController(
             ticker = req.ticker,
             side = req.side,
             quantity = req.quantity,
+            name = req.name,
         )
         return ApiResponse(true, TradeResponse.from(trade))
     }
@@ -93,7 +94,7 @@ class TradeController(
         @PathVariable leagueId: String,
     ): ApiResponse<List<PositionResponse>> {
         val userId = requireUserId(auth)
-        val list = positionService.positionsForUser(UUID.fromString(leagueId), userId)
+        val list = positionService.positionViewsForUser(UUID.fromString(leagueId), userId)
         return ApiResponse(true, list.map(PositionResponse::from))
     }
 }

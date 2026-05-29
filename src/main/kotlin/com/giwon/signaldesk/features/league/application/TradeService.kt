@@ -62,6 +62,7 @@ class TradeService(
         ticker: String,
         side: TradeSide,
         quantity: Int,
+        name: String = "",
     ): Trade {
         require(quantity > 0) { "quantity must be > 0" }
         val ticker = ticker.trim().uppercase()
@@ -87,8 +88,9 @@ class TradeService(
             }
         }
 
-        // 시세 + 종목명 fetch.
-        val (originalPrice, originalCurrency, name) = fetchLockedPrice(market, ticker)
+        // 시세 + 종목명 fetch. 종목명은 클라이언트 제공값 우선 (시세 API 엔 종목명이 없어 ticker 로 fallback).
+        val (originalPrice, originalCurrency, fetchedName) = fetchLockedPrice(market, ticker)
+        val resolvedName = name.trim().ifBlank { fetchedName }
 
         // 환율 lock — league 통화와 시장 통화 다르면 변환.
         val exchangeRate = resolveExchangeRate(originalCurrency, league.currency)
@@ -116,7 +118,7 @@ class TradeService(
         val trade = Trade(
             id = UUID.randomUUID(),
             leagueId = leagueId, userId = userId,
-            market = market, ticker = ticker, name = name,
+            market = market, ticker = ticker, name = resolvedName,
             side = side, quantity = quantity,
             originalPrice = originalPrice, originalCurrency = originalCurrency,
             price = pricePerShare, exchangeRate = exchangeRate,
