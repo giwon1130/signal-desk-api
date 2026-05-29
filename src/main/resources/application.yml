@@ -88,7 +88,7 @@ signal-desk:
       enabled: true
       base-url: ${NAVER_GLOBAL_BASE_URL:https://api.stock.naver.com}
   reading:
-    # 리딩 리더 자동승인 + 승인 권한을 가진 운영자 userId (콤마 구분). 비어있으면 모두 PENDING.
-    admin-user-ids: ${SIGNAL_DESK_READING_ADMIN_USER_IDS:}
+    # 리딩 리더 자동승인 + 승인 권한을 가진 운영자 이메일 (콤마 구분). 기본 운영자 1명 고정.
+    admin-emails: ${SIGNAL_DESK_READING_ADMIN_EMAILS:gwim113000@gmail.com}
   cors:
     allowed-origin-patterns: ${SIGNAL_DESK_CORS_ALLOWED_ORIGINS:}

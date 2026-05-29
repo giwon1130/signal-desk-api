@@ -8,6 +8,7 @@ import com.giwon.signaldesk.features.reading.domain.PostVisibility
 import com.giwon.signaldesk.features.reading.domain.ReadingCall
 import com.giwon.signaldesk.features.reading.domain.ReadingPost
 import com.giwon.signaldesk.features.reading.repository.ReadingRepository
+import com.giwon.signaldesk.features.auth.application.UserRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -30,21 +31,27 @@ import kotlin.random.Random
 class ReadingService(
     private val repo: ReadingRepository,
     private val priceService: ReadingPriceService,
-    @Value("\${signal-desk.reading.admin-user-ids:}") private val adminUserIdsProp: String,
+    private val users: UserRepository,
+    @Value("\${signal-desk.reading.admin-emails:gwim113000@gmail.com}") private val adminEmailsProp: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** 자동 승인 + 승인 권한을 가진 운영자 userId 집합 (config). */
-    private val adminUserIds: Set<UUID> by lazy {
-        adminUserIdsProp.split(",").mapNotNull { it.trim().takeIf(String::isNotBlank) }
-            .mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() }.toSet()
+    /** 자동 승인 + 승인 권한을 가진 운영자 이메일 집합 (config, 기본 운영자 1명 고정). */
+    private val adminEmails: Set<String> by lazy {
+        adminEmailsProp.split(",").mapNotNull { it.trim().lowercase().takeIf(String::isNotBlank) }.toSet()
+    }
+
+    /** 해당 userId 의 이메일이 운영자 목록에 있는지. */
+    private fun isAdmin(userId: UUID): Boolean {
+        val email = users.findById(userId)?.email?.lowercase() ?: return false
+        return email in adminEmails
     }
 
     // ─── 리더 ────────────────────────────────────────────────────────────────
     /** 리더 신청. 이미 있으면 기존 반환. 운영자는 즉시 APPROVED. */
     fun applyForLeader(userId: UUID, displayName: String, bio: String): Leader {
         repo.findLeader(userId)?.let { return it }
-        val status = if (userId in adminUserIds) LeaderStatus.APPROVED else LeaderStatus.PENDING
+        val status = if (isAdmin(userId)) LeaderStatus.APPROVED else LeaderStatus.PENDING
         val leader = Leader(
             userId = userId,
             displayName = displayName.trim().ifBlank { "리더" },
@@ -62,7 +69,7 @@ class ReadingService(
 
     /** 운영자가 PENDING 리더를 승인. */
     fun approveLeader(adminUserId: UUID, targetUserId: UUID): Leader {
-        require(adminUserId in adminUserIds) { "no permission to approve" }
+        require(isAdmin(adminUserId)) { "no permission to approve" }
         val leader = repo.findLeader(targetUserId) ?: error("leader not found")
         repo.updateLeaderStatus(targetUserId, LeaderStatus.APPROVED)
         log.info("reading leader approved — admin={} target={}", adminUserId, targetUserId)
