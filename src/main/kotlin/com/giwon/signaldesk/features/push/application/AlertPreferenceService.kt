@@ -115,26 +115,26 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
     }
 
     /**
-     * KR 장중/마감 브리프 ON 사용자. 미등록은 DEFAULT(false). 미장 전용(market_preference='US') 사용자는
-     * KR 브리프 무의미하므로 제외 (KR/BOTH 만).
+     * KR 장중/마감 브리프 ON 사용자. 미등록은 defaultOn 적용 (마감=기본 ON, 장중=기본 OFF).
+     * 미장 전용(market_preference='US') 사용자는 KR 브리프 무의미하므로 제외 (KR/BOTH 만).
      * @param column "midday_brief_enabled" | "close_brief_enabled"
      */
-    fun loadIntradayBriefEnabledUsers(column: String): Set<UUID> {
+    fun loadIntradayBriefEnabledUsers(column: String, defaultOn: Boolean): Set<UUID> {
         require(column in setOf("midday_brief_enabled", "close_brief_enabled")) { "invalid column: $column" }
         val sql = """
             select u.id from signal_desk_users u
             left join signal_desk_alert_preferences p on p.user_id = u.id
-            where coalesce(p.$column, false) = true
+            where coalesce(p.$column, ?) = true
               and coalesce(p.market_preference, 'BOTH') in ('KR', 'BOTH')
         """.trimIndent()
-        return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }).toSet()
+        return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, defaultOn).toSet()
     }
 
     companion object {
         val DEFAULT = AlertPreferences(
             krEnabled = true, usEnabled = false, premarketEnabled = true, compositeRiskEnabled = true,
             marketPreference = "BOTH", eveningBriefEnabled = false,
-            middayBriefEnabled = false, closeBriefEnabled = false,
+            middayBriefEnabled = false, closeBriefEnabled = true,
         )
     }
 }

@@ -53,9 +53,10 @@ class IntradayBriefService(
         val titleSuffix: String,
         val prefColumn: String,   // alert_preferences 토글 컬럼
         val pushType: String,     // 푸시 data.type
+        val defaultOn: Boolean,   // 미설정 사용자 기본 알림 여부
     ) {
-        MIDDAY(MediaSource.MIDDAY_BRIEF, "장중 브리프", "midday", "장중 브리프", "midday_brief_enabled", "MIDDAY_BRIEF"),
-        CLOSE(MediaSource.CLOSE_BRIEF, "마감 브리프", "close", "마감 브리프", "close_brief_enabled", "CLOSE_BRIEF"),
+        MIDDAY(MediaSource.MIDDAY_BRIEF, "장중 브리프", "midday", "장중 브리프", "midday_brief_enabled", "MIDDAY_BRIEF", false),
+        CLOSE(MediaSource.CLOSE_BRIEF, "마감 브리프", "close", "마감 브리프", "close_brief_enabled", "CLOSE_BRIEF", true),
     }
 
     /** 단일 실행. force=true 면 기존 brief 가 있어도 재생성. */
@@ -130,7 +131,7 @@ class IntradayBriefService(
     private fun dispatchPush(slot: Slot, analysis: MarketInsightAnalysis) {
         val devicesByUser = pushRepository.listAllDevicesGroupedByUser()
         if (devicesByUser.isEmpty()) return
-        val enabledUsers = alertPreferenceService.loadIntradayBriefEnabledUsers(slot.prefColumn)
+        val enabledUsers = alertPreferenceService.loadIntradayBriefEnabledUsers(slot.prefColumn, slot.defaultOn)
         val targets = devicesByUser.filterKeys { it in enabledUsers }
         if (targets.isEmpty()) return
 
