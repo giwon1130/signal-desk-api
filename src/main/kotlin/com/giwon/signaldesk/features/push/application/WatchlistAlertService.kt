@@ -104,12 +104,6 @@ class WatchlistAlertService(
         // 급등/급락 단계적 재알림 — 최근 3일 마지막 알림 강도 대비 +5%p 이상일 때만.
         val recentMaxRate = pushRepository.loadRecentAlertedRates(today.minusDays(2))
         val candidates = detector.detect(refreshed, alreadySent, today, recentMaxRate)
-        // 진단(2026-05-29): 알림 스팸 원인 추적 — alreadySent 가 0이면 recordAlert 미작동(근본 버그).
-        log.info(
-            "alert scan {} — rows={} today={} alreadySentToday={} recentRateKeys={} → candidates={} [{}]",
-            market, refreshed.size, today, alreadySent.size, recentMaxRate.size, candidates.size,
-            candidates.joinToString { "${it.ticker}/${it.direction}/${"%.1f".format(it.changeRate)}%" },
-        )
         if (candidates.isEmpty()) return
 
         val messages = candidates.flatMap { c ->
@@ -117,14 +111,18 @@ class WatchlistAlertService(
             devices.map { d -> buildMessage(d.expoToken, c) }
         }
         expoPushClient.send(messages)
+        // 한 candidate 의 record 실패가 다른 candidate 나 전체 scan 을 막지 않도록 개별 격리.
+        // (과거 direction varchar(8) 오버플로로 한 건 예외가 전체 scan 을 깨뜨려 dedup 무력화된 적 있음)
         candidates.forEach { c ->
-            pushRepository.recordAlert(c.userId, c.market, c.ticker, c.name, c.direction, today, c.changeRate)
-            // 목표가/손절 도달 알림은 1회 발송 후 자동 해제 — 재설정 전까진 재알림 X.
-            when (c.direction) {
-                AlertDirection.PRICE_ABOVE -> pushRepository.clearPriceAlert(c.userId, c.ticker, clearAbove = true)
-                AlertDirection.PRICE_BELOW -> pushRepository.clearPriceAlert(c.userId, c.ticker, clearAbove = false)
-                else -> { /* 급등락/거래량은 해제 안 함 */ }
-            }
+            runCatching {
+                pushRepository.recordAlert(c.userId, c.market, c.ticker, c.name, c.direction, today, c.changeRate)
+                // 목표가/손절 도달 알림은 1회 발송 후 자동 해제 — 재설정 전까진 재알림 X.
+                when (c.direction) {
+                    AlertDirection.PRICE_ABOVE -> pushRepository.clearPriceAlert(c.userId, c.ticker, clearAbove = true)
+                    AlertDirection.PRICE_BELOW -> pushRepository.clearPriceAlert(c.userId, c.ticker, clearAbove = false)
+                    else -> { /* 급등락/거래량은 해제 안 함 */ }
+                }
+            }.onFailure { log.error("recordAlert/clear failed — {}/{}", c.ticker, c.direction, it) }
         }
         log.info("Watchlist alert dispatched. candidates={}, messages={}", candidates.size, messages.size)
     }
