@@ -104,6 +104,12 @@ class WatchlistAlertService(
         // 급등/급락 단계적 재알림 — 최근 3일 마지막 알림 강도 대비 +5%p 이상일 때만.
         val recentMaxRate = pushRepository.loadRecentAlertedRates(today.minusDays(2))
         val candidates = detector.detect(refreshed, alreadySent, today, recentMaxRate)
+        // 진단(2026-05-29): 알림 스팸 원인 추적 — alreadySent 가 0이면 recordAlert 미작동(근본 버그).
+        log.info(
+            "alert scan {} — rows={} today={} alreadySentToday={} recentRateKeys={} → candidates={} [{}]",
+            market, refreshed.size, today, alreadySent.size, recentMaxRate.size, candidates.size,
+            candidates.joinToString { "${it.ticker}/${it.direction}/${"%.1f".format(it.changeRate)}%" },
+        )
         if (candidates.isEmpty()) return
 
         val messages = candidates.flatMap { c ->
