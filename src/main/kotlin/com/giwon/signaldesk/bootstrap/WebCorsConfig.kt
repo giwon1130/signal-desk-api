@@ -15,6 +15,8 @@ class WebCorsConfig(
             add("http://127.0.0.1:*")
             add("https://localhost:*")
             add("https://127.0.0.1:*")
+            // 라이브 웹 (GitHub Pages 무료 호스팅) — 리딩 등 PC 작성용.
+            add("https://giwon1130.github.io")
             configuredAllowedOriginPatterns
                 .split(",")
                 .map { it.trim() }
