@@ -118,7 +118,7 @@ class EveningBriefService(
             MediaSentiment.BEARISH -> "🔴"
             MediaSentiment.NEUTRAL -> "🟡"
         }
-        val title = "$emoji ${analysis.headline.ifBlank { "미장 이브닝 브리프" }}"
+        val title = "$emoji ${analysis.headline.ifBlank { "미국장 마감 브리프" }}"
         val body = analysis.summary.take(180)
         return title to body
     }
@@ -136,7 +136,7 @@ class EveningBriefService(
             nasdaqRate != null && nasdaqRate >= 1.0 -> "🟢"
             else -> "🟡"
         }
-        val title = "$emoji 미장 이브닝 브리프"
+        val title = "$emoji 미국장 마감 브리프"
 
         val parts = mutableListOf<String>()
         if (nasdaqRate != null && sp500Rate != null) {
@@ -169,13 +169,13 @@ class EveningBriefService(
             log.info("EveningBrief MediaSummary already exists. videoId={}", videoId)
             return
         }
-        val title = "${today.format(DateTimeFormatter.ofPattern("M월 d일"))} 미장 이브닝 브리프"
+        val title = "${today.format(DateTimeFormatter.ofPattern("M월 d일"))} 미국장 마감 브리프"
         // 주도주(상승·하락) 상위 6개를 keyTickers 로 — MediaSummaryCard 에서 chip 으로 렌더.
         val keyTickers = (gainers + losers).take(6).map { it.ticker }.distinct()
         val summary = MediaSummary(
             id = UUID.randomUUID().toString(),
             channelId = "evening-brief",
-            channelTitle = "미장 이브닝 브리프",
+            channelTitle = "미국장 마감 브리프",
             videoId = videoId,
             videoTitle = title,
             videoUrl = "",
