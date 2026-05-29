@@ -1,0 +1,120 @@
+package com.giwon.signaldesk.features.media.application
+
+import com.giwon.signaldesk.features.events.application.MarketEventService
+import com.giwon.signaldesk.features.market.application.CboeVixClient
+import com.giwon.signaldesk.features.market.application.FredIndexClient
+import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
+import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
+import org.slf4j.LoggerFactory
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.stereotype.Service
+import java.time.Clock
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.UUID
+import java.util.concurrent.CompletableFuture
+
+/**
+ * KR 장중(12:30)·마감(15:40) 브리프 — 모닝 브리프와 같은 데이터 파이프라인을 KR 관점으로 재해석.
+ *
+ * 모닝 브리프와 차이:
+ *  - 보유 공시 매칭 / 푸시 발송 없음 (앱 브리프 카드 갱신 전용 — 알림 스팸 방지).
+ *  - slot 에 따라 프롬프트·source·제목만 달라짐.
+ *
+ * 앱은 /api/v1/media/summaries/latest 로 최신 브리프를 보여주므로, 시간대별로 가장 최근 브리프가 노출된다.
+ */
+@Service
+@ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
+class IntradayBriefService(
+    private val vixClient: CboeVixClient,
+    private val fredIndexClient: FredIndexClient,
+    private val newsRssClient: GoogleNewsRssClient,
+    private val investorRankClient: NaverInvestorRankClient,
+    private val geminiClient: GeminiClient,
+    private val marketEventService: MarketEventService,
+    private val repository: MediaSummaryRepository,
+    private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul")),
+) {
+    private val log = LoggerFactory.getLogger(javaClass)
+    private val dateFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+
+    enum class Slot(
+        val source: MediaSource,
+        val channelTitle: String,
+        val videoPrefix: String,
+        val titleSuffix: String,
+    ) {
+        MIDDAY(MediaSource.MIDDAY_BRIEF, "장중 브리프", "midday", "장중 브리프"),
+        CLOSE(MediaSource.CLOSE_BRIEF, "마감 브리프", "close", "마감 브리프"),
+    }
+
+    /** 단일 실행. force=true 면 기존 brief 가 있어도 재생성. */
+    fun runBrief(slot: Slot, force: Boolean = false): MediaSummary? {
+        if (!geminiClient.isEnabled()) {
+            log.warn("IntradayBrief({}) skipped — GEMINI_API_KEY 미설정", slot)
+            return null
+        }
+        val today = LocalDate.now(clock)
+        val videoId = "${slot.videoPrefix}-${today.format(dateFmt)}"
+        if (!force && repository.findByVideoId(videoId) != null) {
+            log.info("IntradayBrief({}) already exists. videoId={}", slot, videoId)
+            return null
+        }
+
+        // 모닝 브리프와 동일한 외부 API 병렬 수집.
+        val vixF = supplyAsync { vixClient.fetchVix() }
+        val indicesF = supplyAsync { fredIndexClient.fetchUsIndices() }
+        val macroF = supplyAsync { fredIndexClient.fetchMacro() }
+        val headlinesF = supplyAsync { newsRssClient.fetchMarketNews() }
+        val eventsF = supplyAsync { marketEventService.upcoming(3) }
+        val flowF = supplyAsync { investorRankClient.fetchFlowSnapshot(limit = 7) }
+
+        val vix = vixF.join()
+        val indices = indicesF.join()
+        val macro = macroF.join()
+        val headlines = headlinesF.join() ?: emptyList()
+        val upcomingEvents = eventsF.join() ?: emptyList()
+        val investorFlow = flowF.join()
+
+        val analysis = runCatching {
+            geminiClient.summarizeIntradayBrief(
+                slot = slot.name,
+                vix = vix, indices = indices, macro = macro, headlines = headlines,
+                investorFlow = investorFlow, upcomingEvents = upcomingEvents,
+            )
+        }.getOrElse {
+            log.warn("IntradayBrief({}) Gemini call failed", slot, it)
+            null
+        } ?: run {
+            log.warn("IntradayBrief({}) Gemini returned null", slot)
+            return null
+        }
+
+        val title = "${today.format(DateTimeFormatter.ofPattern("M월 d일"))} ${slot.titleSuffix}"
+        val summary = MediaSummary(
+            id = UUID.randomUUID().toString(),
+            channelId = slot.videoPrefix + "-brief",
+            channelTitle = slot.channelTitle,
+            videoId = videoId,
+            videoTitle = title,
+            videoUrl = "",
+            publishedAt = Instant.now(),
+            transcriptLength = headlines.size,
+            summary = analysis.headline + "\n\n" + analysis.summary,
+            flowAnalysis = analysis.keyPoints.joinToString("\n") { "• $it" },
+            keyTickers = emptyList(),
+            sentiment = analysis.sentiment,
+            hasTranscript = true,
+            source = slot.source,
+            createdAt = Instant.now(),
+        )
+        val saved = repository.save(summary)
+        log.info("IntradayBrief({}) saved. videoId={}, headline={}", slot, videoId, analysis.headline)
+        return saved
+    }
+
+    private fun <T> supplyAsync(block: () -> T?): CompletableFuture<T?> =
+        CompletableFuture.supplyAsync { runCatching(block).getOrNull() }
+}

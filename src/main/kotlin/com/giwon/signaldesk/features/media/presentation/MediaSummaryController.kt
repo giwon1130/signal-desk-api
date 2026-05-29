@@ -1,6 +1,7 @@
 package com.giwon.signaldesk.features.media.presentation
 
 import com.giwon.signaldesk.features.market.presentation.ApiResponse
+import com.giwon.signaldesk.features.media.application.IntradayBriefService
 import com.giwon.signaldesk.features.media.application.MediaSource
 import com.giwon.signaldesk.features.media.application.MediaSummaryRepository
 import com.giwon.signaldesk.features.media.application.MorningBriefService
@@ -25,6 +26,7 @@ class MediaSummaryController(
     private val repository: MediaSummaryRepository,
     private val newsDigestService: NewsDigestService,
     private val morningBriefService: MorningBriefService,
+    private val intradayBriefService: IntradayBriefService,
 ) {
 
     @GetMapping("/summaries/latest")
@@ -46,6 +48,18 @@ class MediaSummaryController(
     @PostMapping("/morning-brief/refresh")
     fun refreshMorningBrief(@RequestParam(defaultValue = "false") force: Boolean): ApiResponse<Boolean> {
         val brief = morningBriefService.runBrief(force)
+        return ApiResponse(true, brief != null)
+    }
+
+    /** 장중/마감 브리프 수동 트리거 — 운영/테스트용. slot=MIDDAY|CLOSE. */
+    @PostMapping("/intraday-brief/refresh")
+    fun refreshIntradayBrief(
+        @RequestParam(defaultValue = "MIDDAY") slot: String,
+        @RequestParam(defaultValue = "false") force: Boolean,
+    ): ApiResponse<Boolean> {
+        val parsed = runCatching { IntradayBriefService.Slot.valueOf(slot.uppercase()) }
+            .getOrDefault(IntradayBriefService.Slot.MIDDAY)
+        val brief = intradayBriefService.runBrief(parsed, force)
         return ApiResponse(true, brief != null)
     }
 

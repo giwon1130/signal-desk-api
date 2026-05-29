@@ -103,6 +103,70 @@ $macroBlock$flowBlock$disclosureBlock$eventsBlock
         """.trimIndent()
     }
 
+    /**
+     * KR 장중/마감 브리프. slot = "MIDDAY"(12:30, 오전장 점검) | "CLOSE"(15:40, 마감 정리).
+     * 모닝 브리프와 같은 입력(VIX/미국지수/매크로/헤드라인/수급/이벤트)을 KR 관점으로 재해석.
+     */
+    fun intradayBrief(
+        slot: String,
+        vix: VixSnapshot?,
+        indices: UsIndicesSnapshot?,
+        macro: MacroSnapshot?,
+        headlines: List<MarketNews>,
+        investorFlow: InvestorFlowSnapshot?,
+        upcomingEvents: List<MarketEvent>,
+    ): String {
+        val capped = headlines.take(20)
+        val headlineLines = capped.joinToString("\n") { n -> "- [${n.source}] ${n.title}" }
+        val macroBlock = macroBlock(macro)
+        val flowBlock = investorFlowBlock(investorFlow)
+        val eventsBlock = if (upcomingEvents.isNotEmpty()) {
+            val lines = upcomingEvents.take(5).joinToString("\n") { e ->
+                val time = e.time?.let { " $it" } ?: ""
+                "- [${e.date}$time · ${e.market}] ${e.title}${e.description?.let { " — $it" } ?: ""}"
+            }
+            "\n            === 다가오는 주요 이벤트 (3일내) ===\n            $lines"
+        } else ""
+
+        val (situation, headlineHint, summaryHint, pointHint) = when (slot) {
+            "MIDDAY" -> Quad(
+                "지금은 한국 장중(12:30 KST), 오전장이 끝난 시점입니다. 한국 개인 투자자가 '오후장을 어떻게 대응할지' 판단하도록 오전장 흐름·수급·이슈를 중간 점검하세요.",
+                "오전장 분위기를 한 줄로 (20자 이내, 강세/약세/관망 키워드 포함)",
+                "3문장. 오전장 지수·수급 흐름 → 주도 이슈/뉴스 → 오후장 대응 포인트 순. 마지막 문장에 '오후 행동' 명시",
+                "오후장 봐야 할 포인트 3개. 각 25자 이내. 수급·이벤트 우선",
+            )
+            else -> Quad(
+                "지금은 한국 장 마감 직후(15:40 KST)입니다. 한국 개인 투자자가 '오늘 장을 정리하고 내일을 준비'하도록 마감 흐름·수급·이슈를 종합하세요.",
+                "오늘 장 마감을 한 줄로 (20자 이내, 강세/약세/혼조 키워드 포함)",
+                "3~4문장. 오늘 지수·수급 마감 → 주도 섹터/이슈 → 내일 관전 포인트 순. 마지막 문장에 '내일 관전 포인트' 명시",
+                "내일 봐야 할 포인트 3개. 각 25자 이내. 수급·이벤트 우선",
+            )
+        }
+
+        return """
+            당신은 한국 주식 투자 전문 분석가입니다.
+            $situation
+
+            === 글로벌 매크로 컨텍스트 ===
+            ${vixLine(vix)}
+            ${nasdaqLine(indices)}
+            ${sp500Line(indices)}
+$macroBlock$flowBlock$eventsBlock
+            === 오늘 한국·미국 시장 뉴스 헤드라인 (${capped.size}건) ===
+            $headlineLines
+
+            아래 JSON 스키마로 한국어 답변:
+            {
+              "headline": "$headlineHint",
+              "summary": "$summaryHint",
+              "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나",
+              "keyPoints": ["$pointHint"]
+            }
+        """.trimIndent()
+    }
+
+    private data class Quad(val a: String, val b: String, val c: String, val d: String)
+
     fun eveningBrief(
         vix: VixSnapshot?,
         indices: UsIndicesSnapshot?,

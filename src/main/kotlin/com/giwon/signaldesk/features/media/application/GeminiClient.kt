@@ -88,6 +88,19 @@ class GeminiClient(
         GeminiPrompts.morningBrief(vix, indices, macro, headlines, disclosureTitles, investorFlow, upcomingEvents),
     )
 
+    /** KR 장중/마감 브리프 — slot="MIDDAY"|"CLOSE". 모닝 브리프와 같은 입력을 KR 관점으로. */
+    fun summarizeIntradayBrief(
+        slot: String,
+        vix: VixSnapshot?,
+        indices: UsIndicesSnapshot?,
+        macro: MacroSnapshot?,
+        headlines: List<MarketNews>,
+        investorFlow: InvestorFlowSnapshot? = null,
+        upcomingEvents: List<MarketEvent> = emptyList(),
+    ): MarketInsightAnalysis? = callInsight(
+        GeminiPrompts.intradayBrief(slot, vix, indices, macro, headlines, investorFlow, upcomingEvents),
+    )
+
     /**
      * 미장 이브닝 브리프 — NY 장 마감 직후(06:30 KST). 야간 미국장 결과 + top movers + 실적 + 헤드라인을
      * 종합해 한국 투자자에게 "어제 미국장 어땠고 오늘 한국장에 어떤 영향 있을지" 한 줄 요약.
