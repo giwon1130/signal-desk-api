@@ -5,6 +5,9 @@ import com.giwon.signaldesk.features.market.application.CboeVixClient
 import com.giwon.signaldesk.features.market.application.FredIndexClient
 import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
 import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
+import com.giwon.signaldesk.features.push.application.AlertPreferenceService
+import com.giwon.signaldesk.features.push.application.ExpoPushClient
+import com.giwon.signaldesk.features.push.application.PushRepository
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
@@ -35,6 +38,9 @@ class IntradayBriefService(
     private val geminiClient: GeminiClient,
     private val marketEventService: MarketEventService,
     private val repository: MediaSummaryRepository,
+    private val pushRepository: PushRepository,
+    private val alertPreferenceService: AlertPreferenceService,
+    private val expoPushClient: ExpoPushClient,
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul")),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -45,9 +51,11 @@ class IntradayBriefService(
         val channelTitle: String,
         val videoPrefix: String,
         val titleSuffix: String,
+        val prefColumn: String,   // alert_preferences 토글 컬럼
+        val pushType: String,     // 푸시 data.type
     ) {
-        MIDDAY(MediaSource.MIDDAY_BRIEF, "장중 브리프", "midday", "장중 브리프"),
-        CLOSE(MediaSource.CLOSE_BRIEF, "마감 브리프", "close", "마감 브리프"),
+        MIDDAY(MediaSource.MIDDAY_BRIEF, "장중 브리프", "midday", "장중 브리프", "midday_brief_enabled", "MIDDAY_BRIEF"),
+        CLOSE(MediaSource.CLOSE_BRIEF, "마감 브리프", "close", "마감 브리프", "close_brief_enabled", "CLOSE_BRIEF"),
     }
 
     /** 단일 실행. force=true 면 기존 brief 가 있어도 재생성. */
@@ -112,7 +120,39 @@ class IntradayBriefService(
         )
         val saved = repository.save(summary)
         log.info("IntradayBrief({}) saved. videoId={}, headline={}", slot, videoId, analysis.headline)
+
+        runCatching { dispatchPush(slot, analysis) }
+            .onFailure { log.warn("IntradayBrief({}) push failed", slot, it) }
         return saved
+    }
+
+    /** slot 토글 ON 사용자에게만 브리프 푸시 (기본 OFF — 켠 사람만). */
+    private fun dispatchPush(slot: Slot, analysis: MarketInsightAnalysis) {
+        val devicesByUser = pushRepository.listAllDevicesGroupedByUser()
+        if (devicesByUser.isEmpty()) return
+        val enabledUsers = alertPreferenceService.loadIntradayBriefEnabledUsers(slot.prefColumn)
+        val targets = devicesByUser.filterKeys { it in enabledUsers }
+        if (targets.isEmpty()) return
+
+        val emoji = when (analysis.sentiment) {
+            MediaSentiment.BULLISH -> "🟢"
+            MediaSentiment.BEARISH -> "🔴"
+            MediaSentiment.NEUTRAL -> "🟡"
+        }
+        val title = "$emoji ${analysis.headline.ifBlank { slot.titleSuffix }}"
+        val body = analysis.summary.take(180)
+        val messages = targets.flatMap { (_, devices) ->
+            devices.map { d ->
+                ExpoPushClient.Message(
+                    to = d.expoToken,
+                    title = title,
+                    body = body,
+                    data = mapOf("type" to slot.pushType),
+                )
+            }
+        }
+        expoPushClient.send(messages)
+        log.info("IntradayBrief({}) push dispatched. recipients={}, messages={}", slot, targets.size, messages.size)
     }
 
     private fun <T> supplyAsync(block: () -> T?): CompletableFuture<T?> =
