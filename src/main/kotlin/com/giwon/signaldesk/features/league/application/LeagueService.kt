@@ -107,8 +107,10 @@ class LeagueService(
         avatarEmoji: String,
     ): Pair<League, Participant> {
         val l = leagues.findByJoinCode(joinCode.trim().uppercase()) ?: error("join code not found")
-        require(l.status == LeagueStatus.DRAFT || l.status == LeagueStatus.OPEN) {
-            "league not joinable (status=${l.status})"
+        // FINISHED 만 거부 — 호스트가 만든 즉시 RUNNING 으로 가는 흐름(openForJoining)이라
+        // RUNNING 도중 친구 참가도 허용해야 한다.
+        require(l.status != LeagueStatus.FINISHED) {
+            "league already finished"
         }
         // 이미 참가했으면 그대로 반환 (idempotent).
         participants.find(l.id, userId)?.let { return l to it }

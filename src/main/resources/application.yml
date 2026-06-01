@@ -87,6 +87,11 @@ signal-desk:
     naver-global:
       enabled: true
       base-url: ${NAVER_GLOBAL_BASE_URL:https://api.stock.naver.com}
+  auth:
+    google:
+      # idToken aud 화이트리스트 (콤마). iOS + web 신/구 클라이언트 모두 허용.
+      # env(SIGNAL_DESK_AUTH_GOOGLE_ALLOWED_AUDIENCES) 로 오버라이드 가능.
+      allowed-audiences: ${SIGNAL_DESK_AUTH_GOOGLE_ALLOWED_AUDIENCES:496073748220-n9end3a963hj96nh6ru6ai3d54u8g72v.apps.googleusercontent.com,496073748220-oavb78f6holdrlhlvqa6b1fcljih1g4u.apps.googleusercontent.com,496073748220-lvagt9ir98pc3qc2lfqtglqbjem4ed2c.apps.googleusercontent.com}
   reading:
     # 리딩 리더 자동승인 + 승인 권한을 가진 운영자 이메일 (콤마 구분). 기본 운영자 1명 고정.
     admin-emails: ${SIGNAL_DESK_READING_ADMIN_EMAILS:gwim113000@gmail.com}

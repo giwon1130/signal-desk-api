@@ -9,6 +9,8 @@ import com.giwon.signaldesk.features.reading.domain.ReadingCall
 import com.giwon.signaldesk.features.reading.domain.ReadingPost
 import com.giwon.signaldesk.features.reading.repository.ReadingRepository
 import com.giwon.signaldesk.features.auth.application.UserRepository
+import com.giwon.signaldesk.features.push.application.ExpoPushClient
+import com.giwon.signaldesk.features.push.application.PushRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -32,6 +34,8 @@ class ReadingService(
     private val repo: ReadingRepository,
     private val priceService: ReadingPriceService,
     private val users: UserRepository,
+    private val pushRepository: PushRepository,
+    private val expoPushClient: ExpoPushClient,
     @Value("\${signal-desk.reading.admin-emails:gwim113000@gmail.com}") private val adminEmailsProp: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -159,6 +163,9 @@ class ReadingService(
         repo.createPost(post)
         locked.forEach { repo.insertCall(it) }
         log.info("reading post published — leader={} post={} calls={}", userId, post.id, locked.size)
+
+        runCatching { notifyFollowersOfNewPost(userId, post, locked) }
+            .onFailure { log.warn("reading post push failed: {}", it.message) }
         return post to locked
     }
 
@@ -168,6 +175,37 @@ class ReadingService(
         // 콜 소유 검증은 markCallStatus 전에. (콜 조회는 post 통해야 하므로 leader 일치로 우선 보호)
         repo.markCallStatus(callId, CallStatus.CLOSED, null)
         log.info("reading call closed — leader={} call={}", leader.userId, callId)
+    }
+
+    /** 새 리딩 게시 → 팔로워에게 푸시 (리더 본인은 제외 — 본인이 막 쓴 글). */
+    private fun notifyFollowersOfNewPost(leaderUserId: UUID, post: ReadingPost, calls: List<ReadingCall>) {
+        val followerIds = repo.followerIds(leaderUserId)
+        if (followerIds.isEmpty()) return
+        val devicesByUser = pushRepository.listAllDevicesGroupedByUser()
+        val targets = devicesByUser.filterKeys { it in followerIds }
+        if (targets.isEmpty()) return
+
+        val leaderName = repo.findLeader(leaderUserId)?.displayName ?: "리더"
+        val title = "📣 ${leaderName}님의 새 리딩"
+        val callsHint = if (calls.isNotEmpty()) " · ${calls.size}개 종목 콜" else ""
+        val body = "${post.title}$callsHint"
+        val messages = targets.flatMap { (_, devices) ->
+            devices.map { d ->
+                ExpoPushClient.Message(
+                    to = d.expoToken,
+                    title = title,
+                    body = body,
+                    data = mapOf(
+                        "type" to "READING_POST_NEW",
+                        "postId" to post.id.toString(),
+                        "leaderUserId" to leaderUserId.toString(),
+                    ),
+                )
+            }
+        }
+        expoPushClient.send(messages)
+        log.info("reading post push dispatched — leader={} post={} followers={} messages={}",
+            leaderUserId, post.id, targets.size, messages.size)
     }
 
     private fun generateInviteCode(): String {
