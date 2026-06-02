@@ -51,6 +51,9 @@ class ReadingService(
         return email in adminEmails
     }
 
+    /** 리더가 될 수 있는 권한이 있는지 (현재는 운영자 목록 기준). 앱의 '리더 되기' 노출 판단용. */
+    fun canLead(userId: UUID): Boolean = isAdmin(userId)
+
     // ─── 리더 ────────────────────────────────────────────────────────────────
     /** 리더 신청. 이미 있으면 기존 반환. 운영자는 즉시 APPROVED. */
     fun applyForLeader(userId: UUID, displayName: String, bio: String): Leader {

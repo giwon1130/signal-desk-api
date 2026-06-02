@@ -18,6 +18,11 @@ data class SubscribeRequest(
     @field:NotBlank val inviteCode: String,
 )
 
+/** 리더 자격 — 권한 있는 계정만 '리더 되기' 노출. */
+data class EligibilityResponse(
+    val canLead: Boolean,
+)
+
 data class DetectRequest(
     @field:NotBlank val body: String,
 )

@@ -49,6 +49,15 @@ class ReadingController(
         return ApiResponse(true, LeaderResponse.from(leader, service.followerCount(userId), includeCode = true))
     }
 
+    /** 리더 자격 — 권한 있는 계정만 '리더 되기' 노출(앱). */
+    @GetMapping("/eligibility")
+    fun eligibility(
+        @RequestHeader("Authorization", required = false) auth: String?,
+    ): ApiResponse<EligibilityResponse> {
+        val userId = requireUserId(auth)
+        return ApiResponse(true, EligibilityResponse(canLead = service.canLead(userId)))
+    }
+
     /** 내 리더 프로필 (없으면 null). */
     @GetMapping("/leader/me")
     fun myLeader(
