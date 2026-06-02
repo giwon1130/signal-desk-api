@@ -1,11 +1,14 @@
 package com.giwon.signaldesk.features.media.application
 
 import com.giwon.signaldesk.features.disclosure.application.DisclosureSeenRepository
+import com.giwon.signaldesk.features.events.application.FinnhubClient
 import com.giwon.signaldesk.features.events.application.MarketEventService
 import com.giwon.signaldesk.features.market.application.CboeVixClient
 import com.giwon.signaldesk.features.market.application.FredIndexClient
 import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
+import com.giwon.signaldesk.features.market.application.KrxOfficialClient
 import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
+import com.giwon.signaldesk.features.market.application.TopMoversService
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushRepository
@@ -42,6 +45,9 @@ class MorningBriefService(
     private val fredIndexClient: FredIndexClient,
     private val newsRssClient: GoogleNewsRssClient,
     private val investorRankClient: NaverInvestorRankClient,
+    private val krxOfficialClient: KrxOfficialClient,
+    private val topMoversService: TopMoversService,
+    private val finnhubClient: FinnhubClient,
     private val geminiClient: GeminiClient,
     private val marketEventService: MarketEventService,
     private val disclosureSeenRepository: DisclosureSeenRepository,
@@ -82,6 +88,9 @@ class MorningBriefService(
         val headlinesF = supplyAsync { newsRssClient.fetchMarketNews() }
         val eventsF = supplyAsync { marketEventService.upcoming(3) }
         val flowF = supplyAsync { investorRankClient.fetchFlowSnapshot(limit = 7) }
+        val krMarketF = supplyAsync { krxOfficialClient.loadKoreaMarketSection() }
+        val krMoversF = supplyAsync { topMoversService.fetchTopMovers(5) }
+        val earningsF = supplyAsync { finnhubClient.fetchEarningsCalendar(today.toString(), today.toString()) }
 
         val vix = vixF.join()
         val indices = indicesF.join()
@@ -89,6 +98,11 @@ class MorningBriefService(
         val headlines = headlinesF.join() ?: emptyList()
         val upcomingEvents = eventsF.join() ?: emptyList()
         val investorFlow = flowF.join()
+        val krMarket = krMarketF.join()
+        val krMovers = krMoversF.join()
+        val krGainers = krMovers?.let { (it.kospi.gainers + it.kosdaq.gainers).sortedByDescending { m -> m.changeRate }.take(5) } ?: emptyList()
+        val krLosers = krMovers?.let { (it.kospi.losers + it.kosdaq.losers).sortedBy { m -> m.changeRate }.take(5) } ?: emptyList()
+        val earningsSymbols = earningsF.join()?.map { it.symbol }?.distinct() ?: emptyList()
 
         val disclosureTitles = matchedDisclosures.map { "[${it.corpName}] ${it.reportNm}" }
         val analysis = runCatching {
@@ -97,6 +111,8 @@ class MorningBriefService(
                 disclosureTitles = disclosureTitles,
                 investorFlow = investorFlow,
                 upcomingEvents = upcomingEvents,
+                krMarket = krMarket, krGainers = krGainers, krLosers = krLosers,
+                earningsSymbols = earningsSymbols,
             )
         }.getOrElse {
             log.warn("MorningBrief Gemini call failed", it)

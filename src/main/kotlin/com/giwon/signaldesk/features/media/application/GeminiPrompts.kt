@@ -6,6 +6,8 @@ import com.giwon.signaldesk.features.market.application.InvestorFlowSnapshot
 import com.giwon.signaldesk.features.market.application.InvestorRankItem
 import com.giwon.signaldesk.features.market.application.MacroSnapshot
 import com.giwon.signaldesk.features.market.application.MarketNews
+import com.giwon.signaldesk.features.market.application.MarketSection
+import com.giwon.signaldesk.features.market.application.TopMover
 import com.giwon.signaldesk.features.market.application.UsIndicesSnapshot
 import com.giwon.signaldesk.features.market.application.VixSnapshot
 import com.giwon.signaldesk.features.market.application.YahooQuote
@@ -64,14 +66,23 @@ $eventsBlock
         disclosureTitles: List<String>,
         investorFlow: InvestorFlowSnapshot?,
         upcomingEvents: List<MarketEvent>,
+        krMarket: MarketSection? = null,
+        krGainers: List<TopMover> = emptyList(),
+        krLosers: List<TopMover> = emptyList(),
+        earningsSymbols: List<String> = emptyList(),
     ): String {
         val capped = headlines.take(20)
         val headlineLines = capped.joinToString("\n") { n -> "- [${n.source}] ${n.title}" }
+        val koreaBlock = koreaIndexBlock(krMarket)
+        val moversBlock = krMoversBlock(krGainers, krLosers)
         val macroBlock = macroBlock(macro)
         val flowBlock = investorFlowBlock(investorFlow)
         val disclosureBlock = if (disclosureTitles.isNotEmpty()) {
             val lines = disclosureTitles.take(15).joinToString("\n") { "- $it" }
             "\n            === 사용자 보유/관심 종목의 어젯밤 ~ 오늘 아침 공시 (${disclosureTitles.size}건) ===\n            $lines"
+        } else ""
+        val earningsBlock = if (earningsSymbols.isNotEmpty()) {
+            "\n            === 오늘 미국 실적 발표 ===\n            ${earningsSymbols.take(15).joinToString(", ")}\n"
         } else ""
         val eventsBlock = if (upcomingEvents.isNotEmpty()) {
             val lines = upcomingEvents.take(5).joinToString("\n") { e ->
@@ -84,14 +95,14 @@ $eventsBlock
         return """
             당신은 한국 주식 투자 전문 분석가입니다.
             지금은 한국 장 시작 30분 전(08:30 KST). 한국 개인 투자자가 '오늘 장을 어떻게 대응할지'
-            준비할 수 있도록 야간 미국장 결과 + 한국 뉴스 + 보유/관심 종목 공시를 종합해 브리핑하세요.
-            모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요.
+            준비할 수 있도록 야간 미국장 결과 + 전일 한국 지수·수급 + 한국 뉴스 + 보유/관심 종목 공시를 종합해 브리핑하세요.
+            모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요. 막연한 표현보다 실제 수치(지수 등락률·금리·환율)를 근거로 쓰세요.
 
             === 야간 미국장 ===
             ${vixLine(vix)}
             ${nasdaqLine(indices)}
             ${sp500Line(indices)}
-$macroBlock$flowBlock$disclosureBlock$eventsBlock
+$koreaBlock$moversBlock$macroBlock$flowBlock$disclosureBlock$earningsBlock$eventsBlock
             === 오늘 한국·미국 시장 뉴스 헤드라인 (${capped.size}건) ===
             $headlineLines
 
@@ -117,9 +128,14 @@ $macroBlock$flowBlock$disclosureBlock$eventsBlock
         headlines: List<MarketNews>,
         investorFlow: InvestorFlowSnapshot?,
         upcomingEvents: List<MarketEvent>,
+        krMarket: MarketSection? = null,
+        krGainers: List<TopMover> = emptyList(),
+        krLosers: List<TopMover> = emptyList(),
     ): String {
         val capped = headlines.take(20)
         val headlineLines = capped.joinToString("\n") { n -> "- [${n.source}] ${n.title}" }
+        val koreaBlock = koreaIndexBlock(krMarket)
+        val moversBlock = krMoversBlock(krGainers, krLosers)
         val macroBlock = macroBlock(macro)
         val flowBlock = investorFlowBlock(investorFlow)
         val eventsBlock = if (upcomingEvents.isNotEmpty()) {
@@ -154,7 +170,7 @@ $macroBlock$flowBlock$disclosureBlock$eventsBlock
             ${vixLine(vix)}
             ${nasdaqLine(indices)}
             ${sp500Line(indices)}
-$macroBlock$flowBlock$eventsBlock
+$koreaBlock$moversBlock$macroBlock$flowBlock$eventsBlock
             === 오늘 한국·미국 시장 뉴스 헤드라인 (${capped.size}건) ===
             $headlineLines
 
@@ -367,14 +383,41 @@ $gainersBlock$losersBlock$earningsBlock
         return "\n            === 어제 수급 상위 ===\n            ${parts.joinToString("\n            ")}\n"
     }
 
+    /** 한국 지수(KRX) — 코스피·코스닥 레벨·등락률. krMarket.indices 그대로. */
+    private fun koreaIndexBlock(krMarket: MarketSection?): String {
+        if (krMarket == null || krMarket.indices.isEmpty()) return ""
+        val lines = krMarket.indices.joinToString("\n            ") {
+            "- ${it.label}: ${"%.2f".format(it.value)} (${"%+.2f".format(it.changeRate)}%)"
+        }
+        return "\n            === 한국 지수 (KRX) ===\n            $lines\n"
+    }
+
+    /** 한국 급등/급락 종목 — 오늘 실제 변동률 상위. */
+    private fun krMoversBlock(gainers: List<TopMover>, losers: List<TopMover>): String {
+        fun line(label: String, items: List<TopMover>) =
+            if (items.isEmpty()) null
+            else "- $label: ${items.take(5).joinToString(", ") { "${it.name}(${"%+.1f".format(it.changeRate)}%)" }}"
+        val parts = listOfNotNull(line("급등", gainers), line("급락", losers))
+        if (parts.isEmpty()) return ""
+        return "\n            === 한국 급등락 종목 (오늘) ===\n            ${parts.joinToString("\n            ")}\n"
+    }
+
     private fun macroBlock(macro: MacroSnapshot?): String {
         if (macro == null) return ""
         val lines = buildList {
             macro.cpi?.let { add("- CPI: ${"%.1f".format(it.currentValue)} (전월 대비 ${"%+.2f".format(it.changeRate)}%)") }
             macro.fedFundsRate?.let { add("- Fed Funds Rate: ${"%.2f".format(it.currentValue)}% (변화 ${"%+.2f".format(it.changeRate)}%p)") }
-            macro.usdKrw?.let { add("- USD/KRW: ${"%.1f".format(it.currentValue)} (변화 ${"%+.2f".format(it.changeRate)}%)") }
-            macro.treasury10y?.let { add("- 10년물 국채: ${"%.2f".format(it.currentValue)}% (${"%+.2f".format(it.changeRate)}%p)") }
+            macro.usdKrw?.let { add("- USD/KRW(환율): ${"%.1f".format(it.currentValue)} (변화 ${"%+.2f".format(it.changeRate)}%)") }
+            macro.treasury2y?.let { add("- 미국 2년물 국채: ${"%.2f".format(it.currentValue)}% (${"%+.2f".format(it.changeRate)}%p)") }
+            macro.treasury10y?.let { add("- 미국 10년물 국채: ${"%.2f".format(it.currentValue)}% (${"%+.2f".format(it.changeRate)}%p)") }
+            // 장단기 금리차(10Y-2Y) — 마이너스면 경기 침체 신호로 해석.
+            if (macro.treasury10y != null && macro.treasury2y != null) {
+                val spread = macro.treasury10y.currentValue - macro.treasury2y.currentValue
+                add("- 미국 장단기 금리차(10Y-2Y): ${"%+.2f".format(spread)}%p${if (spread < 0) " (역전 — 침체 경계)" else ""}")
+            }
+            macro.krTreasury10y?.let { add("- 한국 10년물 국채: ${"%.2f".format(it.currentValue)}% (${"%+.2f".format(it.changeRate)}%p)") }
             macro.wti?.let { add("- WTI 유가: ${"%.1f".format(it.currentValue)} (${"%+.2f".format(it.changeRate)}%)") }
+            macro.gold?.let { add("- 금 시세: ${"%.1f".format(it.currentValue)} (${"%+.2f".format(it.changeRate)}%)") }
         }
         if (lines.isEmpty()) return ""
         return "\n            === 매크로 지표 ===\n            ${lines.joinToString("\n            ")}\n"

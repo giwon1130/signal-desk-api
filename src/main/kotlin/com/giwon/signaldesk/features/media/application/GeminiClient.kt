@@ -7,6 +7,8 @@ import com.giwon.signaldesk.features.events.application.MarketEvent
 import com.giwon.signaldesk.features.market.application.InvestorFlowSnapshot
 import com.giwon.signaldesk.features.market.application.MacroSnapshot
 import com.giwon.signaldesk.features.market.application.MarketNews
+import com.giwon.signaldesk.features.market.application.MarketSection
+import com.giwon.signaldesk.features.market.application.TopMover
 import com.giwon.signaldesk.features.market.application.UsIndicesSnapshot
 import com.giwon.signaldesk.features.market.application.VixSnapshot
 import com.giwon.signaldesk.features.market.application.YahooQuote
@@ -86,8 +88,15 @@ class GeminiClient(
         disclosureTitles: List<String>,
         investorFlow: InvestorFlowSnapshot? = null,
         upcomingEvents: List<MarketEvent> = emptyList(),
+        krMarket: MarketSection? = null,
+        krGainers: List<TopMover> = emptyList(),
+        krLosers: List<TopMover> = emptyList(),
+        earningsSymbols: List<String> = emptyList(),
     ): MarketInsightAnalysis? = callInsight(
-        GeminiPrompts.morningBrief(vix, indices, macro, headlines, disclosureTitles, investorFlow, upcomingEvents),
+        GeminiPrompts.morningBrief(
+            vix, indices, macro, headlines, disclosureTitles, investorFlow, upcomingEvents,
+            krMarket, krGainers, krLosers, earningsSymbols,
+        ),
     )
 
     /** KR 장중/마감 브리프 — slot="MIDDAY"|"CLOSE". 모닝 브리프와 같은 입력을 KR 관점으로. */
@@ -99,8 +108,14 @@ class GeminiClient(
         headlines: List<MarketNews>,
         investorFlow: InvestorFlowSnapshot? = null,
         upcomingEvents: List<MarketEvent> = emptyList(),
+        krMarket: MarketSection? = null,
+        krGainers: List<TopMover> = emptyList(),
+        krLosers: List<TopMover> = emptyList(),
     ): MarketInsightAnalysis? = callInsight(
-        GeminiPrompts.intradayBrief(slot, vix, indices, macro, headlines, investorFlow, upcomingEvents),
+        GeminiPrompts.intradayBrief(
+            slot, vix, indices, macro, headlines, investorFlow, upcomingEvents,
+            krMarket, krGainers, krLosers,
+        ),
     )
 
     /**

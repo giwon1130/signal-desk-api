@@ -4,7 +4,9 @@ import com.giwon.signaldesk.features.events.application.MarketEventService
 import com.giwon.signaldesk.features.market.application.CboeVixClient
 import com.giwon.signaldesk.features.market.application.FredIndexClient
 import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
+import com.giwon.signaldesk.features.market.application.KrxOfficialClient
 import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
+import com.giwon.signaldesk.features.market.application.TopMoversService
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushRepository
@@ -35,6 +37,8 @@ class IntradayBriefService(
     private val fredIndexClient: FredIndexClient,
     private val newsRssClient: GoogleNewsRssClient,
     private val investorRankClient: NaverInvestorRankClient,
+    private val krxOfficialClient: KrxOfficialClient,
+    private val topMoversService: TopMoversService,
     private val geminiClient: GeminiClient,
     private val marketEventService: MarketEventService,
     private val repository: MediaSummaryRepository,
@@ -79,6 +83,8 @@ class IntradayBriefService(
         val headlinesF = supplyAsync { newsRssClient.fetchMarketNews() }
         val eventsF = supplyAsync { marketEventService.upcoming(3) }
         val flowF = supplyAsync { investorRankClient.fetchFlowSnapshot(limit = 7) }
+        val krMarketF = supplyAsync { krxOfficialClient.loadKoreaMarketSection() }
+        val krMoversF = supplyAsync { topMoversService.fetchTopMovers(5) }
 
         val vix = vixF.join()
         val indices = indicesF.join()
@@ -86,12 +92,17 @@ class IntradayBriefService(
         val headlines = headlinesF.join() ?: emptyList()
         val upcomingEvents = eventsF.join() ?: emptyList()
         val investorFlow = flowF.join()
+        val krMarket = krMarketF.join()
+        val krMovers = krMoversF.join()
+        val krGainers = krMovers?.let { (it.kospi.gainers + it.kosdaq.gainers).sortedByDescending { m -> m.changeRate }.take(5) } ?: emptyList()
+        val krLosers = krMovers?.let { (it.kospi.losers + it.kosdaq.losers).sortedBy { m -> m.changeRate }.take(5) } ?: emptyList()
 
         val analysis = runCatching {
             geminiClient.summarizeIntradayBrief(
                 slot = slot.name,
                 vix = vix, indices = indices, macro = macro, headlines = headlines,
                 investorFlow = investorFlow, upcomingEvents = upcomingEvents,
+                krMarket = krMarket, krGainers = krGainers, krLosers = krLosers,
             )
         }.getOrElse {
             log.warn("IntradayBrief({}) Gemini call failed", slot, it)

@@ -38,10 +38,19 @@ class FredIndexClient(
         val cpi = runCatching { fetchSeries("CPIAUCSL") }.getOrNull()
         val fed = runCatching { fetchSeries("FEDFUNDS") }.getOrNull()
         val usdKrw = runCatching { fetchSeries("DEXKOUS") }.getOrNull()
+        val treasury2 = runCatching { fetchSeries("DGS2") }.getOrNull()
         val treasury10 = runCatching { fetchSeries("DGS10") }.getOrNull()
+        val krTreasury10 = runCatching { fetchSeries("IRLTLT01KRM156N") }.getOrNull()
         val wti = runCatching { fetchSeries("WTISPLC") }.getOrNull()
-        if (cpi == null && fed == null && usdKrw == null && treasury10 == null && wti == null) return null
-        return MacroSnapshot(cpi = cpi, fedFundsRate = fed, usdKrw = usdKrw, treasury10y = treasury10, wti = wti)
+        val gold = runCatching { fetchSeries("GOLDAMGBD228NLBM") }.getOrNull()
+        if (cpi == null && fed == null && usdKrw == null && treasury2 == null && treasury10 == null &&
+            krTreasury10 == null && wti == null && gold == null
+        ) return null
+        return MacroSnapshot(
+            cpi = cpi, fedFundsRate = fed, usdKrw = usdKrw,
+            treasury2y = treasury2, treasury10y = treasury10, krTreasury10y = krTreasury10,
+            wti = wti, gold = gold,
+        )
     }
 
     private fun fetchSeries(seriesId: String): FredSeriesSnapshot? {
@@ -141,6 +150,9 @@ data class MacroSnapshot(
     val cpi: FredSeriesSnapshot?,
     val fedFundsRate: FredSeriesSnapshot?,
     val usdKrw: FredSeriesSnapshot?,
+    val treasury2y: FredSeriesSnapshot? = null,
     val treasury10y: FredSeriesSnapshot?,
+    val krTreasury10y: FredSeriesSnapshot? = null,
     val wti: FredSeriesSnapshot?,
+    val gold: FredSeriesSnapshot? = null,
 )
