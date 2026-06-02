@@ -108,6 +108,14 @@ class MorningBriefService(
         val global = globalF.join() ?: emptyList()
         val earningsSymbols = earningsF.join()?.map { it.symbol }?.distinct() ?: emptyList()
 
+        // 운영 관측 — 어떤 데이터 소스가 채워졌는지 한 줄로. 브리프 품질 저하 진단용.
+        log.info(
+            "MorningBrief sources: vix={}, usIdx={}, macro={}, krMarket={}, krMovers={}+{}, global={}, earnings={}, flow={}, headlines={}, events={}, disclosures={}",
+            vix != null, indices != null, macro != null, krMarket != null,
+            krGainers.size, krLosers.size, global.size, earningsSymbols.size,
+            investorFlow != null, headlines.size, upcomingEvents.size, matchedDisclosures.size,
+        )
+
         val disclosureTitles = matchedDisclosures.map { "[${it.corpName}] ${it.reportNm}" }
         val analysis = runCatching {
             geminiClient.summarizeMorningBrief(

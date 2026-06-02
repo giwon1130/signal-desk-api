@@ -101,6 +101,13 @@ class IntradayBriefService(
         val krLosers = krMovers?.let { (it.kospi.losers + it.kosdaq.losers).sortedBy { m -> m.changeRate }.take(5) } ?: emptyList()
         val global = globalF.join() ?: emptyList()
 
+        // 운영 관측 — 데이터 소스 충족 현황 한 줄.
+        log.info(
+            "IntradayBrief({}) sources: vix={}, usIdx={}, macro={}, krMarket={}, krMovers={}+{}, global={}, flow={}, headlines={}, events={}",
+            slot, vix != null, indices != null, macro != null, krMarket != null,
+            krGainers.size, krLosers.size, global.size, investorFlow != null, headlines.size, upcomingEvents.size,
+        )
+
         val analysis = runCatching {
             geminiClient.summarizeIntradayBrief(
                 slot = slot.name,
