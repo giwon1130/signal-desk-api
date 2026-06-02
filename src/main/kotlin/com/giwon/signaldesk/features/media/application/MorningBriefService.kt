@@ -9,6 +9,7 @@ import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
 import com.giwon.signaldesk.features.market.application.KrxOfficialClient
 import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
 import com.giwon.signaldesk.features.market.application.TopMoversService
+import com.giwon.signaldesk.features.market.application.YahooQuoteClient
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushRepository
@@ -47,6 +48,7 @@ class MorningBriefService(
     private val investorRankClient: NaverInvestorRankClient,
     private val krxOfficialClient: KrxOfficialClient,
     private val topMoversService: TopMoversService,
+    private val yahooQuoteClient: YahooQuoteClient,
     private val finnhubClient: FinnhubClient,
     private val geminiClient: GeminiClient,
     private val marketEventService: MarketEventService,
@@ -90,6 +92,7 @@ class MorningBriefService(
         val flowF = supplyAsync { investorRankClient.fetchFlowSnapshot(limit = 7) }
         val krMarketF = supplyAsync { krxOfficialClient.loadKoreaMarketSection() }
         val krMoversF = supplyAsync { topMoversService.fetchTopMovers(5) }
+        val globalF = supplyAsync { yahooQuoteClient.fetchIndices(YahooQuoteClient.GLOBAL_INDICES) }
         val earningsF = supplyAsync { finnhubClient.fetchEarningsCalendar(today.toString(), today.toString()) }
 
         val vix = vixF.join()
@@ -102,6 +105,7 @@ class MorningBriefService(
         val krMovers = krMoversF.join()
         val krGainers = krMovers?.let { (it.kospi.gainers + it.kosdaq.gainers).sortedByDescending { m -> m.changeRate }.take(5) } ?: emptyList()
         val krLosers = krMovers?.let { (it.kospi.losers + it.kosdaq.losers).sortedBy { m -> m.changeRate }.take(5) } ?: emptyList()
+        val global = globalF.join() ?: emptyList()
         val earningsSymbols = earningsF.join()?.map { it.symbol }?.distinct() ?: emptyList()
 
         val disclosureTitles = matchedDisclosures.map { "[${it.corpName}] ${it.reportNm}" }
@@ -112,7 +116,7 @@ class MorningBriefService(
                 investorFlow = investorFlow,
                 upcomingEvents = upcomingEvents,
                 krMarket = krMarket, krGainers = krGainers, krLosers = krLosers,
-                earningsSymbols = earningsSymbols,
+                earningsSymbols = earningsSymbols, global = global,
             )
         }.getOrElse {
             log.warn("MorningBrief Gemini call failed", it)

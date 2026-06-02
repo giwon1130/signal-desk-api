@@ -2,6 +2,7 @@ package com.giwon.signaldesk.features.media.application
 
 import com.giwon.signaldesk.features.ai.application.PickCandidate
 import com.giwon.signaldesk.features.events.application.MarketEvent
+import com.giwon.signaldesk.features.market.application.GlobalIndex
 import com.giwon.signaldesk.features.market.application.InvestorFlowSnapshot
 import com.giwon.signaldesk.features.market.application.InvestorRankItem
 import com.giwon.signaldesk.features.market.application.MacroSnapshot
@@ -70,9 +71,11 @@ $eventsBlock
         krGainers: List<TopMover> = emptyList(),
         krLosers: List<TopMover> = emptyList(),
         earningsSymbols: List<String> = emptyList(),
+        global: List<GlobalIndex> = emptyList(),
     ): String {
         val capped = headlines.take(20)
         val headlineLines = capped.joinToString("\n") { n -> "- [${n.source}] ${n.title}" }
+        val globalBlock = globalIndexBlock(global)
         val koreaBlock = koreaIndexBlock(krMarket)
         val moversBlock = krMoversBlock(krGainers, krLosers)
         val macroBlock = macroBlock(macro)
@@ -102,7 +105,7 @@ $eventsBlock
             ${vixLine(vix)}
             ${nasdaqLine(indices)}
             ${sp500Line(indices)}
-$koreaBlock$moversBlock$macroBlock$flowBlock$disclosureBlock$earningsBlock$eventsBlock
+$globalBlock$koreaBlock$moversBlock$macroBlock$flowBlock$disclosureBlock$earningsBlock$eventsBlock
             === 오늘 한국·미국 시장 뉴스 헤드라인 (${capped.size}건) ===
             $headlineLines
 
@@ -131,9 +134,11 @@ $koreaBlock$moversBlock$macroBlock$flowBlock$disclosureBlock$earningsBlock$event
         krMarket: MarketSection? = null,
         krGainers: List<TopMover> = emptyList(),
         krLosers: List<TopMover> = emptyList(),
+        global: List<GlobalIndex> = emptyList(),
     ): String {
         val capped = headlines.take(20)
         val headlineLines = capped.joinToString("\n") { n -> "- [${n.source}] ${n.title}" }
+        val globalBlock = globalIndexBlock(global)
         val koreaBlock = koreaIndexBlock(krMarket)
         val moversBlock = krMoversBlock(krGainers, krLosers)
         val macroBlock = macroBlock(macro)
@@ -170,7 +175,7 @@ $koreaBlock$moversBlock$macroBlock$flowBlock$disclosureBlock$earningsBlock$event
             ${vixLine(vix)}
             ${nasdaqLine(indices)}
             ${sp500Line(indices)}
-$koreaBlock$moversBlock$macroBlock$flowBlock$eventsBlock
+$globalBlock$koreaBlock$moversBlock$macroBlock$flowBlock$eventsBlock
             === 오늘 한국·미국 시장 뉴스 헤드라인 (${capped.size}건) ===
             $headlineLines
 
@@ -381,6 +386,15 @@ $gainersBlock$losersBlock$earningsBlock
         )
         if (parts.isEmpty()) return ""
         return "\n            === 어제 수급 상위 ===\n            ${parts.joinToString("\n            ")}\n"
+    }
+
+    /** 글로벌 지수·선물 — 닛케이·항셍·미국 선물 등 야간/아시아 방향성. */
+    private fun globalIndexBlock(global: List<GlobalIndex>): String {
+        if (global.isEmpty()) return ""
+        val lines = global.joinToString("\n            ") {
+            "- ${it.label}: ${"%.2f".format(it.value)} (${"%+.2f".format(it.changeRate)}%)"
+        }
+        return "\n            === 글로벌 지수·선물 ===\n            $lines\n"
     }
 
     /** 한국 지수(KRX) — 코스피·코스닥 레벨·등락률. krMarket.indices 그대로. */

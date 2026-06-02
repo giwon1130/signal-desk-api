@@ -6,6 +6,7 @@ import com.giwon.signaldesk.features.ai.application.PickCandidate
 import com.giwon.signaldesk.features.events.application.MarketEvent
 import com.giwon.signaldesk.features.market.application.InvestorFlowSnapshot
 import com.giwon.signaldesk.features.market.application.MacroSnapshot
+import com.giwon.signaldesk.features.market.application.GlobalIndex
 import com.giwon.signaldesk.features.market.application.MarketNews
 import com.giwon.signaldesk.features.market.application.MarketSection
 import com.giwon.signaldesk.features.market.application.TopMover
@@ -92,10 +93,11 @@ class GeminiClient(
         krGainers: List<TopMover> = emptyList(),
         krLosers: List<TopMover> = emptyList(),
         earningsSymbols: List<String> = emptyList(),
+        global: List<GlobalIndex> = emptyList(),
     ): MarketInsightAnalysis? = callInsight(
         GeminiPrompts.morningBrief(
             vix, indices, macro, headlines, disclosureTitles, investorFlow, upcomingEvents,
-            krMarket, krGainers, krLosers, earningsSymbols,
+            krMarket, krGainers, krLosers, earningsSymbols, global,
         ),
     )
 
@@ -111,10 +113,11 @@ class GeminiClient(
         krMarket: MarketSection? = null,
         krGainers: List<TopMover> = emptyList(),
         krLosers: List<TopMover> = emptyList(),
+        global: List<GlobalIndex> = emptyList(),
     ): MarketInsightAnalysis? = callInsight(
         GeminiPrompts.intradayBrief(
             slot, vix, indices, macro, headlines, investorFlow, upcomingEvents,
-            krMarket, krGainers, krLosers,
+            krMarket, krGainers, krLosers, global,
         ),
     )
 

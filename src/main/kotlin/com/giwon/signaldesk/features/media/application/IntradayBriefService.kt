@@ -7,6 +7,7 @@ import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
 import com.giwon.signaldesk.features.market.application.KrxOfficialClient
 import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
 import com.giwon.signaldesk.features.market.application.TopMoversService
+import com.giwon.signaldesk.features.market.application.YahooQuoteClient
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushRepository
@@ -39,6 +40,7 @@ class IntradayBriefService(
     private val investorRankClient: NaverInvestorRankClient,
     private val krxOfficialClient: KrxOfficialClient,
     private val topMoversService: TopMoversService,
+    private val yahooQuoteClient: YahooQuoteClient,
     private val geminiClient: GeminiClient,
     private val marketEventService: MarketEventService,
     private val repository: MediaSummaryRepository,
@@ -85,6 +87,7 @@ class IntradayBriefService(
         val flowF = supplyAsync { investorRankClient.fetchFlowSnapshot(limit = 7) }
         val krMarketF = supplyAsync { krxOfficialClient.loadKoreaMarketSection() }
         val krMoversF = supplyAsync { topMoversService.fetchTopMovers(5) }
+        val globalF = supplyAsync { yahooQuoteClient.fetchIndices(YahooQuoteClient.GLOBAL_INDICES) }
 
         val vix = vixF.join()
         val indices = indicesF.join()
@@ -96,13 +99,14 @@ class IntradayBriefService(
         val krMovers = krMoversF.join()
         val krGainers = krMovers?.let { (it.kospi.gainers + it.kosdaq.gainers).sortedByDescending { m -> m.changeRate }.take(5) } ?: emptyList()
         val krLosers = krMovers?.let { (it.kospi.losers + it.kosdaq.losers).sortedBy { m -> m.changeRate }.take(5) } ?: emptyList()
+        val global = globalF.join() ?: emptyList()
 
         val analysis = runCatching {
             geminiClient.summarizeIntradayBrief(
                 slot = slot.name,
                 vix = vix, indices = indices, macro = macro, headlines = headlines,
                 investorFlow = investorFlow, upcomingEvents = upcomingEvents,
-                krMarket = krMarket, krGainers = krGainers, krLosers = krLosers,
+                krMarket = krMarket, krGainers = krGainers, krLosers = krLosers, global = global,
             )
         }.getOrElse {
             log.warn("IntradayBrief({}) Gemini call failed", slot, it)
