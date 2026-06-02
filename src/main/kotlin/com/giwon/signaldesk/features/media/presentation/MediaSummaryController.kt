@@ -35,6 +35,13 @@ class MediaSummaryController(
         return ApiResponse(true, latest)
     }
 
+    /** 최근 미디어 요약 N건 — 오늘 탭 브리프 카드 회전용 (모닝/이브닝 브리프·뉴스 종합 등 다양하게). */
+    @GetMapping("/summaries/recent")
+    fun getRecent(@RequestParam(defaultValue = "6") limit: Int): ApiResponse<List<MediaSummaryResponse>> {
+        val items = repository.findRecent(limit.coerceIn(1, 20)).map(MediaSummaryResponse::from)
+        return ApiResponse(true, items)
+    }
+
     /** 오늘의 모닝 브리프 (없으면 null). */
     @GetMapping("/morning-brief")
     fun getMorningBrief(): ApiResponse<MediaSummaryResponse?> {

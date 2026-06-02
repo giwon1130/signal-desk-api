@@ -47,6 +47,15 @@ internal object GeminiResponseParsing {
         )
     }
 
+    fun moverReasons(body: String, mapper: ObjectMapper): List<MoverReasonAnalysis> {
+        val payload = extractJson(body, mapper, label = "mover reasons") ?: return emptyList()
+        return payload["reasons"]?.mapNotNull { node ->
+            val ticker = node["ticker"]?.asText()?.trim().orEmpty()
+            val reason = node["reason"]?.asText()?.trim().orEmpty()
+            if (ticker.isBlank() || reason.isBlank()) null else MoverReasonAnalysis(ticker, reason)
+        } ?: emptyList()
+    }
+
     fun aiPicks(body: String, mapper: ObjectMapper): AiPicksAnalysis? {
         val payload = extractJson(body, mapper, label = "ai picks") ?: return null
         val picks = payload["picks"]?.mapNotNull { node ->

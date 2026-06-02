@@ -24,10 +24,10 @@ object MarketTradingDayBuilder {
         val nextLabel = "${koreanDayLabel(nextKrOpen.dayOfWeek)} ${nextKrOpen.toLocalDate()} 09:00 KST"
 
         val (headline, advice) = when {
-            krOpen || usOpen -> "장이 열려 있어 — 평소처럼 진행" to "오늘의 단타 픽 / 보유 모니터를 그대로 사용해도 OK"
-            isWeekend -> "주말 휴장 — 다음 거래일 준비 모드" to "신규 진입은 다음 개장 후. 오늘은 관심종목 정리, AI 로그 복기, 손절·익절 라인 재설정만 해."
-            isHoliday -> "오늘은 휴장일 — 시장 재개 전 정리" to "체결은 안 되니까 시나리오만 점검하고 다음 거래일 준비."
-            else -> "정규장 종료 — 시간외/다음날 준비" to "오늘 마감 결과를 보고 내일 진입 후보 1~2개만 추려두자."
+            krOpen || usOpen -> "장이 열려 있습니다 — 평소처럼 진행" to "오늘의 단타 픽 / 보유 모니터를 그대로 사용하셔도 됩니다."
+            isWeekend -> "주말 휴장 — 다음 거래일 준비 모드" to "신규 진입은 다음 개장 후입니다. 오늘은 관심종목 정리, AI 로그 복기, 손절·익절 라인 재설정만 해 주세요."
+            isHoliday -> "오늘은 휴장일 — 시장 재개 전 정리" to "체결은 되지 않으니 시나리오만 점검하고 다음 거래일을 준비해 주세요."
+            else -> "정규장 종료 — 시간외/다음날 준비" to "오늘 마감 결과를 보고 내일 진입 후보 1~2개만 추려두세요."
         }
 
         return TradingDayStatus(

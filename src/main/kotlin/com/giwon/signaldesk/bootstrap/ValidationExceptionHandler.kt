@@ -13,13 +13,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 import java.time.format.DateTimeParseException
 
 /** 인증 필요 → 401. */
-class UnauthorizedException(message: String = "로그인이 필요해요.") : RuntimeException(message)
+class UnauthorizedException(message: String = "로그인이 필요합니다.") : RuntimeException(message)
 
 /** 권한 없음 → 403. */
-class ForbiddenException(message: String = "권한이 없어요.") : RuntimeException(message)
+class ForbiddenException(message: String = "권한이 없습니다.") : RuntimeException(message)
 
 /** 리소스 없음 → 404. */
-class NotFoundException(message: String = "찾을 수 없어요.") : RuntimeException(message)
+class NotFoundException(message: String = "찾을 수 없습니다.") : RuntimeException(message)
 
 /**
  * 전역 예외 핸들러 — 클라이언트에 raw 500 / "Internal Server Error" 가 새지 않게 한다.
@@ -34,12 +34,12 @@ class NotFoundException(message: String = "찾을 수 없어요.") : RuntimeExce
 class ValidationExceptionHandler {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    private fun body(message: String?) = mapOf("error" to (message ?: "요청을 처리하지 못했어요."))
+    private fun body(message: String?) = mapOf("error" to (message ?: "요청을 처리하지 못했습니다."))
 
     // ─── 인증/권한 ───────────────────────────────────────────────────────────
     @ExceptionHandler(UnauthorizedException::class, JwtException::class, MissingRequestHeaderException::class)
     fun unauthorized(e: Exception): ResponseEntity<Map<String, String>> {
-        val msg = if (e is UnauthorizedException) e.message else "로그인이 필요해요."
+        val msg = if (e is UnauthorizedException) e.message else "로그인이 필요합니다."
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body(msg))
     }
 
@@ -61,20 +61,20 @@ class ValidationExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun beanValidation(e: MethodArgumentNotValidException): ResponseEntity<Map<String, String>> {
         val first = e.bindingResult.fieldErrors.firstOrNull()?.defaultMessage
-            ?: "입력값을 확인해줘."
+            ?: "입력값을 확인해 주세요."
         return ResponseEntity.badRequest().body(body(first))
     }
 
     @ExceptionHandler(ConstraintViolationException::class)
     fun constraint(e: ConstraintViolationException): ResponseEntity<Map<String, String>> {
-        val first = e.constraintViolations.firstOrNull()?.message ?: "입력값을 확인해줘."
+        val first = e.constraintViolations.firstOrNull()?.message ?: "입력값을 확인해 주세요."
         return ResponseEntity.badRequest().body(body(first))
     }
 
     @ExceptionHandler(HttpMessageNotReadableException::class, DateTimeParseException::class)
     fun malformed(e: Exception): ResponseEntity<Map<String, String>> {
         log.warn("request rejected (malformed): {}", e.message)
-        return ResponseEntity.badRequest().body(body("요청 형식이 올바르지 않아요."))
+        return ResponseEntity.badRequest().body(body("요청 형식이 올바르지 않습니다."))
     }
 
     // ─── 예상 못한 모든 것 → 500 (스택은 로그만, 사용자에겐 친절 메시지) ────────
@@ -82,6 +82,6 @@ class ValidationExceptionHandler {
     fun unexpected(e: Exception): ResponseEntity<Map<String, String>> {
         log.error("unhandled exception", e)
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(body("일시적인 오류예요. 잠시 후 다시 시도해 주세요."))
+            .body(body("일시적인 오류입니다. 잠시 후 다시 시도해 주세요."))
     }
 }

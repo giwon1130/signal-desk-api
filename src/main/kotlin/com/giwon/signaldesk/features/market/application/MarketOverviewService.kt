@@ -186,7 +186,7 @@ class MarketOverviewService(
                 koreaMarket = koreaMarket,
                 usMarket = buildUsMarket(vixSnapshot, usIndicesSnapshot, usBigtechQuotes, usMostActives),
                 briefing = DailyBriefing(
-                    headline = "오늘은 한국은 반도체, 미국은 빅테크가 중심이고, 과열 추격보다는 눌림 확인 후 진입이 맞아.",
+                    headline = "오늘은 한국은 반도체, 미국은 빅테크가 중심이고, 과열 추격보다는 눌림 확인 후 진입이 맞습니다.",
                     preMarket = listOf("한국/미국 관심 종목 각각 3개만 우선순위 설정", "KOSPI/KOSDAQ, NASDAQ/S&P 방향과 VIX 같이 확인", "외국인/기관 수급이 붙는 종목만 먼저 본다"),
                     afterMarket = listOf("오늘 AI 추천 종목이 실제로 얼마나 움직였는지 복기", "보유 종목 수익률과 수급 방향이 일치했는지 체크", "내일은 한국/미국 각 2종목만 남기고 나머지는 관심 해제")
                 ),

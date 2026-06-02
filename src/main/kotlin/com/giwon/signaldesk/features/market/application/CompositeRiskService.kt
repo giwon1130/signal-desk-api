@@ -143,10 +143,10 @@ class CompositeRiskService {
     private fun buildHeadline(score: Int, level: String, components: List<RiskComponent>): String {
         val driver = components.maxByOrNull { it.score }?.label ?: "복합 요인"
         return when {
-            score >= 8 -> "오늘 시장 위험도 $score/10 — $level. ${driver}가 가장 크게 자극 중이라 신규 진입은 신중하게."
-            score >= 6 -> "오늘 시장 위험도 $score/10 — $level. $driver 흐름을 보면서 대응해."
-            score >= 4 -> "오늘 시장 위험도 $score/10 — $level. 큰 충격 신호는 없지만 평소 페이스 유지."
-            else -> "오늘 시장 위험도 $score/10 — $level. 외부 위험 신호가 약한 차분한 구간이야."
+            score >= 8 -> "오늘 시장 위험도 $score/10 — $level. ${driver}가 가장 크게 자극 중이라 신규 진입은 신중하게 해 주세요."
+            score >= 6 -> "오늘 시장 위험도 $score/10 — $level. $driver 흐름을 보면서 대응해 주세요."
+            score >= 4 -> "오늘 시장 위험도 $score/10 — $level. 큰 충격 신호는 없지만 평소 페이스를 유지해 주세요."
+            else -> "오늘 시장 위험도 $score/10 — $level. 외부 위험 신호가 약한 차분한 구간입니다."
         }
     }
 
@@ -159,10 +159,10 @@ class CompositeRiskService {
         val watched = watchlist.size
         if (held == 0 && watched == 0) return null
         return when {
-            score >= 7 && held > 0 -> "보유 ${held}종목 — 위험도 높음. 손절 기준과 변동성 큰 종목 비중을 먼저 점검해."
-            score >= 7 -> "관심 ${watched}종목 — 위험도 높음. 신규 진입은 지표 진정 후로 미루는 게 안전해."
-            held > 0 -> "보유 ${held}종목 · 관심 ${watched}종목 — 위험도 보통 이하. 평소 모니터링 페이스 유지."
-            else -> "관심 ${watched}종목 — 위험도 보통 이하. 진입 후보를 차분히 좁혀둘 만한 구간이야."
+            score >= 7 && held > 0 -> "보유 ${held}종목 — 위험도 높음. 손절 기준과 변동성 큰 종목 비중을 먼저 점검해 주세요."
+            score >= 7 -> "관심 ${watched}종목 — 위험도 높음. 신규 진입은 지표 진정 후로 미루는 것이 안전합니다."
+            held > 0 -> "보유 ${held}종목 · 관심 ${watched}종목 — 위험도 보통 이하. 평소 모니터링 페이스를 유지해 주세요."
+            else -> "관심 ${watched}종목 — 위험도 보통 이하. 진입 후보를 차분히 좁혀둘 만한 구간입니다."
         }
     }
 

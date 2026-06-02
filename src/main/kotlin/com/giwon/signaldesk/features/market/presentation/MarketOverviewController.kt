@@ -4,6 +4,8 @@ import com.giwon.signaldesk.features.auth.application.AuthContext
 import com.giwon.signaldesk.features.market.application.MarketSectionsResponse
 import com.giwon.signaldesk.features.market.application.MarketSummaryResponse
 import com.giwon.signaldesk.features.market.application.MarketOverviewService
+import com.giwon.signaldesk.features.market.application.MoverReason
+import com.giwon.signaldesk.features.market.application.MoverReasonService
 import com.giwon.signaldesk.features.market.application.PortfolioResponse
 import com.giwon.signaldesk.features.market.application.AiRecommendationsResponse
 import com.giwon.signaldesk.features.market.application.TopMoversResponse
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController
 class MarketOverviewController(
     private val marketOverviewService: MarketOverviewService,
     private val topMoversService: TopMoversService,
+    private val moverReasonService: MoverReasonService,
     @Autowired(required = false) private val authContext: AuthContext? = null,
 ) {
     private fun userId(auth: String?) = authContext?.optionalUserId(auth)
@@ -59,6 +62,15 @@ class MarketOverviewController(
         @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "10") limit: Int,
     ): ApiResponse<TopMoversResponse> =
         ApiResponse(true, topMoversService.fetchTopMovers(limit.coerceIn(3, 30)))
+
+    /**
+     * 급등/급락 사유 — "왜 올랐나/내렸나".
+     *   GET /api/v1/market/top-movers/reasons
+     * 상위 급등락 종목별 한 줄 사유(뉴스 기반). 캐시되어 즉시 응답.
+     */
+    @GetMapping("/top-movers/reasons")
+    fun getMoverReasons(): ApiResponse<List<MoverReason>> =
+        ApiResponse(true, moverReasonService.reasons())
 }
 
 data class ApiResponse<T>(

@@ -40,7 +40,7 @@ class WatchAlertService {
                     category = "price",
                     market = item.market, ticker = item.ticker, name = item.name,
                     title = if (isPositive) "가격 변동 확대" else "하락 변동성 확대",
-                    note = "${item.name}이(가) ${formatSignedRate(item.changeRate)} 움직였어. 지금은 추격보다 뉴스 방향, 수급, 실험 지표가 같은 방향인지 먼저 보는 게 맞아.",
+                    note = "${item.name}이(가) ${formatSignedRate(item.changeRate)} 움직였습니다. 지금은 추격보다 뉴스 방향, 수급, 실험 지표가 같은 방향인지 먼저 보는 것이 맞습니다.",
                     score = (absoluteMove * 15).toInt().coerceIn(48, 96),
                     tags = listOf("관심종목", if (isPositive) "급등" else "급락", item.market),
                 )
@@ -53,7 +53,7 @@ class WatchAlertService {
                     category = "news",
                     market = item.market, ticker = item.ticker, name = item.name,
                     title = "관련 뉴스 집중",
-                    note = "${item.name} 관련 뉴스가 ${relatedNews.size}건 묶였어. 가격 반응과 뉴스 방향이 엇갈리면 오히려 경계가 맞아.",
+                    note = "${item.name} 관련 뉴스가 ${relatedNews.size}건 묶였습니다. 가격 반응과 뉴스 방향이 엇갈리면 오히려 경계가 맞습니다.",
                     score = impactScore,
                     tags = listOf("관심종목", "뉴스 ${relatedNews.size}건", relatedNews.first().source),
                 )
@@ -65,7 +65,7 @@ class WatchAlertService {
                     category = "ai",
                     market = item.market, ticker = item.ticker, name = item.name,
                     title = "AI 추천 논리 정렬",
-                    note = "${item.name}은(는) AI 추천 신뢰도 ${aiPick.confidence}, 기대수익률 ${"%.1f".format(aiPick.expectedReturnRate)}%야. 추천 근거와 오늘 뉴스 흐름이 같은 방향인지 확인하면 돼.",
+                    note = "${item.name}은(는) AI 추천 신뢰도 ${aiPick.confidence}, 기대수익률 ${"%.1f".format(aiPick.expectedReturnRate)}%입니다. 추천 근거와 오늘 뉴스 흐름이 같은 방향인지 확인해 보세요.",
                     score = ((aiPick.confidence * 0.7) + (aiPick.expectedReturnRate * 4)).toInt().coerceIn(52, 97),
                     tags = listOf("AI 추천", aiPick.basis.take(14), item.market),
                 )
@@ -83,7 +83,7 @@ class WatchAlertService {
                     category = "portfolio",
                     market = item.market, ticker = item.ticker, name = item.name,
                     title = if (favorable) "보유 수익 구간 점검" else "보유 손실 구간 점검",
-                    note = "${item.name} 보유 수익률이 ${formatSignedRate(portfolioPosition.profitRate)}야. 익절/손절 기준과 오늘 뉴스 흐름을 같이 확인해야 해.",
+                    note = "${item.name} 보유 수익률이 ${formatSignedRate(portfolioPosition.profitRate)}입니다. 익절/손절 기준과 오늘 뉴스 흐름을 같이 확인해 보세요.",
                     score = (kotlin.math.abs(portfolioPosition.profitRate) * 10).toInt().coerceIn(50, 94),
                     tags = listOf("보유종목", "${portfolioPosition.quantity}주", if (favorable) "익절체크" else "손실체크"),
                 )
@@ -94,7 +94,7 @@ class WatchAlertService {
                     severity = "medium", category = "signal",
                     market = item.market, ticker = item.ticker, name = item.name,
                     title = "실험 지표 과열 구간",
-                    note = "${hotSignals.joinToString(", ")}가 같이 높아졌어. 미국 관심종목은 야간 뉴스와 정책 노이즈 영향을 크게 받을 수 있어.",
+                    note = "${hotSignals.joinToString(", ")}가 같이 높아졌습니다. 미국 관심종목은 야간 뉴스와 정책 노이즈 영향을 크게 받을 수 있습니다.",
                     score = (60 + hotSignals.size * 8).coerceAtMost(90),
                     tags = listOf("실험지표", hotSignals.first(), item.market),
                 )
@@ -109,9 +109,9 @@ class WatchAlertService {
                         category = "technical",
                         market = item.market, ticker = item.ticker, name = item.name,
                         title = if (rsi >= 70) "RSI 과매수 구간" else "RSI 과매도 구간",
-                        note = "${item.name} RSI-14가 ${"%.1f".format(rsi)}야. " +
-                            if (rsi >= 70) "단기 과열 — 추격 진입보다 눌림/조정 대기가 유리해."
-                            else "과매도권 진입 — 뉴스 방향과 수급이 맞으면 단기 반등 가능성 체크해봐.",
+                        note = "${item.name} RSI-14가 ${"%.1f".format(rsi)}입니다. " +
+                            if (rsi >= 70) "단기 과열 — 추격 진입보다 눌림/조정 대기가 유리합니다."
+                            else "과매도권 진입 — 뉴스 방향과 수급이 맞으면 단기 반등 가능성을 체크해 보세요.",
                         score = (if (rsi >= 70) (rsi - 60) * 3 else (40 - rsi) * 3).toInt().coerceIn(48, 94),
                         tags = listOf("기술적", "RSI ${"%.0f".format(rsi)}", tech.rsiState ?: ""),
                     )
@@ -122,8 +122,8 @@ class WatchAlertService {
                         market = item.market, ticker = item.ticker, name = item.name,
                         title = if (tech.maSignal == "GOLDEN") "골든크로스 발생" else "데드크로스 발생",
                         note = "${item.name} MA5(${tech.ma5 ?: "-"}원)가 MA20(${tech.ma20 ?: "-"}원)을 " +
-                            if (tech.maSignal == "GOLDEN") "상향 돌파했어. 추세 전환 초기 구간일 수 있어."
-                            else "하향 돌파했어. 하락 추세 전환 신호 — 보유 중이라면 손절 기준 재확인해봐.",
+                            if (tech.maSignal == "GOLDEN") "상향 돌파했습니다. 추세 전환 초기 구간일 수 있습니다."
+                            else "하향 돌파했습니다. 하락 추세 전환 신호 — 보유 중이라면 손절 기준을 재확인해 보세요.",
                         score = if (tech.maSignal == "GOLDEN") 72 else 76,
                         tags = listOf("기술적", tech.maSignal, "이동평균"),
                     )
@@ -137,8 +137,8 @@ class WatchAlertService {
                         market = item.market, ticker = item.ticker, name = item.name,
                         title = if (isHigh) "52주 신고가 근접" else "52주 신저가 근접",
                         note = "${item.name}이(가) 52주 " +
-                            if (isHigh) "고가(${tech.week52High}원) 2% 이내야. 돌파 여부와 거래량 확인이 중요해."
-                            else "저가(${tech.week52Low}원) 3% 이내야. 추가 하락 리스크 점검 필요해.",
+                            if (isHigh) "고가(${tech.week52High}원) 2% 이내입니다. 돌파 여부와 거래량 확인이 중요합니다."
+                            else "저가(${tech.week52Low}원) 3% 이내입니다. 추가 하락 리스크 점검이 필요합니다.",
                         score = if (isHigh) 68 else 82,
                         tags = listOf("기술적", week52State, "52주"),
                     )
@@ -153,7 +153,7 @@ class WatchAlertService {
                     category = "volume",
                     market = item.market, ticker = item.ticker, name = item.name,
                     title = "거래량 급증",
-                    note = "${item.name} 오늘 거래량이 평균 대비 ${"%.1f".format(ratio)}배야. 거래량이 터질 때는 방향 확인이 먼저야 — 상승이면 모멘텀, 하락이면 매도 압력.",
+                    note = "${item.name} 오늘 거래량이 평균 대비 ${"%.1f".format(ratio)}배입니다. 거래량이 터질 때는 방향 확인이 먼저입니다 — 상승이면 모멘텀, 하락이면 매도 압력.",
                     score = (ratio * 12).toInt().coerceIn(60, 95),
                     tags = listOf("거래량", "${"%.1f".format(ratio)}배", item.market),
                 )
@@ -167,7 +167,7 @@ class WatchAlertService {
                             severity = "high", category = "target",
                             market = item.market, ticker = item.ticker, name = item.name,
                             title = "목표가 근접",
-                            note = "${item.name} 현재가(${item.price}원)가 목표가(${target}원) 3% 이내야. 익절 타이밍 검토해봐.",
+                            note = "${item.name} 현재가(${item.price}원)가 목표가(${target}원) 3% 이내입니다. 익절 타이밍을 검토해 보세요.",
                             score = 88,
                             tags = listOf("목표가", "${target}원", "익절체크"),
                         )
@@ -179,7 +179,7 @@ class WatchAlertService {
                             severity = "high", category = "target",
                             market = item.market, ticker = item.ticker, name = item.name,
                             title = "손절가 근접",
-                            note = "${item.name} 현재가(${item.price}원)가 손절가(${stopLoss}원) 3% 이내야. 손절 실행 여부 즉시 판단해야 해.",
+                            note = "${item.name} 현재가(${item.price}원)가 손절가(${stopLoss}원) 3% 이내입니다. 손절 실행 여부를 즉시 판단해 주세요.",
                             score = 93,
                             tags = listOf("손절가", "${stopLoss}원", "리스크"),
                         )
@@ -216,7 +216,7 @@ class WatchAlertService {
                     category = "concentration",
                     market = position.market, ticker = position.ticker, name = position.name,
                     title = "포트폴리오 집중도 경고",
-                    note = "${position.name}이(가) 포트폴리오의 ${"%.1f".format(weight)}%를 차지해. 단일 종목 집중은 리스크가 커 — 분산 또는 비중 축소를 고려해봐.",
+                    note = "${position.name}이(가) 포트폴리오의 ${"%.1f".format(weight)}%를 차지합니다. 단일 종목 집중은 리스크가 큽니다 — 분산 또는 비중 축소를 고려해 보세요.",
                     score = (weight * 1.2).toInt().coerceIn(60, 95),
                     tags = listOf("집중도", "${"%.0f".format(weight)}%", "리밸런싱"),
                 )
@@ -231,7 +231,7 @@ class WatchAlertService {
                     severity = "medium", category = "concentration",
                     market = market, ticker = "PORTFOLIO", name = "포트폴리오",
                     title = "$market 시장 편중",
-                    note = "포트폴리오의 ${"%.1f".format(marketWeight)}%가 $market 시장에 집중돼 있어. 다른 시장 분산 비중 검토가 필요해.",
+                    note = "포트폴리오의 ${"%.1f".format(marketWeight)}%가 $market 시장에 집중돼 있습니다. 다른 시장 분산 비중 검토가 필요합니다.",
                     score = (marketWeight * 0.8).toInt().coerceIn(55, 80),
                     tags = listOf("시장편중", market, "${"%.0f".format(marketWeight)}%"),
                 )

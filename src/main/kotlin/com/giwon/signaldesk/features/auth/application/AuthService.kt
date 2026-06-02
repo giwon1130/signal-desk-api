@@ -54,8 +54,8 @@ class AuthService(
     // ── 이메일/비밀번호 ────────────────────────────────────────────────────────
 
     fun signup(email: String, password: String, nickname: String): AuthResult {
-        if (userRepo.existsByEmail(email)) throw AuthException("이미 사용 중인 이메일이에요.")
-        if (password.length < 6) throw AuthException("비밀번호는 6자 이상이어야 해요.")
+        if (userRepo.existsByEmail(email)) throw AuthException("이미 사용 중인 이메일입니다.")
+        if (password.length < 6) throw AuthException("비밀번호는 6자 이상이어야 합니다.")
         val user = userRepo.save(
             email        = email.trim().lowercase(),
             passwordHash = encoder.encode(password),
@@ -69,15 +69,15 @@ class AuthService(
         val user = userRepo.findByEmail(email.trim().lowercase())
             ?: run {
                 logger.info("login fail reason=user-not-found")
-                throw AuthException("이메일 또는 비밀번호가 틀렸어요.")
+                throw AuthException("이메일 또는 비밀번호가 틀렸습니다.")
             }
         val hash = user.passwordHash ?: run {
             logger.info("login fail user={} reason=oauth-only", user.id.toString().take(8))
-            throw AuthException("이 계정은 소셜 로그인으로 가입됐어요.")
+            throw AuthException("이 계정은 소셜 로그인으로 가입됐습니다.")
         }
         if (!encoder.matches(password, hash)) {
             logger.info("login fail user={} reason=bad-password", user.id.toString().take(8))
-            throw AuthException("이메일 또는 비밀번호가 틀렸어요.")
+            throw AuthException("이메일 또는 비밀번호가 틀렸습니다.")
         }
         logger.info("login success user={} method=email", user.id.toString().take(8))
         return user.toResult()
@@ -85,7 +85,7 @@ class AuthService(
 
     fun me(token: String): AuthResult {
         val userId = jwt.extractUserId(token)
-        val user = userRepo.findById(userId) ?: throw AuthException("유저를 찾을 수 없어요.")
+        val user = userRepo.findById(userId) ?: throw AuthException("유저를 찾을 수 없습니다.")
         return user.toResult(token)
     }
 
@@ -94,7 +94,7 @@ class AuthService(
     fun googleOAuth(idToken: String): AuthResult {
         val info = verifyGoogleToken(idToken) ?: run {
             logger.info("oauth fail provider=google reason=invalid-token")
-            throw AuthException("유효하지 않은 구글 토큰이에요.")
+            throw AuthException("유효하지 않은 구글 토큰입니다.")
         }
         val existing = userRepo.findByGoogleId(info.id)
         val byEmail = if (existing == null) userRepo.findByEmail(info.email) else null
@@ -115,7 +115,7 @@ class AuthService(
     // ── Kakao OAuth ───────────────────────────────────────────────────────────
 
     fun kakaoOAuth(accessToken: String): AuthResult {
-        val info = verifyKakaoToken(accessToken) ?: throw AuthException("유효하지 않은 카카오 토큰이에요.")
+        val info = verifyKakaoToken(accessToken) ?: throw AuthException("유효하지 않은 카카오 토큰입니다.")
         val user = userRepo.findByKakaoId(info.id)
             ?: userRepo.findByEmail(info.email)?.also { userRepo.linkKakaoId(it.id, info.id) }
             ?: userRepo.saveOAuthUser(

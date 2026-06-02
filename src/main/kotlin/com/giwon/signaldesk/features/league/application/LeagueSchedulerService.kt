@@ -67,7 +67,7 @@ class LeagueSchedulerService(
             ExpoPushClient.Message(
                 to = token,
                 title = "🏁 ${league.name} 시작!",
-                body = "지금부터 거래해 — 종료 시점 수익률 1등이 우승",
+                body = "지금부터 거래하세요 — 종료 시점 수익률 1등이 우승",
                 data = mapOf("type" to "LEAGUE_STARTED", "leagueId" to league.id.toString()),
             )
         }

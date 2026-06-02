@@ -36,6 +36,7 @@ internal object GeminiPrompts {
         return """
             당신은 한국 주식 투자 전문 분석가입니다.
             아래 시장 지표와 뉴스 헤드라인을 종합해 한국 개인 투자자를 위한 오늘의 종합 시장 인사이트를 작성하세요.
+            모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요.
 
             === 시장 지표 ===
             ${vixLine(vix)}
@@ -84,6 +85,7 @@ $eventsBlock
             당신은 한국 주식 투자 전문 분석가입니다.
             지금은 한국 장 시작 30분 전(08:30 KST). 한국 개인 투자자가 '오늘 장을 어떻게 대응할지'
             준비할 수 있도록 야간 미국장 결과 + 한국 뉴스 + 보유/관심 종목 공시를 종합해 브리핑하세요.
+            모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요.
 
             === 야간 미국장 ===
             ${vixLine(vix)}
@@ -146,6 +148,7 @@ $macroBlock$flowBlock$disclosureBlock$eventsBlock
         return """
             당신은 한국 주식 투자 전문 분석가입니다.
             $situation
+            모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요.
 
             === 글로벌 매크로 컨텍스트 ===
             ${vixLine(vix)}
@@ -193,6 +196,7 @@ $macroBlock$flowBlock$eventsBlock
         return """
             당신은 미국 주식 시장 전문 분석가입니다.
             지금은 NY 장 마감 직후 (06:30 KST). 한국 개인 투자자가 '어제 미국장 어땠고 오늘 한국장에 어떤 영향 있을지'를 알 수 있게 이브닝 브리프를 작성하세요.
+            모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요.
 
             === 미국 시장 마감 ===
             ${vixLine(vix)}
@@ -226,6 +230,7 @@ $gainersBlock$losersBlock$earningsBlock
             아래는 $dateLabel 자 $marketKo 시장 관련 뉴스 헤드라인 묶음입니다 (${capped.size}건).
             여러 매체의 헤드라인을 종합해 한국 개인 투자자가 한 눈에 시황을 파악할 수 있도록
             아래 JSON 스키마에 맞춰 한국어로 답변하세요.
+            모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요.
 
             스키마:
             {
@@ -237,6 +242,46 @@ $gainersBlock$losersBlock$earningsBlock
 
             헤드라인:
             $lines
+        """.trimIndent()
+    }
+
+    /**
+     * 급등/급락 종목별 사유 — 각 종목에 매칭된 최근 뉴스 헤드라인을 근거로
+     * "왜 올랐나/내렸나" 를 한국어 한 문장으로 짧게 설명한다.
+     */
+    fun moverReasons(
+        dateLabel: String,
+        movers: List<MoverReasonInput>,
+    ): String {
+        val blocks = movers.joinToString("\n\n") { m ->
+            val sign = if (m.changeRate >= 0) "+" else ""
+            val newsLines = if (m.headlines.isEmpty()) {
+                "  관련뉴스: (매칭된 헤드라인 없음)"
+            } else {
+                m.headlines.joinToString("\n") { "  - $it" }
+            }
+            "- [${m.market}] [${m.ticker}] ${m.name} (${sign}${"%.1f".format(m.changeRate)}%, ${m.direction})\n$newsLines"
+        }
+        return """
+            당신은 한국 주식 시황 분석가입니다.
+            아래는 $dateLabel 자 급등·급락한 종목들과, 각 종목에 매칭된 최근 뉴스 헤드라인입니다.
+            각 종목이 왜 그렇게 움직였는지 한국 개인 투자자가 이해하기 쉽게 한국어 한 문장(40자 이내)으로 설명하세요.
+            모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요.
+
+            규칙:
+            - 매칭된 뉴스가 있으면 그 내용을 근거로 구체적으로 설명.
+            - 매칭된 뉴스가 없으면 "뚜렷한 뉴스 없이 수급·차트 모멘텀으로 추정" 처럼 단정하지 말고 추정으로 표현.
+            - 과장/투자권유 금지. 사실 위주로 담백하게.
+
+            스키마:
+            {
+              "reasons": [
+                { "ticker": "종목코드 또는 티커(입력 그대로)", "reason": "한 문장 사유(40자 이내)" }
+              ]
+            }
+
+            종목:
+            $blocks
         """.trimIndent()
     }
 
@@ -260,6 +305,7 @@ $gainersBlock$losersBlock$earningsBlock
             이 목록 안에서만 골라 오늘 단타 관점에서 주목할 종목 3~5개를 추천하세요.
             **목록에 없는 종목(ticker)은 절대 추천하지 마세요.**
             가급적 KR/US 가 섞이도록 다양성을 확보하되, 근거가 약한 종목은 빼고 강한 것만 골라도 됩니다.
+            reason·riskNote·summary 등 모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요.
 
             선정 원칙:
             - 이미 +15% 이상 급등한 종목은 추격매수 리스크가 크다. 단순 급등률만 보고 고르지 말 것.

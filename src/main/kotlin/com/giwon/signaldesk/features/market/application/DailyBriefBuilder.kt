@@ -128,7 +128,7 @@ class DailyBriefBuilder(
                     priority = if (worst.profitRate <= -7.0) "high" else "medium",
                     category = "portfolio",
                     title = "${worst.name} 손실 구간 점검",
-                    detail = "수익률 ${formatSignedRate(worst.profitRate)} — 손절 기준과 오늘 뉴스 방향 같이 확인.",
+                    detail = "수익률 ${formatSignedRate(worst.profitRate)} — 손절 기준과 오늘 뉴스 방향을 같이 확인해 주세요.",
                     ticker = worst.ticker,
                     market = worst.market,
                 )

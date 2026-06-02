@@ -87,7 +87,7 @@ class FortuneService {
             luckyTheme = luckyTheme,
             caution = caution,
             mantra = mantraBank[rng.nextInt(mantraBank.size)],
-            disclaimer = "재미용. 실제 매매 판단은 본인 책임이야.",
+            disclaimer = "재미용. 실제 매매 판단은 본인 책임입니다.",
         )
     }
 
