@@ -69,7 +69,8 @@ signal-desk:
       # Google AI Studio 에서 발급. 비어있으면 미디어 요약 기능 비활성.
       api-key: ${GEMINI_API_KEY:}
       base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
-      model: ${GEMINI_MODEL:gemini-2.0-flash-exp}
+      # 정식 GA 모델 권장. 실험(-exp)은 분당 한도·과부하에 취약.
+      model: ${GEMINI_MODEL:gemini-2.0-flash}
     finnhub:
       # finnhub.io 무료 가입 후 발급. 비어있으면 earnings 캘린더 비활성.
       enabled: true

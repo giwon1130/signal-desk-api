@@ -23,8 +23,9 @@ import java.time.Instant
 /**
  * Google Gemini API (generativeContent) 클라이언트.
  *
- * 무료 한도(2026.05 기준): gemini-2.0-flash-exp 15 req/분, 1500 req/일, 100만 토큰/일.
- * 데일리 방송 1회 요약은 자막 2~5만 토큰 수준 → 무료 한도로 충분.
+ * 모델: 정식 GA 모델 사용(gemini-2.0-flash). 실험(-exp)/퇴역(1.5) 모델은
+ * 분당 한도·과부하·deprecate 에 취약해 제외. 일 호출은 ~수십 회로 무료 한도 충분,
+ * 병목은 분당 한도(동시 잡 충돌)라 안정 모델 + fallback 으로 흡수한다.
  *
  * 응답 형식 강제: responseMimeType=application/json 으로 JSON 만 받게 한다.
  *
@@ -45,9 +46,10 @@ class GeminiClient(
         .connectTimeout(Duration.ofSeconds(5))
         .build()
 
-    // Fallback chain: 주 모델 503 시 다음 모델 시도. 마지막은 안정성 높은 1.5-flash.
+    // Fallback chain: 주 모델 503/429 시 다음 모델 시도. 현행 정식 GA 모델로 구성.
     // primary 가 fallback 과 중복되면 distinct 로 제거.
-    private val modelChain: List<String> = listOf(model, "gemini-2.0-flash-exp", "gemini-1.5-flash").distinct()
+    private val modelChain: List<String> =
+        listOf(model, "gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite").distinct()
 
     // 시스템 헬스 — 마지막 모든 모델 실패 시각. 사용자에게 "일시 장애" 안내용.
     // 성공 호출이 한 번이라도 들어오면 자가 회복 — null 로 reset.
