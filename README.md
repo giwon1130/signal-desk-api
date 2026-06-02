@@ -18,6 +18,9 @@
 - 미국 시장: `FRED` 지수 + 매크로(금리·CPI 등) + `CBOE VIX`
 - **합성 위험도(`compositeRisk`)** — PizzINT(0.3) + VIX(0.5) + 뉴스 키워드(0.2) 가중으로 1~10 산출. score≥8 시 08:32 KST 푸시 알림 (V15 마이그레이션 `composite_risk_enabled` 토글)
 - **모닝 브리프(08:30 KST)** — DART 공시 + FRED 매크로 + 외인/기관 수급 + 뉴스를 Gemini로 종합. 캐시 + 503 재시도
+- **시간대별 브리프** — 장중(12:30 KST)·마감(15:40 KST)·US 이브닝(06:30 KST) 브리프. 각각 알림 토글 (모닝=`premarket_enabled`, 장중=`midday_brief_enabled`, 마감=`close_brief_enabled` 기본 ON, 이브닝=`evening_brief_enabled`)
+- **모의투자 리그** — 친구끼리 가상 자본으로 매매 경쟁. immutable trade 원장 + derived position, 리더보드. (`/api/v1/league/**`)
+- **리딩(애널리스트 콜)** — 리더가 종목 콜을 게시(작성 시점 시세 `entry_price` 박제), 구독자 피드 + 성과 추적. (`/api/v1/reading/**`)
 - 관심종목 이상징후: 가격 급등락, 뉴스 집중, AI 추천 정렬, 보유 손익 경고를 묶은 `watchAlerts`
 - 한국/미국 장 상태 계산 (정규장/장전/장후/휴장, 반일장 캘린더 반영)
 - 차트 응답에 OHLC/거래량 포함
@@ -30,7 +33,8 @@
 - 한국/미국 장 상태를 정규장/장전/장후/휴장 기준으로 계산
 - 뉴스 군집화, 시장 요약, 차트 데이터, 수급 데이터를 한 번에 조합
 - `VenueSignalCollector`로 bar venue collector 확장 포인트 분리
-- 관심종목, 포트폴리오, AI 추천 로그, 모의투자 데이터를 워크스페이스 단위로 관리
+- 관심종목, 포트폴리오, AI 추천 로그를 워크스페이스 단위로 관리
+- 모의투자는 리그(league) 기능으로 제공 (페이퍼 트레이딩은 V13에서 제거)
 
 ## 저장 구조
 - 시장 데이터는 외부 공개 데이터 소스 호출 결과를 조합
@@ -47,15 +51,16 @@
 - `GET /health`
 - `GET /api/v1/market/summary` — `compositeRisk`, `marketSessions`, `watchAlerts` 포함
 - `GET /api/v1/market/sections`
-- `GET /api/v1/market/news`
 - `GET /api/v1/market/watchlist`
 - `GET /api/v1/market/portfolio`
 - `GET /api/v1/market/ai-recommendations`
-- `GET /api/v1/market/overview`
-- `GET /api/v1/briefings/morning` — 모닝 브리프 (Gemini 종합)
-- `GET /api/v1/disclosures/dart` — DART 공시 (5분 폴링)
+- `GET /api/v1/market/top-movers?limit=10`
+- `GET /api/v1/media/morning-brief` — 모닝 브리프 (Gemini 종합)
+- `GET /api/v1/disclosures/recent` — DART 공시 (5분 폴링, 보유/관심 종목)
 
-`/summary`, `/overview`에는 `compositeRisk`, `marketSessions`, `watchAlerts`가 포함된다.
+전체 엔드포인트 목록은 [`docs/엔지니어링/API명세.md`](docs/엔지니어링/API명세.md) 참고.
+
+`/summary`에는 `compositeRisk`, `marketSessions`, `watchAlerts`가 포함된다.
 - `compositeRisk`: 1~10 위험도 + 컴포넌트(PizzINT/VIX/뉴스) 점수
 - `KR`/`US`: 한국·미국 장 상태
 
