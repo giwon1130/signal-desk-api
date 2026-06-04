@@ -20,10 +20,12 @@ class CompositeRiskService {
         news: List<MarketNews>,
         watchlist: List<WatchItem>,
         portfolio: PortfolioSummary,
+        koreaMarket: MarketSection? = null,
     ): CompositeRiskSignal {
-        // VIX 가중이 가장 크므로 컴포넌트 목록 맨 앞에 둔다.
+        // 변동성(美 VIX + 한국 지수)이 가장 큰 가중이므로 앞에 둔다.
         val components = listOf(
             vixComponent(vix),
+            krComponent(koreaMarket),
             pizzComponent(alternativeSignals),
             newsComponent(news),
         )
@@ -45,7 +47,7 @@ class CompositeRiskService {
         )
     }
 
-    // ─── VIX 변동성 (가중 0.5) ───────────────────────────────────────────────
+    // ─── 美 VIX 변동성 (가중 0.3) ─────────────────────────────────────────────
     private fun vixComponent(vix: VixSnapshot?): RiskComponent {
         if (vix == null) {
             return RiskComponent(
@@ -71,7 +73,35 @@ class CompositeRiskService {
         )
     }
 
-    // ─── PizzINT 종합 (가중 0.3) ─────────────────────────────────────────────
+    // ─── 한국 지수 변동 (가중 0.3) — 한국 시장 급변동을 위험도에 반영 ──────────
+    // VIX(미국)만으론 한국 사이드카·급락 같은 KR 변동성이 0으로 잡혀 "안정"으로 오인됐다.
+    private fun krComponent(koreaMarket: MarketSection?): RiskComponent {
+        val indices = koreaMarket?.indices.orEmpty()
+        if (indices.isEmpty()) {
+            return RiskComponent(
+                label = "한국 지수 변동", score = 45, weight = KR_WEIGHT,
+                state = "데이터 대기", detail = "KR 지수 응답 없음 — 중립값으로 처리",
+            )
+        }
+        // 하락은 위험으로 크게(낙폭×32), 상승은 변동성으로 작게(×10). 가장 불안한 지수가 분위기를 끈다.
+        val score = indices.maxOf { idx ->
+            val ch = idx.changeRate
+            (if (ch < 0) -ch * KR_DOWN_SLOPE else ch * KR_UP_SLOPE).coerceIn(0.0, 100.0)
+        }.roundToInt().coerceIn(0, 100)
+        return RiskComponent(
+            label = "한국 지수 변동",
+            score = score,
+            weight = KR_WEIGHT,
+            state = when {
+                score >= 70 -> "급변동 경계"
+                score >= 40 -> "변동 확대"
+                else -> "안정"
+            },
+            detail = indices.joinToString(" · ") { "${it.label} ${"%+.2f".format(it.changeRate)}%" },
+        )
+    }
+
+    // ─── PizzINT 종합 (가중 0.2) ─────────────────────────────────────────────
     private fun pizzComponent(signals: List<AlternativeSignal>): RiskComponent {
         val pizza = scoreOf(signals, "Pentagon Pizza Index")
         val policy = scoreOf(signals, "Policy Buzz")
@@ -167,9 +197,14 @@ class CompositeRiskService {
     }
 
     companion object {
-        private const val VIX_WEIGHT = 0.5
-        private const val PIZZ_WEIGHT = 0.3
+        private const val VIX_WEIGHT = 0.3
+        private const val KR_WEIGHT = 0.3
+        private const val PIZZ_WEIGHT = 0.2
         private const val NEWS_WEIGHT = 0.2
+
+        // 한국 지수 일간 변동 → 위험. 하락은 크게(낙폭×32: -3.1%→100), 상승은 작게(×10: 변동성만 반영).
+        private const val KR_DOWN_SLOPE = 32.0
+        private const val KR_UP_SLOPE = 10.0
 
         // VIX 정규화 기준: 13 이하 = 위험 0, 36 이상 = 위험 100.
         private const val VIX_CALM = 13.0
@@ -185,21 +220,23 @@ class CompositeRiskService {
 
         private val STRONG_RISK_KEYWORDS = listOf(
             "폭락", "급락", "추락", "쇼크", "충격", "패닉", "공포", "위기", "침체", "리세션",
-            "전쟁", "분쟁", "제재", "디폴트", "파산", "부도", "서킷브레이커", "비상", "폭탄", "위협",
+            "전쟁", "분쟁", "제재", "디폴트", "파산", "부도", "서킷브레이커", "사이드카", "하한가", "투매",
+            "비상", "폭탄", "위협",
         )
         private val MILD_RISK_KEYWORDS = listOf(
             "하락", "약세", "우려", "불안", "경고", "둔화", "부진", "손실", "적자", "하향",
-            "리스크", "긴축", "인플레", "관세", "조정", "매도세", "경계",
+            "리스크", "긴축", "인플레", "관세", "조정", "매도세", "경계", "변동성", "급등락", "출렁", "낙폭",
         )
 
         private const val DESCRIPTION =
-            "PizzINT 실험 지표(Pentagon Pizza/Policy Buzz/Bar Counter-Signal) 종합, CBOE VIX 변동성, " +
-            "주요 뉴스 헤드라인의 위험 키워드 빈도 — 세 신호를 하나로 합친 1~10 시장 위험도. " +
+            "美 VIX 변동성, 한국 지수(KOSPI/KOSDAQ) 일간 변동, PizzINT 실험 지표(Pentagon Pizza/Policy Buzz/" +
+            "Bar Counter-Signal), 주요 뉴스 위험 키워드 빈도 — 네 신호를 하나로 합친 1~10 시장 위험도. " +
             "개별 지표는 노이즈가 커서 단독으로 보기 어렵기 때문에, 가중 합성해 '오늘 얼마나 불안정한가'만 본다."
         private const val METHODOLOGY =
-            "1) VIX 변동성 (가중 0.5) — VIX 13~36 구간을 0~100으로 정규화, 전일 대비 상승분 가산\n" +
-            "2) PizzINT 종합 (가중 0.3) — Pentagon Pizza 0.5 / Policy Buzz 0.3 / Bar Counter 0.2 가중 평균 후 평상시 baseline 보정\n" +
-            "3) 뉴스 키워드 (가중 0.2) — 주요 헤드라인 표본의 위험 키워드 밀도\n" +
-            "세 sub-score(0~100)를 가중 합산한 뒤 1~10 위험도로 환산."
+            "1) 美 VIX 변동성 (가중 0.3) — VIX 13~36 구간을 0~100으로 정규화, 전일 대비 상승분 가산\n" +
+            "2) 한국 지수 변동 (가중 0.3) — KOSPI/KOSDAQ 일간 등락에서 낙폭 중심으로 위험 산출\n" +
+            "3) PizzINT 종합 (가중 0.2) — Pentagon Pizza 0.5 / Policy Buzz 0.3 / Bar Counter 0.2 가중 평균 후 baseline 보정\n" +
+            "4) 뉴스 키워드 (가중 0.2) — 주요 헤드라인 표본의 위험 키워드 밀도\n" +
+            "네 sub-score(0~100)를 가중 합산한 뒤 1~10 위험도로 환산."
     }
 }

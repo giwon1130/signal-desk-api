@@ -32,6 +32,12 @@ class CompositeRiskServiceTest {
         currentPrice = price, priceChange = change, lastTradeTime = "2026-05-27T20:00:00Z",
     )
 
+    private fun krMarket(vararg changeRates: Double) = MarketSection(
+        market = "KR", title = "한국",
+        indices = changeRates.mapIndexed { i, ch -> IndexMetric("지수$i", 1000.0, ch, emptyList()) },
+        sentiment = emptyList(), investorFlows = emptyList(), leadingStocks = emptyList(),
+    )
+
     private val emptyPortfolio = PortfolioSummary(0, 0, 0, 0.0, emptyList())
 
     private fun heldPortfolio() = PortfolioSummary(
@@ -52,8 +58,8 @@ class CompositeRiskServiceTest {
 
         assertTrue(result.score in 1..10, "score=${result.score}")
         assertTrue(result.score100 in 0..100, "score100=${result.score100}")
-        assertEquals(3, result.components.size)
-        // VIX/뉴스 컴포넌트는 데이터 없을 때 "데이터 대기" 라벨
+        assertEquals(4, result.components.size)
+        // VIX/한국지수/뉴스 컴포넌트는 데이터 없을 때 "데이터 대기" 라벨
         assertTrue(result.components.any { it.state == "데이터 대기" })
     }
 
@@ -83,6 +89,33 @@ class CompositeRiskServiceTest {
         val rising = service.build(emptyList(), vix(20.0, 5.0), emptyList(), emptyList(), emptyPortfolio)
             .components.first { it.label == "VIX 변동성" }.score
         assertTrue(rising > flat, "rising=$rising flat=$flat")
+    }
+
+    // ─── 한국 지수 변동 컴포넌트 ─────────────────────────────────────────────
+    @Test
+    fun `한국 지수 급락하면 KR 컴포넌트 높음`() {
+        // KOSPI -3% → 낙폭×32 = 96 → '급변동 경계'. (이전엔 KR 입력 자체가 없어 합성에서 빠졌다)
+        val result = service.build(emptyList(), null, emptyList(), emptyList(), emptyPortfolio, krMarket(-3.0, 1.0))
+        val kr = result.components.first { it.label == "한국 지수 변동" }
+        assertTrue(kr.score >= 70, "score=${kr.score}")
+        assertEquals("급변동 경계", kr.state)
+    }
+
+    @Test
+    fun `한국 지수 잔잔하면 KR 컴포넌트 낮음`() {
+        val result = service.build(emptyList(), null, emptyList(), emptyList(), emptyPortfolio, krMarket(0.2, -0.1))
+        val kr = result.components.first { it.label == "한국 지수 변동" }
+        assertTrue(kr.score < 40, "score=${kr.score}")
+        assertEquals("안정", kr.state)
+    }
+
+    @Test
+    fun `한국 급락이 합성 위험도를 끌어올린다 (미국이 잠잠해도)`() {
+        // 미국은 잠잠(VIX 14)인데 한국만 급락(-3%): 이전엔 VIX 낮으면 '안정'이었지만 이제 KR이 위험도를 올린다.
+        val calmUsOnly = service.build(emptyList(), vix(14.0), emptyList(), emptyList(), emptyPortfolio)
+        val krCrash = service.build(emptyList(), vix(14.0), emptyList(), emptyList(), emptyPortfolio, krMarket(-3.0, -2.5))
+        assertTrue(krCrash.score100 > calmUsOnly.score100 + 10,
+            "krCrash=${krCrash.score100} vs calmUs=${calmUsOnly.score100}")
     }
 
     // ─── PizzINT 컴포넌트 (recenter) ────────────────────────────────────────
@@ -146,7 +179,7 @@ class CompositeRiskServiceTest {
         val highPizz = pizzSignals(100, 100, 100)
         val crashNews = (1..10).map { news("폭락 쇼크 패닉 위기") }
 
-        val result = service.build(highPizz, highVix, crashNews, emptyList(), emptyPortfolio)
+        val result = service.build(highPizz, highVix, crashNews, emptyList(), emptyPortfolio, krMarket(-10.0))
         assertEquals(10, result.score)
         assertEquals("고위험", result.level)
     }
@@ -157,7 +190,7 @@ class CompositeRiskServiceTest {
         val calmPizz = pizzSignals(0, 0, 0)
         val benignNews = listOf(news("기업 실적 호조"), news("거래량 평이"))
 
-        val result = service.build(calmPizz, calmVix, benignNews, emptyList(), emptyPortfolio)
+        val result = service.build(calmPizz, calmVix, benignNews, emptyList(), emptyPortfolio, krMarket(0.0))
         assertEquals(1, result.score)
         assertEquals("안정", result.level)
     }

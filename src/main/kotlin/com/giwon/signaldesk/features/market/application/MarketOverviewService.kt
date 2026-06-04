@@ -88,6 +88,7 @@ class MarketOverviewService(
             news = news,
             watchlist = snapshot.watchlist,
             portfolio = snapshot.portfolio,
+            koreaMarket = core.koreaMarket,
         )
         return MarketSummaryResponse(
             generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
