@@ -15,6 +15,8 @@ data class AiPick(
     val expectedReturnRate: Double?,
     val confidence: Int,
     val riskNote: String,
+    val changeRate: Double? = null,   // 후보의 당일 등락률 — 픽 근거 노출용 (예: +19.3%)
+    val flowTag: String? = null,      // 수급 태그 — '외인 순매수' 등
 )
 
 data class AiPicksResponse(

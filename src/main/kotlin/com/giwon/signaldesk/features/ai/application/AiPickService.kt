@@ -61,7 +61,16 @@ class AiPickService(
                 ?: byName[raw]
                 ?: byName[p.name.trim()]
                 ?: return@mapNotNull null
-            p.copy(market = c.market, ticker = c.ticker, name = c.name)
+            // 이미 크게 급등(>=15%)한 종목은 추격매수 리스크를 riskNote 앞에 명시한다.
+            // (Gemini 가 '시장 변동성' 처럼 일반화하는 경향을 데이터 기반으로 보정)
+            val chase = c.changeRate?.takeIf { it >= 15.0 }
+            val riskNote = if (chase != null && !p.riskNote.contains("추격") && !p.riskNote.contains("급등")) {
+                "이미 ${"%+.1f".format(chase)}% 급등 — 추격 매수 주의. ${p.riskNote.trim()}".trim()
+            } else p.riskNote
+            p.copy(
+                market = c.market, ticker = c.ticker, name = c.name,
+                riskNote = riskNote, changeRate = c.changeRate, flowTag = c.flowTag,
+            )
         }
         if (picks.isEmpty()) {
             log.warn(
