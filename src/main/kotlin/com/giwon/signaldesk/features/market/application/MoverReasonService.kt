@@ -41,18 +41,19 @@ class MoverReasonService(
 
     /**
      * 사용자 요청이 Gemini 호출을 기다리지 않도록 미리 데운다.
-     * 한국 정규장(09:00~15:30 KST, 휴장일 제외) 동안만 데운다 — 24시간 워밍은 Gemini 무료 쿼터를
-     * 불필요하게 소진(96회/일)했다. 정규장 6.5h × 15분 ≈ 26회/일로 감축. 장 밖에선 직전 캐시 노출.
+     * KR 또는 US 정규장(각 휴장일 제외) 동안만 데운다 — 24시간 워밍은 Gemini 무료 쿼터를
+     * 불필요하게 소진(96회/일)했다. KR 6.5h + US 6.5h × 15분 ≈ 52회/일로 감축(이 잡은 KR·US
+     * 급등락을 모두 다루므로 양 시장 정규장을 커버). 장 밖에선 직전 캐시 노출.
      */
     @Scheduled(fixedDelay = 15 * 60 * 1000L, initialDelay = 45 * 1000L)
     fun warm() {
-        if (!isKrRegularSession()) return
+        if (!isAnyRegularSession()) return
         runCatching { reasons() }.onFailure { log.debug("mover reasons warm skipped", it) }
     }
 
-    private fun isKrRegularSession(): Boolean =
+    private fun isAnyRegularSession(): Boolean =
         marketSessionService.buildMarketSessions()
-            .firstOrNull { it.market == "KR" }?.phase == "REGULAR"
+            .any { (it.market == "KR" || it.market == "US") && it.phase == "REGULAR" }
 
     private fun compute(): List<MoverReason> {
         if (!geminiClient.isEnabled()) return cache?.list ?: emptyList()
