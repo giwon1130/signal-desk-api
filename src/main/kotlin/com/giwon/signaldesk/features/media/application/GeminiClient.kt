@@ -218,7 +218,7 @@ class GeminiClient(
      *  4. 모든 모델 실패 → lastFailureAt set, null 반환
      *
      * 한 번 성공하면 lastFailureAt reset (자가 회복 시그널).
-     * 503/429/500 은 재시도, 400 같은 hard error 는 즉시 다음 모델로.
+     * 503/500/429(RPM) 은 재시도, 429(quota 소진)·400 같은 hard error 는 즉시 다음 모델로.
      */
     private fun postWithRetry(prompt: String, timeoutSeconds: Long): String? {
         val content = buildPayload(prompt)
@@ -261,7 +261,7 @@ class GeminiClient(
             if (result != null && result.statusCode() == 200) return result.body()
 
             val status = result?.statusCode() ?: -1
-            val retryable = result == null || status in RETRYABLE_STATUSES
+            val retryable = result == null || isRetryable(status, result.body())
             if (!retryable || attempt == MAX_ATTEMPTS) {
                 log.warn("Gemini API model={} giving up. status={} attempt={}/{} body={}",
                     modelName, status, attempt, MAX_ATTEMPTS, result?.body()?.take(200))
@@ -272,6 +272,17 @@ class GeminiClient(
             runCatching { Thread.sleep(backoffMs) }
         }
         return null
+    }
+
+    /**
+     * 재시도 여부 판정. 503 과부하 / 500 내부오류는 일시적이라 재시도.
+     * 429 는 두 종류 — RPM 순간 초과(곧 회복)는 재시도하되, **쿼터 소진(body 에 "quota")은
+     * 초 단위로 안 풀리므로 재시도하지 않고 즉시 다음 모델로 폴백**한다. (재시도 폭주 → 9배 증폭 방지)
+     * visibility=internal: 회귀 테스트(GeminiClientTest)용.
+     */
+    internal fun isRetryable(status: Int, body: String?): Boolean {
+        if (status == 429 && body?.contains("quota", ignoreCase = true) == true) return false
+        return status in RETRYABLE_STATUSES
     }
 
     private fun buildPayload(prompt: String): String {
@@ -294,7 +305,8 @@ class GeminiClient(
 
     companion object {
         private const val MAX_ATTEMPTS = 3
-        // 503 과부하 / 429 쿼터 / 500 내부오류 — 일시적이라 재시도 가치 있음.
+        // 503 과부하 / 500 내부오류 / 429 RPM 순간초과 — 일시적이라 재시도 가치 있음.
+        // 단 429 라도 body 에 "quota"(일일 한도 소진)면 isRetryable 에서 제외 → 즉시 폴백.
         private val RETRYABLE_STATUSES = setOf(429, 500, 503)
     }
 }
