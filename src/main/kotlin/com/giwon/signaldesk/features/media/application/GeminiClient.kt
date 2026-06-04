@@ -49,10 +49,11 @@ class GeminiClient(
         .connectTimeout(Duration.ofSeconds(5))
         .build()
 
-    // Fallback chain: 주 모델 503/429 시 다음 모델 시도. 현행 정식 GA 모델로 구성.
+    // Fallback chain: 주 모델 503 과부하 시 다음 모델 시도. 현행 정식 GA 모델로 구성.
     // primary 가 fallback 과 중복되면 distinct 로 제거.
+    // gemini-2.0-flash 는 2026-06-01 deprecated 라 제외 — 죽은 슬롯이 폴백을 낭비하지 않게 한다.
     private val modelChain: List<String> =
-        listOf(model, "gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite").distinct()
+        listOf(model, "gemini-2.5-flash", "gemini-2.5-flash-lite").distinct()
 
     // 시스템 헬스 — 마지막 모든 모델 실패 시각. 사용자에게 "일시 장애" 안내용.
     // 성공 호출이 한 번이라도 들어오면 자가 회복 — null 로 reset.
@@ -212,8 +213,8 @@ class GeminiClient(
      *
      * 흐름:
      *  1. primary model 3회 재시도 (지수 백오프 1→2→4초)
-     *  2. 다 실패 시 다음 모델로 (gemini-2.0-flash-exp)
-     *  3. 또 실패 시 다음 (gemini-1.5-flash)
+     *  2. 다 실패 시 다음 모델로 (gemini-2.5-flash)
+     *  3. 또 실패 시 다음 (gemini-2.5-flash-lite)
      *  4. 모든 모델 실패 → lastFailureAt set, null 반환
      *
      * 한 번 성공하면 lastFailureAt reset (자가 회복 시그널).
