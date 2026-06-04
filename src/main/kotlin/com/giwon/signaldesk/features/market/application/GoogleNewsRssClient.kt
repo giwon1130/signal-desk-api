@@ -68,7 +68,10 @@ class GoogleNewsRssClient(
      */
     fun fetchByQuery(market: String, query: String): List<MarketNews> {
         if (!enabled || query.isBlank()) return emptyList()
-        return runCatching { fetchRss(market = market, query = query, impact = "$query 관련 뉴스") }
+        // US 종목은 en-US 로케일이 마이크로캡 사유 헤드라인을 훨씬 잘 잡는다(ko는 시세 페이지만 반환).
+        // 표시용 fetchMarketNews 는 ko 유지 — 여기 영문 헤드라인은 Gemini 입력일 뿐 사용자에게 노출 안 됨.
+        val locale = if (market == "US") LOCALE_EN else LOCALE_KO
+        return runCatching { fetchRss(market = market, query = query, impact = "$query 관련 뉴스", locale = locale) }
             .getOrElse { emptyList() }
     }
 
@@ -76,9 +79,10 @@ class GoogleNewsRssClient(
         market: String,
         query: String,
         impact: String,
+        locale: String = LOCALE_KO,
     ): List<MarketNews> {
         val encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8)
-        val uri = URI.create("$baseUrl?q=$encodedQuery&hl=ko&gl=KR&ceid=KR:ko")
+        val uri = URI.create("$baseUrl?q=$encodedQuery&$locale")
         val request = HttpRequest.newBuilder()
             .uri(uri)
             .timeout(Duration.ofSeconds(5))
@@ -133,6 +137,8 @@ class GoogleNewsRssClient(
     }
 
     companion object {
+        private const val LOCALE_KO = "hl=ko&gl=KR&ceid=KR:ko"
+        private const val LOCALE_EN = "hl=en-US&gl=US&ceid=US:en"
         private const val KR_IMPACT = "한국 시장 주요 뉴스 흐름"
         private const val US_IMPACT = "미국 시장 주요 뉴스 흐름"
 
