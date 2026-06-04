@@ -194,7 +194,7 @@ class MarketOverviewService(
                     SummaryMetric("Fear Meter", MarketHeatCalculator.fearMeter(vixSnapshot), MarketHeatCalculator.fearMeterState(vixSnapshot), MarketHeatCalculator.fearMeterNote(vixSnapshot)),
                     SummaryMetric("KR Heat", MarketHeatCalculator.krHeat(koreaMarket), MarketHeatCalculator.krHeatState(koreaMarket), "코스피/코스닥 등락률과 거래 강도를 기준으로 계산"),
                     run { val h = MarketHeatCalculator.usHeat(vixSnapshot, usIndicesSnapshot); SummaryMetric("US Heat", h, MarketHeatCalculator.usHeatState(h), "미국 지수와 VIX를 기준으로 계산") },
-                    SummaryMetric("Flow Bias", MarketHeatCalculator.flowBias(koreaMarket), MarketHeatCalculator.flowBiasState(koreaMarket), "국내는 KRX 수급, 미국은 지수/변동성 기준")
+                    SummaryMetric("Flow Bias", MarketHeatCalculator.flowBias(koreaMarket), MarketHeatCalculator.flowBiasState(koreaMarket), MarketHeatCalculator.flowBiasDetail(koreaMarket))
                 ),
                 alternativeSignals = alternativeSignals,
                 vixSnapshot = vixSnapshot,

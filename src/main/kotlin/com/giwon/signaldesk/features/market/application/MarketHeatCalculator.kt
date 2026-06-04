@@ -68,14 +68,26 @@ object MarketHeatCalculator {
         }
     }
 
+    // 외국인+기관 순매수(억원)를 0~100 으로. ±9,000억 ≈ 양극단(0/100), 50=중립.
+    // (이전 /60 은 ±3,000억에서 포화 — 일간 수급은 자주 그 이상이라 0/100 에 뭉개졌다.)
     fun flowBias(korea: MarketSection): Double {
         val foreign = korea.investorFlows.firstOrNull { it.investor == "외국인" }?.amountBillionWon ?: 0.0
         val institution = korea.investorFlows.firstOrNull { it.investor == "기관" }?.amountBillionWon ?: 0.0
-        return (50 + ((foreign + institution) / 60)).coerceIn(0.0, 100.0)
+        return (50 + ((foreign + institution) / 180)).coerceIn(0.0, 100.0)
     }
 
     fun flowBiasState(korea: MarketSection): String {
         val top = korea.investorFlows.maxByOrNull { abs(it.amountBillionWon) }
         return top?.let { "${it.investor} ${if (it.positive) "우위" else "매도 우위"}" } ?: "수급 중립"
+    }
+
+    /** 카드 detail — 외인/기관 실제 순매수 금액(억원)을 그대로 노출. '0' 점수가 무슨 뜻인지 바로 보이게. */
+    fun flowBiasDetail(korea: MarketSection): String {
+        val foreign = korea.investorFlows.firstOrNull { it.investor == "외국인" }?.amountBillionWon
+        val institution = korea.investorFlows.firstOrNull { it.investor == "기관" }?.amountBillionWon
+        if (foreign == null && institution == null) return "국내 KRX 수급 데이터 대기"
+        val sum = (foreign ?: 0.0) + (institution ?: 0.0)
+        fun won(v: Double?) = if (v == null) "—" else String.format(java.util.Locale.KOREA, "%+,.0f억", v)
+        return "외인 ${won(foreign)} · 기관 ${won(institution)} (합산 ${won(sum)})"
     }
 }
