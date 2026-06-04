@@ -77,8 +77,9 @@ class YahooQuoteClient(
             ?.mapNotNull { node -> if (node.isNull) null else node.asDouble() }
             .orEmpty()
 
-    /** 현재가 기준 '직전 일간 종가'. 마감 후엔 마지막 close==price → 그 직전, 장중이면 마지막 close. 부족하면 null. */
-    private fun priorClose(closes: List<Double>, price: Double): Double? = when {
+    /** 현재가 기준 '직전 일간 종가'. 마감 후엔 마지막 close==price → 그 직전, 장중이면 마지막 close. 부족하면 null.
+     *  visibility=internal: 회귀 테스트(YahooQuoteClientTest)에서 직접 검증하기 위함. */
+    internal fun priorClose(closes: List<Double>, price: Double): Double? = when {
         closes.isEmpty() -> null
         kotlin.math.abs(closes.last() - price) < price * 1e-6 -> closes.getOrNull(closes.size - 2)
         else -> closes.last()
