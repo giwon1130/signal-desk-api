@@ -65,22 +65,33 @@ class MoverReasonService(
             return emptyList()
         }
 
-        // 종목명으로 직접 뉴스 검색(병렬) — 시장 단위 풀엔 개별 종목 헤드라인이 거의 없어
-        // 매칭이 0건→전부 '뚜렷한 뉴스 없이 추정'만 나왔다. 종목 쿼리로 실제 헤드라인을 확보.
+        // 1차: 이미 캐시된 시장 뉴스 풀에서 종목명 매칭(추가 호출 0). 상위 급등락주 대부분 여기서 잡힌다.
+        val pool = newsRssClient.fetchMarketNews().orEmpty()
+        val matchedByTicker = picks.associate { p ->
+            p.ticker to pool.asSequence().filter { matchesName(p.name, p.ticker, it) }
+                .map { it.title }.distinct().take(4).toList()
+        }
+        // 2차: 풀에서 못 잡은 종목만 종목명으로 직접 검색(병렬). 비용을 미스에만 한정하고
+        // "종목명 주가"/"name stock"으로 검색해 동명이의(예: 'M83') 오매칭을 줄인다.
+        val fetchedByTicker = picks.filter { matchedByTicker[it.ticker].isNullOrEmpty() }
+            .associate { p ->
+                p.ticker to java.util.concurrent.CompletableFuture.supplyAsync {
+                    runCatching { newsRssClient.fetchByQuery(p.market, moverQuery(p.market, p.name)) }
+                        .getOrElse { emptyList() }.asSequence().map { it.title }.distinct().take(4).toList()
+                }
+            }.mapValues { it.value.join() }
+
         val inputs = picks.map { p ->
-            java.util.concurrent.CompletableFuture.supplyAsync {
-                val related = runCatching { newsRssClient.fetchByQuery(p.market, p.name) }.getOrElse { emptyList() }
-                    .asSequence().map { it.title }.distinct().take(4).toList()
-                MoverReasonInput(
-                    market = p.market,
-                    ticker = p.ticker,
-                    name = p.name,
-                    changeRate = p.changeRate,
-                    direction = if (p.changeRate >= 0) "급등" else "급락",
-                    headlines = related,
-                )
-            }
-        }.map { it.join() }
+            val headlines = matchedByTicker[p.ticker].orEmpty().ifEmpty { fetchedByTicker[p.ticker].orEmpty() }
+            MoverReasonInput(
+                market = p.market,
+                ticker = p.ticker,
+                name = p.name,
+                changeRate = p.changeRate,
+                direction = if (p.changeRate >= 0) "급등" else "급락",
+                headlines = headlines,
+            )
+        }
 
         val byTicker = geminiClient.summarizeMoverReasons(LocalDate.now().toString(), inputs)
             .associateBy { it.ticker.trim() }
@@ -128,8 +139,8 @@ class MoverReasonService(
         val capped = targets.take(MAX_REASON_TARGETS)
         val inputs = capped.map { t ->
             java.util.concurrent.CompletableFuture.supplyAsync {
-                val related = runCatching { newsRssClient.fetchByQuery(t.market, t.name) }.getOrElse { emptyList() }
-                    .asSequence().map { it.title }.distinct().take(4).toList()
+                val related = runCatching { newsRssClient.fetchByQuery(t.market, moverQuery(t.market, t.name)) }
+                    .getOrElse { emptyList() }.asSequence().map { it.title }.distinct().take(4).toList()
                 MoverReasonInput(
                     market = t.market, ticker = t.ticker, name = t.name,
                     changeRate = t.changeRate,
@@ -144,6 +155,18 @@ class MoverReasonService(
                 .filterValues { it.isNotBlank() }
         }.getOrElse { log.warn("watch mover reasons failed", it); emptyMap() }
     }
+
+    /** 헤드라인 제목에 종목명 또는 티커가 포함되면 관련 뉴스로 본다(시장 뉴스 풀 1차 매칭용). */
+    private fun matchesName(name: String, ticker: String, news: MarketNews): Boolean {
+        val title = news.title.lowercase()
+        val n = name.lowercase()
+        val t = ticker.lowercase()
+        return (n.length >= 2 && title.contains(n)) || (t.length >= 2 && title.contains(t))
+    }
+
+    /** 종목별 뉴스 검색 쿼리 — 동명이의 오매칭을 줄이려 시장 맥락을 덧붙인다. */
+    private fun moverQuery(market: String, name: String): String =
+        if (market == "US") "$name stock" else "$name 주가"
 
     companion object {
         private const val TTL_MINUTES = 15L
