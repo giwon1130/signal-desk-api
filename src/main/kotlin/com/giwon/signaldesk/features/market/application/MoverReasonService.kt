@@ -65,23 +65,22 @@ class MoverReasonService(
             return emptyList()
         }
 
-        val news = newsRssClient.fetchMarketNews().orEmpty()
+        // 종목명으로 직접 뉴스 검색(병렬) — 시장 단위 풀엔 개별 종목 헤드라인이 거의 없어
+        // 매칭이 0건→전부 '뚜렷한 뉴스 없이 추정'만 나왔다. 종목 쿼리로 실제 헤드라인을 확보.
         val inputs = picks.map { p ->
-            val related = news.asSequence()
-                .filter { matches(p, it) }
-                .map { it.title }
-                .distinct()
-                .take(4)
-                .toList()
-            MoverReasonInput(
-                market = p.market,
-                ticker = p.ticker,
-                name = p.name,
-                changeRate = p.changeRate,
-                direction = if (p.changeRate >= 0) "급등" else "급락",
-                headlines = related,
-            )
-        }
+            java.util.concurrent.CompletableFuture.supplyAsync {
+                val related = runCatching { newsRssClient.fetchByQuery(p.market, p.name) }.getOrElse { emptyList() }
+                    .asSequence().map { it.title }.distinct().take(4).toList()
+                MoverReasonInput(
+                    market = p.market,
+                    ticker = p.ticker,
+                    name = p.name,
+                    changeRate = p.changeRate,
+                    direction = if (p.changeRate >= 0) "급등" else "급락",
+                    headlines = related,
+                )
+            }
+        }.map { it.join() }
 
         val byTicker = geminiClient.summarizeMoverReasons(LocalDate.now().toString(), inputs)
             .associateBy { it.ticker.trim() }
@@ -123,18 +122,22 @@ class MoverReasonService(
      */
     fun reasonsForTickers(targets: List<MoverReasonTarget>): Map<String, String> {
         if (!geminiClient.isEnabled() || targets.isEmpty()) return emptyMap()
-        val news = newsRssClient.fetchMarketNews().orEmpty()
-        val inputs = targets.map { t ->
-            val related = news.asSequence()
-                .filter { matchesName(t.name, t.ticker, it) }
-                .map { it.title }.distinct().take(4).toList()
-            MoverReasonInput(
-                market = t.market, ticker = t.ticker, name = t.name,
-                changeRate = t.changeRate,
-                direction = if (t.changeRate >= 0) "급등" else "급락",
-                headlines = related,
-            )
-        }
+        // 종목명으로 직접 뉴스 검색(병렬) — 시장 단위 풀엔 개별 종목 헤드라인이 거의 없어
+        // 매칭이 0건→'추정'만 나왔다. 종목 쿼리로 실제 헤드라인을 확보해야 진짜 사유가 나온다.
+        // 과도한 호출 방지로 최대 MAX_REASON_TARGETS 개만 처리.
+        val capped = targets.take(MAX_REASON_TARGETS)
+        val inputs = capped.map { t ->
+            java.util.concurrent.CompletableFuture.supplyAsync {
+                val related = runCatching { newsRssClient.fetchByQuery(t.market, t.name) }.getOrElse { emptyList() }
+                    .asSequence().map { it.title }.distinct().take(4).toList()
+                MoverReasonInput(
+                    market = t.market, ticker = t.ticker, name = t.name,
+                    changeRate = t.changeRate,
+                    direction = if (t.changeRate >= 0) "급등" else "급락",
+                    headlines = related,
+                )
+            }
+        }.map { it.join() }
         return runCatching {
             geminiClient.summarizeMoverReasons(LocalDate.now().toString(), inputs)
                 .associate { it.ticker.trim() to it.reason.trim() }
@@ -142,20 +145,11 @@ class MoverReasonService(
         }.getOrElse { log.warn("watch mover reasons failed", it); emptyMap() }
     }
 
-    /** 헤드라인 제목에 종목명 또는 티커가 포함되면 관련 뉴스로 본다. */
-    private fun matches(mover: TopMover, news: MarketNews): Boolean = matchesName(mover.name, mover.ticker, news)
-
-    private fun matchesName(name: String, ticker: String, news: MarketNews): Boolean {
-        val title = news.title.lowercase()
-        val n = name.lowercase()
-        val t = ticker.lowercase()
-        return (n.length >= 2 && title.contains(n)) || (t.length >= 2 && title.contains(t))
-    }
-
     companion object {
         private const val TTL_MINUTES = 15L
         private const val TOP_N = 3
         private const val MIN_MOVE_PCT = 3.0
+        private const val MAX_REASON_TARGETS = 12   // 워치 알림 사유 — 종목별 뉴스 검색 호출 상한
     }
 }
 

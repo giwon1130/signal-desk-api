@@ -62,6 +62,16 @@ class GoogleNewsRssClient(
         }.getOrNull()
     }
 
+    /**
+     * 특정 종목명으로 뉴스 검색 — '왜 움직였나' 사유용. 시장 단위 풀엔 개별 종목 헤드라인이
+     * 거의 없어 매칭이 0건이 되므로, 종목명을 쿼리로 직접 검색한다. 실패하면 빈 리스트.
+     */
+    fun fetchByQuery(market: String, query: String): List<MarketNews> {
+        if (!enabled || query.isBlank()) return emptyList()
+        return runCatching { fetchRss(market = market, query = query, impact = "$query 관련 뉴스") }
+            .getOrElse { emptyList() }
+    }
+
     private fun fetchRss(
         market: String,
         query: String,
