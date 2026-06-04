@@ -75,6 +75,29 @@ class NewsSentimentBuilderTest {
     }
 
     @Test
+    fun `중립 다수에 묻히지 않고 부정 우세를 반영한다`() {
+        // 부정 5 vs 긍정 2 인데 중립 헤드라인이 다수여도 라벨은 '부정' 이어야 한다.
+        // (이전 구현: 분모=전체27 → 46 '중립'. 새 구현: 분모=톤7 → 33 '부정')
+        val items = buildList {
+            repeat(2) { add(news(title = "코스피 급등 강세 $it")) }
+            repeat(5) { add(news(title = "코스피 급락 쇼크 $it")) }
+            repeat(20) { add(news(title = "기업 정기 공시 $it")) }
+        }
+        val result = NewsSentimentBuilder.build("KR", items)
+        assertEquals("부정", result.label, "score=${result.score}")
+        assertTrue(result.score <= 40, "score=${result.score}")
+        assertEquals(2, result.positiveCount)
+        assertEquals(5, result.negativeCount)
+    }
+
+    @Test
+    fun `하이라이트는 최대 15개로 제한`() {
+        val items = (1..25).map { news(title = "코스피 급락 쇼크 $it") }
+        val result = NewsSentimentBuilder.build("KR", items)
+        assertEquals(15, result.highlights.size)
+    }
+
+    @Test
     fun `뉴스 0건이면 중립 score 50 + 분석 가능 뉴스 없어 rationale`() {
         val result = NewsSentimentBuilder.build("KR", emptyList())
         assertEquals("중립", result.label)

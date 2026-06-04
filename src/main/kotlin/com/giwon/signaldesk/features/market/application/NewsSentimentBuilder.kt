@@ -21,14 +21,20 @@ object NewsSentimentBuilder {
         "하향", "충격", "공포", "위축", "하한가", "패닉", "긴축", "감소", "악화",
     )
 
+    /** 시장별 노출 하이라이트 최대 개수. 소스는 시장당 30~50건을 받으므로 표본은 충분. */
+    private const val MAX_HIGHLIGHTS = 15
+
     fun build(market: String, news: List<MarketNews>): NewsSentiment {
         val filtered = news.filter { it.market.equals(market, ignoreCase = true) }
         val classified = filtered.map { it to classifyTone(it.title) }
         val pos = classified.count { it.second == 1 }
         val neg = classified.count { it.second == -1 }
         val rawTotal = classified.size                      // 실제 필터링된 뉴스 수 (0 가능)
-        val divisor  = rawTotal.coerceAtLeast(1)            // 0 divide 가드 (score 계산용)
-        val score = (50 + (pos - neg).toDouble() / divisor * 40).coerceIn(0.0, 100.0).roundToInt()
+        // score 분모는 '톤 있는'(긍정+부정) 기사만 사용한다. 중립 기사까지 분모에 넣으면(이전 구현)
+        // 중립 헤드라인 수십 건이 신호를 희석해, 부정이 2배여도 라벨이 '중립'에 갇혔다.
+        // (실측: 부정11/긍정6/중립50 → (6-11)/67*40 = -3 → 47 '중립'. 새 식: -5/17*40 = -12 → 38 '부정')
+        val toned = (pos + neg).coerceAtLeast(1)            // 0 divide 가드 (전부 중립이면 50 = 중립)
+        val score = (50 + (pos - neg).toDouble() / toned * 40).coerceIn(0.0, 100.0).roundToInt()
         val label = when {
             score >= 60 -> "긍정"
             score <= 40 -> "부정"
@@ -38,7 +44,7 @@ object NewsSentimentBuilder {
         // (중립 헤드라인만 5개 노출되면 왜 이 sentiment 가 나왔는지 근거가 안 보임)
         val tonedFirst = classified
             .sortedByDescending { (_, tone) -> if (tone != 0) 1 else 0 }
-        val highlights = tonedFirst.take(8).map { (n, tone) ->
+        val highlights = tonedFirst.take(MAX_HIGHLIGHTS).map { (n, tone) ->
             NewsHighlight(
                 title = n.title,
                 source = n.source,
