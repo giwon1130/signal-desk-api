@@ -13,7 +13,9 @@ data class MarketSummaryResponse(
     val summary: String,
     val marketSummary: List<SummaryMetric>,
     val alternativeSignals: List<AlternativeSignal>,
-    val compositeRisk: CompositeRiskSignal,
+    val compositeRisk: CompositeRiskSignal,        // 통합(호환/폴백)
+    val compositeRiskKr: CompositeRiskSignal,      // 한국 투자자 관점
+    val compositeRiskUs: CompositeRiskSignal,      // 미국 투자자 관점
     val watchAlerts: List<WatchAlert>,
     val marketSessions: List<MarketSessionStatus>,
     val briefing: DailyBriefing,

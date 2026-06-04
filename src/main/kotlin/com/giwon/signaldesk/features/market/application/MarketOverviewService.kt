@@ -90,10 +90,25 @@ class MarketOverviewService(
             portfolio = snapshot.portfolio,
             koreaMarket = core.koreaMarket,
         )
+        val compositeRiskKr = compositeRiskService.buildKr(
+            koreaMarket = core.koreaMarket,
+            news = news,
+            watchlist = snapshot.watchlist,
+            portfolio = snapshot.portfolio,
+        )
+        val compositeRiskUs = compositeRiskService.buildUs(
+            vix = core.vixSnapshot,
+            alternativeSignals = alternativeSignals,
+            news = news,
+            watchlist = snapshot.watchlist,
+            portfolio = snapshot.portfolio,
+        )
         return MarketSummaryResponse(
             generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
             marketSummary = core.marketSummary, alternativeSignals = alternativeSignals,
             compositeRisk = compositeRisk,
+            compositeRiskKr = compositeRiskKr,
+            compositeRiskUs = compositeRiskUs,
             watchAlerts = watchAlerts, marketSessions = core.marketSessions,
             briefing = briefing, sourceNotes = core.sourceNotes,
             workspaceCounts = enrichmentService.buildWorkspaceCounts(userId),

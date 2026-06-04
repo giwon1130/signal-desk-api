@@ -14,6 +14,7 @@ import kotlin.math.roundToInt
 @Service
 class CompositeRiskService {
 
+    /** 통합 위험도(기존) — 美 VIX·한국 지수·PizzINT·뉴스 가중 합성. 호환/폴백용으로 유지. */
     fun build(
         alternativeSignals: List<AlternativeSignal>,
         vix: VixSnapshot?,
@@ -21,24 +22,67 @@ class CompositeRiskService {
         watchlist: List<WatchItem>,
         portfolio: PortfolioSummary,
         koreaMarket: MarketSection? = null,
-    ): CompositeRiskSignal {
-        // 변동성(美 VIX + 한국 지수)이 가장 큰 가중이므로 앞에 둔다.
-        val components = listOf(
-            vixComponent(vix),
-            krComponent(koreaMarket),
-            pizzComponent(alternativeSignals),
-            newsComponent(news),
-        )
+    ): CompositeRiskSignal = assemble(
+        components = listOf(
+            vixComponent(vix, VIX_WEIGHT),
+            krComponent(koreaMarket, KR_WEIGHT),
+            pizzComponent(alternativeSignals, PIZZ_WEIGHT),
+            newsComponent(news, NEWS_WEIGHT),
+        ),
+        marketLabel = "",
+        watchlist = watchlist,
+        portfolio = portfolio,
+    )
 
+    /** 한국 투자자 관점 — 한국 지수 변동(0.6) + 한국 뉴스 위험(0.4). */
+    fun buildKr(
+        koreaMarket: MarketSection?,
+        news: List<MarketNews>,
+        watchlist: List<WatchItem>,
+        portfolio: PortfolioSummary,
+    ): CompositeRiskSignal = assemble(
+        components = listOf(
+            krComponent(koreaMarket, 0.6),
+            newsComponent(news.filter { it.market.equals("KR", ignoreCase = true) }, 0.4),
+        ),
+        marketLabel = "한국 ",
+        watchlist = watchlist,
+        portfolio = portfolio,
+    )
+
+    /** 미국 투자자 관점 — 美 VIX(0.5) + 미국 뉴스 위험(0.3) + 지정학 PizzINT(0.2). */
+    fun buildUs(
+        vix: VixSnapshot?,
+        alternativeSignals: List<AlternativeSignal>,
+        news: List<MarketNews>,
+        watchlist: List<WatchItem>,
+        portfolio: PortfolioSummary,
+    ): CompositeRiskSignal = assemble(
+        components = listOf(
+            vixComponent(vix, 0.5),
+            newsComponent(news.filter { it.market.equals("US", ignoreCase = true) }, 0.3),
+            pizzComponent(alternativeSignals, 0.2),
+        ),
+        marketLabel = "미국 ",
+        watchlist = watchlist,
+        portfolio = portfolio,
+    )
+
+    /** 컴포넌트 목록 → 1~10 위험도 신호로 환산 (통합/시장별 공통). */
+    private fun assemble(
+        components: List<RiskComponent>,
+        marketLabel: String,
+        watchlist: List<WatchItem>,
+        portfolio: PortfolioSummary,
+    ): CompositeRiskSignal {
         val score100 = components.sumOf { it.score * it.weight }.roundToInt().coerceIn(0, 100)
         val score = (score100 / 10.0).roundToInt().coerceIn(1, 10)
         val level = levelOf(score)
-
         return CompositeRiskSignal(
             score = score,
             score100 = score100,
             level = level,
-            headline = buildHeadline(score, level, components),
+            headline = buildHeadline(score, level, marketLabel, components),
             components = components,
             description = DESCRIPTION,
             methodology = METHODOLOGY,
@@ -48,10 +92,10 @@ class CompositeRiskService {
     }
 
     // ─── 美 VIX 변동성 (가중 0.3) ─────────────────────────────────────────────
-    private fun vixComponent(vix: VixSnapshot?): RiskComponent {
+    private fun vixComponent(vix: VixSnapshot?, weight: Double): RiskComponent {
         if (vix == null) {
             return RiskComponent(
-                label = "VIX 변동성", score = 45, weight = VIX_WEIGHT,
+                label = "VIX 변동성", score = 45, weight = weight,
                 state = "데이터 대기", detail = "CBOE VIX 응답 없음 — 중립값으로 처리",
             )
         }
@@ -63,7 +107,7 @@ class CompositeRiskService {
         return RiskComponent(
             label = "VIX 변동성",
             score = score,
-            weight = VIX_WEIGHT,
+            weight = weight,
             state = when {
                 score >= 70 -> "변동성 경계"
                 score >= 40 -> "보통"
@@ -75,11 +119,11 @@ class CompositeRiskService {
 
     // ─── 한국 지수 변동 (가중 0.3) — 한국 시장 급변동을 위험도에 반영 ──────────
     // VIX(미국)만으론 한국 사이드카·급락 같은 KR 변동성이 0으로 잡혀 "안정"으로 오인됐다.
-    private fun krComponent(koreaMarket: MarketSection?): RiskComponent {
+    private fun krComponent(koreaMarket: MarketSection?, weight: Double): RiskComponent {
         val indices = koreaMarket?.indices.orEmpty()
         if (indices.isEmpty()) {
             return RiskComponent(
-                label = "한국 지수 변동", score = 45, weight = KR_WEIGHT,
+                label = "한국 지수 변동", score = 45, weight = weight,
                 state = "데이터 대기", detail = "KR 지수 응답 없음 — 중립값으로 처리",
             )
         }
@@ -91,7 +135,7 @@ class CompositeRiskService {
         return RiskComponent(
             label = "한국 지수 변동",
             score = score,
-            weight = KR_WEIGHT,
+            weight = weight,
             state = when {
                 score >= 70 -> "급변동 경계"
                 score >= 40 -> "변동 확대"
@@ -102,7 +146,7 @@ class CompositeRiskService {
     }
 
     // ─── PizzINT 종합 (가중 0.2) ─────────────────────────────────────────────
-    private fun pizzComponent(signals: List<AlternativeSignal>): RiskComponent {
+    private fun pizzComponent(signals: List<AlternativeSignal>, weight: Double): RiskComponent {
         val pizza = scoreOf(signals, "Pentagon Pizza Index")
         val policy = scoreOf(signals, "Policy Buzz")
         val bar = scoreOf(signals, "Bar Counter-Signal")
@@ -115,7 +159,7 @@ class CompositeRiskService {
         return RiskComponent(
             label = "PizzINT 종합",
             score = score,
-            weight = PIZZ_WEIGHT,
+            weight = weight,
             state = when {
                 score >= 70 -> "지정학 노이즈 큼"
                 score >= 40 -> "보통"
@@ -129,10 +173,10 @@ class CompositeRiskService {
         signals.firstOrNull { it.label == label }?.score ?: 50
 
     // ─── 뉴스 키워드 빈도 (가중 0.2) ─────────────────────────────────────────
-    private fun newsComponent(news: List<MarketNews>): RiskComponent {
+    private fun newsComponent(news: List<MarketNews>, weight: Double): RiskComponent {
         if (news.isEmpty()) {
             return RiskComponent(
-                label = "뉴스 키워드", score = 45, weight = NEWS_WEIGHT,
+                label = "뉴스 키워드", score = 45, weight = weight,
                 state = "데이터 대기", detail = "뉴스 표본 없음 — 중립값으로 처리",
             )
         }
@@ -151,7 +195,7 @@ class CompositeRiskService {
         return RiskComponent(
             label = "뉴스 키워드",
             score = score,
-            weight = NEWS_WEIGHT,
+            weight = weight,
             state = when {
                 score >= 70 -> "위험 키워드 집중"
                 score >= 40 -> "보통"
@@ -170,13 +214,13 @@ class CompositeRiskService {
         else -> "안정"
     }
 
-    private fun buildHeadline(score: Int, level: String, components: List<RiskComponent>): String {
+    private fun buildHeadline(score: Int, level: String, marketLabel: String, components: List<RiskComponent>): String {
         val driver = components.maxByOrNull { it.score }?.label ?: "복합 요인"
         return when {
-            score >= 8 -> "오늘 시장 위험도 $score/10 — $level. ${driver}가 가장 크게 자극 중이라 신규 진입은 신중하게 해 주세요."
-            score >= 6 -> "오늘 시장 위험도 $score/10 — $level. $driver 흐름을 보면서 대응해 주세요."
-            score >= 4 -> "오늘 시장 위험도 $score/10 — $level. 큰 충격 신호는 없지만 평소 페이스를 유지해 주세요."
-            else -> "오늘 시장 위험도 $score/10 — $level. 외부 위험 신호가 약한 차분한 구간입니다."
+            score >= 8 -> "오늘 ${marketLabel}시장 위험도 $score/10 — $level. ${driver}가 가장 크게 자극 중이라 신규 진입은 신중하게 해 주세요."
+            score >= 6 -> "오늘 ${marketLabel}시장 위험도 $score/10 — $level. $driver 흐름을 보면서 대응해 주세요."
+            score >= 4 -> "오늘 ${marketLabel}시장 위험도 $score/10 — $level. 큰 충격 신호는 없지만 평소 페이스를 유지해 주세요."
+            else -> "오늘 ${marketLabel}시장 위험도 $score/10 — $level. 외부 위험 신호가 약한 차분한 구간입니다."
         }
     }
 
