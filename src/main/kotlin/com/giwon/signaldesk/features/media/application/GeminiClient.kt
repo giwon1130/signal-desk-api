@@ -41,6 +41,7 @@ import java.time.Instant
 class GeminiClient(
     private val objectMapper: ObjectMapper,
     @Value("\${signal-desk.integrations.gemini.api-key}") private val apiKey: String,
+    @Value("\${signal-desk.integrations.gemini.fallback-keys:}") private val fallbackKeysRaw: String,
     @Value("\${signal-desk.integrations.gemini.base-url}") private val baseUrl: String,
     @Value("\${signal-desk.integrations.gemini.model}") private val model: String,
 ) {
@@ -49,17 +50,29 @@ class GeminiClient(
         .connectTimeout(Duration.ofSeconds(5))
         .build()
 
+    // 키 체인: [primary, ...fallbacks]. primary 가 일일 쿼터(429-quota)로 소진되면 다음 키로 폴백.
+    // primary·fallback 어느 쪽이 비어도(로테이션 중) blank 제거 후 살아있는 키만 순서대로 사용.
+    private val apiKeys: List<String> =
+        (listOf(apiKey) + fallbackKeysRaw.split(","))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
     // Fallback chain: 주 모델 503 과부하 시 다음 모델 시도. 현행 정식 GA 모델로 구성.
     // primary 가 fallback 과 중복되면 distinct 로 제거.
     // gemini-2.0-flash 는 2026-06-01 deprecated 라 제외 — 죽은 슬롯이 폴백을 낭비하지 않게 한다.
     private val modelChain: List<String> =
         listOf(model, "gemini-2.5-flash", "gemini-2.5-flash-lite").distinct()
 
-    // 시스템 헬스 — 마지막 모든 모델 실패 시각. 사용자에게 "일시 장애" 안내용.
+    // 시스템 헬스 — 마지막 모든 키·모델 실패 시각. 사용자에게 "일시 장애" 안내용.
     // 성공 호출이 한 번이라도 들어오면 자가 회복 — null 로 reset.
     @Volatile private var lastFailureAt: Instant? = null
 
-    fun isEnabled(): Boolean = apiKey.isNotBlank()
+    fun isEnabled(): Boolean = apiKeys.isNotEmpty()
+
+    /** API 키 마스킹 — 로깅용. 앞4/뒤4만 노출, 그 외는 전부 가린다. */
+    private fun mask(key: String): String =
+        if (key.length <= 8) "****" else "${key.take(4)}…${key.takeLast(4)}"
 
     /** 최근 5분 내 모든 모델 fallback 실패 없었으면 healthy. */
     fun isHealthy(): Boolean {
@@ -209,40 +222,71 @@ class GeminiClient(
     }
 
     /**
-     * Gemini generateContent 호출 + 재시도 + 모델 fallback chain.
+     * Gemini generateContent 호출 + 모델 fallback + 키 fallback.
      *
-     * 흐름:
-     *  1. primary model 3회 재시도 (지수 백오프 1→2→4초)
-     *  2. 다 실패 시 다음 모델로 (gemini-2.5-flash)
-     *  3. 또 실패 시 다음 (gemini-2.5-flash-lite)
-     *  4. 모든 모델 실패 → lastFailureAt set, null 반환
+     * 2단 폴백:
+     *  - 안쪽(모델): primary→2.5-flash→2.5-flash-lite. 503/RPM 은 모델당 3회 재시도(지수 백오프),
+     *    429(quota)·400 hard error 는 즉시 다음 모델로.
+     *  - 바깥(키): 한 키의 **모든 모델이 quota 소진**됐을 때만 다음 키로. 비-quota(일시 장애 등)면
+     *    키를 바꿔도 같은 문제라 여분 키를 낭비하지 않고 즉시 degraded.
      *
      * 한 번 성공하면 lastFailureAt reset (자가 회복 시그널).
-     * 503/500/429(RPM) 은 재시도, 429(quota 소진)·400 같은 hard error 는 즉시 다음 모델로.
      */
     private fun postWithRetry(prompt: String, timeoutSeconds: Long): String? {
         val content = buildPayload(prompt)
-        for ((modelIndex, m) in modelChain.withIndex()) {
-            val body = postToModel(content, timeoutSeconds, m)
-            if (body != null) {
-                // 성공 — 자가 회복.
+        for ((keyIndex, key) in apiKeys.withIndex()) {
+            val outcome = tryAllModels(content, timeoutSeconds, key)
+            outcome.body?.let { body ->
                 if (lastFailureAt != null) {
-                    log.info("Gemini recovered via model={} (chain idx={})", m, modelIndex)
+                    log.info("Gemini recovered via key={} (key idx={})", mask(key), keyIndex)
                     lastFailureAt = null
                 }
                 return body
             }
-            if (modelIndex < modelChain.size - 1) {
-                log.warn("Gemini model {} exhausted — trying next fallback", m)
+            if (!outcome.quotaExhausted) {
+                // 키 쿼터 문제가 아님(503/네트워크/hard error) — 여분 키를 태워도 같은 결과라 중단.
+                log.error("Gemini key={} 비-quota 실패 — 키 폴백 생략, marking degraded", mask(key))
+                lastFailureAt = Instant.now()
+                return null
+            }
+            if (keyIndex < apiKeys.size - 1) {
+                log.warn("Gemini key={} 모든 모델 quota 소진 — 다음 키로 폴백", mask(key))
             }
         }
-        log.error("Gemini API all {} models exhausted — marking degraded", modelChain.size)
+        log.error("Gemini API 모든 키({})·모델 quota 소진 — marking degraded", apiKeys.size)
         lastFailureAt = Instant.now()
         return null
     }
 
-    /** 단일 모델로 3회 재시도. 성공 body or null. */
-    private fun postToModel(content: String, timeoutSeconds: Long, modelName: String): String? {
+    /** 키 1개로 모델 체인 전부 시도. 성공 body 또는 (실패 시) quota 소진 여부. */
+    private fun tryAllModels(content: String, timeoutSeconds: Long, apiKey: String): KeyOutcome {
+        var sawQuota = false
+        for ((modelIndex, m) in modelChain.withIndex()) {
+            when (val r = postToModel(content, timeoutSeconds, m, apiKey)) {
+                is ModelResult.Ok -> return KeyOutcome(body = r.body, quotaExhausted = sawQuota)
+                ModelResult.Quota -> sawQuota = true
+                ModelResult.Failed -> Unit
+            }
+            if (modelIndex < modelChain.size - 1) {
+                log.warn("Gemini key={} model={} exhausted — trying next model", mask(apiKey), m)
+            }
+        }
+        return KeyOutcome(body = null, quotaExhausted = sawQuota)
+    }
+
+    /** 키 1개·모델 1개 시도 결과. */
+    private data class KeyOutcome(val body: String?, val quotaExhausted: Boolean)
+
+    private sealed interface ModelResult {
+        data class Ok(val body: String) : ModelResult
+        /** 429 + body 에 "quota" — 이 키의 해당 모델 일일 한도 소진. */
+        object Quota : ModelResult
+        /** 503/네트워크/400 등 비-quota 실패. */
+        object Failed : ModelResult
+    }
+
+    /** 단일 키·단일 모델로 3회 재시도. */
+    private fun postToModel(content: String, timeoutSeconds: Long, modelName: String, apiKey: String): ModelResult {
         val url = "$baseUrl/v1beta/models/$modelName:generateContent?key=$apiKey"
         for (attempt in 1..MAX_ATTEMPTS) {
             val result = runCatching {
@@ -254,24 +298,26 @@ class GeminiClient(
                     .build()
                 httpClient.send(request, HttpResponse.BodyHandlers.ofString())
             }.getOrElse {
-                log.warn("Gemini API call failed model={} (attempt {}/{})", modelName, attempt, MAX_ATTEMPTS, it)
+                log.warn("Gemini API call failed key={} model={} (attempt {}/{})", mask(apiKey), modelName, attempt, MAX_ATTEMPTS, it)
                 null
             }
 
-            if (result != null && result.statusCode() == 200) return result.body()
+            if (result != null && result.statusCode() == 200) return ModelResult.Ok(result.body())
 
             val status = result?.statusCode() ?: -1
-            val retryable = result == null || isRetryable(status, result.body())
+            val body = result?.body()
+            val quota = status == 429 && body?.contains("quota", ignoreCase = true) == true
+            val retryable = result == null || isRetryable(status, body)
             if (!retryable || attempt == MAX_ATTEMPTS) {
-                log.warn("Gemini API model={} giving up. status={} attempt={}/{} body={}",
-                    modelName, status, attempt, MAX_ATTEMPTS, result?.body()?.take(200))
-                return null
+                log.warn("Gemini API key={} model={} giving up. status={} quota={} attempt={}/{} body={}",
+                    mask(apiKey), modelName, status, quota, attempt, MAX_ATTEMPTS, body?.take(200))
+                return if (quota) ModelResult.Quota else ModelResult.Failed
             }
             val backoffMs = 1000L shl (attempt - 1) // 1s, 2s, 4s
-            log.warn("Gemini API model={} status={} — retry {}/{} after {}ms", modelName, status, attempt, MAX_ATTEMPTS, backoffMs)
+            log.warn("Gemini API key={} model={} status={} — retry {}/{} after {}ms", mask(apiKey), modelName, status, attempt, MAX_ATTEMPTS, backoffMs)
             runCatching { Thread.sleep(backoffMs) }
         }
-        return null
+        return ModelResult.Failed
     }
 
     /**

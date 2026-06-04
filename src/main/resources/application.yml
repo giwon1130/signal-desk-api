@@ -68,6 +68,9 @@ signal-desk:
     gemini:
       # Google AI Studio 에서 발급. 비어있으면 미디어 요약 기능 비활성.
       api-key: ${GEMINI_API_KEY:}
+      # 주 키가 일일 쿼터(429)로 소진됐을 때 폴백할 여분 키들. 콤마 구분(여러 개 가능).
+      # 비어있으면 단일 키로 기존과 동일 동작. 키 로테이션 중 임시 추가/제거 용도.
+      fallback-keys: ${GEMINI_API_KEY_FALLBACKS:}
       base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
       # 정식 GA 모델 권장. 실험(-exp)은 분당 한도·과부하에 취약.
       model: ${GEMINI_MODEL:gemini-2.0-flash}
