@@ -38,6 +38,7 @@ class WatchlistAlertService(
     private val technicalCalculator: TechnicalIndicatorCalculator,
     private val detector: WatchlistAlertDetector,
     private val expoPushClient: ExpoPushClient,
+    private val moverReasonService: com.giwon.signaldesk.features.market.application.MoverReasonService,
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul")),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -106,9 +107,19 @@ class WatchlistAlertService(
         val candidates = detector.detect(refreshed, alreadySent, today, recentMaxRate)
         if (candidates.isEmpty()) return
 
+        // 급등/급락 후보엔 '왜 움직였나' 한 줄 사유를 붙인다. 티커 dedupe → 종목당 Gemini 1회(배치).
+        val moveTargets = candidates
+            .filter { it.direction == AlertDirection.UP || it.direction == AlertDirection.DOWN }
+            .distinctBy { it.ticker }
+            .map { com.giwon.signaldesk.features.market.application.MoverReasonTarget(it.market, it.ticker, it.name, it.changeRate) }
+        val reasonByTicker = if (moveTargets.isNotEmpty()) {
+            runCatching { moverReasonService.reasonsForTickers(moveTargets) }
+                .getOrElse { log.warn("watch alert reason gen failed", it); emptyMap() }
+        } else emptyMap()
+
         val messages = candidates.flatMap { c ->
             val devices = devicesByUser[c.userId].orEmpty()
-            devices.map { d -> buildMessage(d.expoToken, c) }
+            devices.map { d -> buildMessage(d.expoToken, c, reasonByTicker[c.ticker]) }
         }
         expoPushClient.send(messages)
         // 한 candidate 의 record 실패가 다른 candidate 나 전체 scan 을 막지 않도록 개별 격리.
@@ -127,16 +138,18 @@ class WatchlistAlertService(
         log.info("Watchlist alert dispatched. candidates={}, messages={}", candidates.size, messages.size)
     }
 
-    private fun buildMessage(token: String, c: AlertCandidate): ExpoPushClient.Message {
+    private fun buildMessage(token: String, c: AlertCandidate, reason: String? = null): ExpoPushClient.Message {
         val priceStr = krwFmt.format(c.currentPrice)
+        // 사유가 있으면 "왜 움직였나"를 본문 앞에, 없으면 기존 일반 멘트.
+        val why = reason?.takeIf { it.isNotBlank() }?.let { if (it.endsWith(".") || it.endsWith("다") || it.endsWith("요")) "$it " else "$it. " }
         val (title, body) = when (c.direction) {
             AlertDirection.UP -> {
                 val signed = String.format("%+.2f%%", c.changeRate)
-                "🚀 ${c.name} $signed" to "${priceStr}원 · 단기 급등 — 익절 라인을 짚고 가세요."
+                "🚀 ${c.name} $signed" to "${priceStr}원 · ${why ?: "단기 급등 — "}익절 라인을 짚고 가세요."
             }
             AlertDirection.DOWN -> {
                 val signed = String.format("%+.2f%%", c.changeRate)
-                "⚠️ ${c.name} $signed" to "${priceStr}원 · 급락 — 손절선을 확인하고 추가 매수는 신중하게 해 주세요."
+                "⚠️ ${c.name} $signed" to "${priceStr}원 · ${why ?: "급락 — "}손절선을 확인하고 추가 매수는 신중하게 해 주세요."
             }
             AlertDirection.PRICE_BELOW -> {
                 val threshStr = krwFmt.format(c.thresholdPrice)

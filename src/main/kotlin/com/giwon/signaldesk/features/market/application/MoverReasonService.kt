@@ -117,12 +117,39 @@ class MoverReasonService(
             .distinctBy { "${it.market}:${it.ticker}" }
     }
 
+    /**
+     * 임의 종목(관심종목 급등락 등)에 대해 뉴스 매칭 + Gemini 한 줄 사유.
+     * 캐시된 시장 뉴스를 재사용하고 Gemini 배치 1회만 호출한다. ticker→사유 맵 반환(공백 제외).
+     */
+    fun reasonsForTickers(targets: List<MoverReasonTarget>): Map<String, String> {
+        if (!geminiClient.isEnabled() || targets.isEmpty()) return emptyMap()
+        val news = newsRssClient.fetchMarketNews().orEmpty()
+        val inputs = targets.map { t ->
+            val related = news.asSequence()
+                .filter { matchesName(t.name, t.ticker, it) }
+                .map { it.title }.distinct().take(4).toList()
+            MoverReasonInput(
+                market = t.market, ticker = t.ticker, name = t.name,
+                changeRate = t.changeRate,
+                direction = if (t.changeRate >= 0) "급등" else "급락",
+                headlines = related,
+            )
+        }
+        return runCatching {
+            geminiClient.summarizeMoverReasons(LocalDate.now().toString(), inputs)
+                .associate { it.ticker.trim() to it.reason.trim() }
+                .filterValues { it.isNotBlank() }
+        }.getOrElse { log.warn("watch mover reasons failed", it); emptyMap() }
+    }
+
     /** 헤드라인 제목에 종목명 또는 티커가 포함되면 관련 뉴스로 본다. */
-    private fun matches(mover: TopMover, news: MarketNews): Boolean {
+    private fun matches(mover: TopMover, news: MarketNews): Boolean = matchesName(mover.name, mover.ticker, news)
+
+    private fun matchesName(name: String, ticker: String, news: MarketNews): Boolean {
         val title = news.title.lowercase()
-        val name = mover.name.lowercase()
-        val ticker = mover.ticker.lowercase()
-        return (name.length >= 2 && title.contains(name)) || (ticker.length >= 2 && title.contains(ticker))
+        val n = name.lowercase()
+        val t = ticker.lowercase()
+        return (n.length >= 2 && title.contains(n)) || (t.length >= 2 && title.contains(t))
     }
 
     companion object {
@@ -140,4 +167,12 @@ data class MoverReason(
     val direction: String,
     val changeRate: Double,
     val reason: String,
+)
+
+/** reasonsForTickers 입력 — 사유를 붙일 임의 종목(관심 급등락 등). */
+data class MoverReasonTarget(
+    val market: String,
+    val ticker: String,
+    val name: String,
+    val changeRate: Double,
 )
