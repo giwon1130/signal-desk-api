@@ -2,9 +2,9 @@ package com.giwon.signaldesk.features.media.application
 
 import com.giwon.signaldesk.features.events.application.MarketEventService
 import com.giwon.signaldesk.features.market.application.CboeVixClient
-import com.giwon.signaldesk.features.market.application.FredIndexClient
 import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
 import com.giwon.signaldesk.features.market.application.MarketSessionService
+import com.giwon.signaldesk.features.market.application.UsIndexService
 import org.slf4j.LoggerFactory
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
@@ -22,7 +22,7 @@ import java.time.ZoneId
 @Service
 class MarketInsightService(
     private val cboeVixClient: CboeVixClient,
-    private val fredIndexClient: FredIndexClient,
+    private val usIndexService: UsIndexService,
     private val newsRssClient: GoogleNewsRssClient,
     private val geminiClient: GeminiClient,
     private val marketSessionService: MarketSessionService,
@@ -53,7 +53,7 @@ class MarketInsightService(
         }
 
         val vix = runCatching { cboeVixClient.fetchVix() }.getOrNull()
-        val indices = runCatching { fredIndexClient.fetchUsIndices() }.getOrNull()
+        val indices = runCatching { usIndexService.fetchUsIndices() }.getOrNull()
         val headlines = runCatching { newsRssClient.fetchMarketNews() }.getOrNull() ?: emptyList()
         // 다가오는 3일치 이벤트 (FOMC/실적/휴장 등) — Gemini가 시점 컨텍스트로 활용
         val upcomingEvents = runCatching { marketEventService.upcoming(3) }.getOrNull() ?: emptyList()

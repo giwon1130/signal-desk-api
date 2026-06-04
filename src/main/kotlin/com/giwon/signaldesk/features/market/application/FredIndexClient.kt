@@ -14,7 +14,8 @@ class FredIndexClient(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    @org.springframework.cache.annotation.Cacheable(cacheNames = ["macro-index"], unless = "#result == null")
+    // 명시적 key — 같은 macro-index 캐시의 fetchVix 등과 SimpleKey.EMPTY 충돌 방지. (이제 UsIndexService 폴백 경로 전용)
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["macro-index"], key = "'fred-us-indices'", unless = "#result == null")
     fun fetchUsIndices(): UsIndicesSnapshot? {
         if (!enabled) return null
 

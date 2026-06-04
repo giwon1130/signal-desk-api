@@ -9,6 +9,7 @@ import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
 import com.giwon.signaldesk.features.market.application.KrxOfficialClient
 import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
 import com.giwon.signaldesk.features.market.application.TopMoversService
+import com.giwon.signaldesk.features.market.application.UsIndexService
 import com.giwon.signaldesk.features.market.application.YahooQuoteClient
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
@@ -44,6 +45,7 @@ class MorningBriefService(
     private val jdbc: JdbcTemplate,
     private val vixClient: CboeVixClient,
     private val fredIndexClient: FredIndexClient,
+    private val usIndexService: UsIndexService,
     private val newsRssClient: GoogleNewsRssClient,
     private val investorRankClient: NaverInvestorRankClient,
     private val krxOfficialClient: KrxOfficialClient,
@@ -85,7 +87,7 @@ class MorningBriefService(
 
         // 외부 API 6종을 병렬 수집 — 순차 호출 시 수십 초가 걸려 Gemini 타임아웃 위험.
         val vixF = supplyAsync { vixClient.fetchVix() }
-        val indicesF = supplyAsync { fredIndexClient.fetchUsIndices() }
+        val indicesF = supplyAsync { usIndexService.fetchUsIndices() }
         val macroF = supplyAsync { fredIndexClient.fetchMacro() }
         val headlinesF = supplyAsync { newsRssClient.fetchMarketNews() }
         val eventsF = supplyAsync { marketEventService.upcoming(3) }

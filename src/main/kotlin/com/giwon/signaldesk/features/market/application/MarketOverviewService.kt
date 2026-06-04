@@ -15,7 +15,7 @@ import kotlin.math.roundToInt
 class MarketOverviewService(
     private val krxOfficialClient: KrxOfficialClient,
     private val cboeVixClient: CboeVixClient,
-    private val fredIndexClient: FredIndexClient,
+    private val usIndexService: UsIndexService,
     private val naverGlobalQuoteClient: NaverGlobalQuoteClient,
     private val yahooFinanceScreenerClient: YahooFinanceScreenerClient,
     private val googleNewsRssClient: GoogleNewsRssClient,
@@ -137,7 +137,7 @@ class MarketOverviewService(
             val koreaMarketFuture = CompletableFuture.supplyAsync { krxOfficialClient.loadKoreaMarketSection() ?: emptyKoreaMarket() }
             val vixFuture = CompletableFuture.supplyAsync { cboeVixClient.fetchVix() }
             val koreanQuotesFuture = CompletableFuture.supplyAsync { enrichmentService.loadKoreanQuotes() }
-            val usIndicesFuture = CompletableFuture.supplyAsync { fredIndexClient.fetchUsIndices() }
+            val usIndicesFuture = CompletableFuture.supplyAsync { usIndexService.fetchUsIndices() }
             // 빅테크 6종 (NVDA/MSFT/AAPL/AMZN/TSLA/META) — 빅테크 sentiment 산출 baseline
             val usBigtechQuotesFuture = CompletableFuture.supplyAsync { naverGlobalQuoteClient.fetchUsQuotes(US_BIGTECH_TICKERS) }
             // 미국 거래량 상위 — leadingStocks 동적화용

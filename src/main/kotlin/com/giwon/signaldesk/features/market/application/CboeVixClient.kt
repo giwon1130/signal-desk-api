@@ -19,7 +19,8 @@ class CboeVixClient(
         .connectTimeout(Duration.ofSeconds(3))
         .build()
 
-    @org.springframework.cache.annotation.Cacheable(cacheNames = ["macro-index"], unless = "#result == null")
+    // 명시적 key — 같은 macro-index 캐시의 다른 무인자 @Cacheable 와 SimpleKey.EMPTY 충돌 방지.
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["macro-index"], key = "'vix'", unless = "#result == null")
     fun fetchVix(): VixSnapshot? {
         if (!enabled) return null
 

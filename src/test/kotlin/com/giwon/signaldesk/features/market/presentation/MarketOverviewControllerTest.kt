@@ -19,6 +19,8 @@ import org.springframework.test.web.servlet.get
         "signal-desk.integrations.pizzint.enabled=false",
         "signal-desk.integrations.naver-global.enabled=false",
         "signal-desk.integrations.yahoo-screener.enabled=false",
+        // US 지수 1순위 소스(야후 v8 chart)도 꺼야 "외부 연동 전부 OFF → 지수 빈 리스트" 전제가 성립.
+        "signal-desk.integrations.yahoo-quote.enabled=false",
         "signal-desk.integrations.sec-edgar.enabled=false",
     ]
 )

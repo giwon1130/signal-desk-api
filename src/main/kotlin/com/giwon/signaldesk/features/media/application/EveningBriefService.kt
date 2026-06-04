@@ -2,8 +2,8 @@ package com.giwon.signaldesk.features.media.application
 
 import com.giwon.signaldesk.features.events.application.FinnhubClient
 import com.giwon.signaldesk.features.market.application.CboeVixClient
-import com.giwon.signaldesk.features.market.application.FredIndexClient
 import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
+import com.giwon.signaldesk.features.market.application.UsIndexService
 import com.giwon.signaldesk.features.market.application.UsIndicesSnapshot
 import com.giwon.signaldesk.features.market.application.YahooFinanceScreenerClient
 import com.giwon.signaldesk.features.market.application.YahooQuote
@@ -29,7 +29,7 @@ import java.util.concurrent.CompletableFuture
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class EveningBriefService(
     private val cboeVixClient: CboeVixClient,
-    private val fredIndexClient: FredIndexClient,
+    private val usIndexService: UsIndexService,
     private val yahooFinanceScreenerClient: YahooFinanceScreenerClient,
     private val finnhubClient: FinnhubClient,
     private val googleNewsRssClient: GoogleNewsRssClient,
@@ -55,7 +55,7 @@ class EveningBriefService(
 
         // 외부 데이터 병렬 수집 — 모닝 브리프와 동일 패턴.
         val vixF = supplyAsync { cboeVixClient.fetchVix() }
-        val indicesF = supplyAsync { fredIndexClient.fetchUsIndices() }
+        val indicesF = supplyAsync { usIndexService.fetchUsIndices() }
         val gainersF = supplyAsync { yahooFinanceScreenerClient.fetchGainers(5) }
         val losersF = supplyAsync { yahooFinanceScreenerClient.fetchLosers(5) }
         val today = LocalDate.now(clock)
