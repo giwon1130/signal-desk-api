@@ -97,4 +97,27 @@ class TradeController(
         val list = positionService.positionViewsForUser(UUID.fromString(leagueId), userId)
         return ApiResponse(true, list.map(PositionResponse::from))
     }
+
+    /**
+     * 특정 참가자의 현재 보유 (동료 포트폴리오 드릴다운).
+     * 공개(OPEN) 리그에서만 타인 조회를 허용한다 — 비공개 리그는 거래 피드와 동일하게 본인만.
+     */
+    @GetMapping("/positions/{targetUserId}")
+    fun memberPositions(
+        @RequestHeader("Authorization", required = false) auth: String?,
+        @PathVariable leagueId: String,
+        @PathVariable targetUserId: String,
+    ): ApiResponse<List<PositionResponse>> {
+        val userId = requireUserId(auth)
+        val lid = UUID.fromString(leagueId)
+        val target = UUID.fromString(targetUserId)
+        if (target != userId) {
+            val league = leagueService.get(lid) ?: error("league not found")
+            require(league.visibility == LeagueVisibility.OPEN) {
+                "비공개 리그에서는 다른 참가자의 보유 종목을 볼 수 없습니다"
+            }
+        }
+        val list = positionService.positionViewsForUser(lid, target)
+        return ApiResponse(true, list.map(PositionResponse::from))
+    }
 }
