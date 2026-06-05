@@ -11,6 +11,9 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.concurrent.CompletableFuture
 
 /**
@@ -114,6 +117,42 @@ class YahooQuoteClient(
         return MacroQuotesSnapshot(usdKrw = usdKrw, us10y = us10y)
     }
 
+    /**
+     * 시즈널리티 백테스트용 장기 일봉 — 배당·분할 조정 종가(adjclose). range 예: "15y".
+     * adjclose 없으면 raw close 폴백. 날짜는 거래소 gmtoffset 반영한 현지 거래일. 실패 시 빈 리스트.
+     */
+    fun fetchDailyHistory(symbol: String, range: String = "15y"): List<HistoryBar> {
+        if (!enabled) return emptyList()
+        val encoded = URLEncoder.encode(symbol, StandardCharsets.UTF_8)
+        val req = HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/v8/finance/chart/$encoded?range=$range&interval=1d&events=div%2Csplit&includeAdjustedClose=true"))
+            .timeout(Duration.ofSeconds(8))
+            .header("User-Agent", "Mozilla/5.0")
+            .header("Accept", "application/json")
+            .GET().build()
+        val resp = runCatching { httpClient.send(req, HttpResponse.BodyHandlers.ofString()) }.getOrNull() ?: return emptyList()
+        if (resp.statusCode() !in 200..299) return emptyList()
+        val result = runCatching { objectMapper.readTree(resp.body()) }.getOrNull()
+            ?.get("chart")?.get("result")?.get(0) ?: return emptyList()
+        val timestamps = result["timestamp"] ?: return emptyList()
+        val gmtoffset = result["meta"]?.get("gmtoffset")?.asLong() ?: 0L
+        val indicators = result["indicators"]
+        val adj = indicators?.get("adjclose")?.get(0)?.get("adjclose")
+            ?: indicators?.get("quote")?.get(0)?.get("close")
+            ?: return emptyList()
+        val out = ArrayList<HistoryBar>(timestamps.size())
+        for (i in 0 until timestamps.size()) {
+            val ts = timestamps.get(i)?.asLong() ?: continue
+            val node = adj.get(i) ?: continue
+            if (node.isNull) continue
+            val c = node.asDouble()
+            if (c <= 0.0) continue
+            val date = Instant.ofEpochSecond(ts + gmtoffset).atZone(ZoneOffset.UTC).toLocalDate()
+            out.add(HistoryBar(date, c))
+        }
+        return out
+    }
+
     private fun fetchIndexSeries(symbol: String): FredSeriesSnapshot? {
         val encoded = URLEncoder.encode(symbol, StandardCharsets.UTF_8)
         val req = HttpRequest.newBuilder()
@@ -148,6 +187,9 @@ data class GlobalIndex(
     val value: Double,
     val changeRate: Double,
 )
+
+/** 시즈널리티 백테스트용 일봉(배당·분할 조정 종가). */
+data class HistoryBar(val date: LocalDate, val adjClose: Double)
 
 /** 위험도용 거시 시세 묶음 — 원/달러 환율 + 미 10년물 금리(둘 다 야후 라이브). */
 data class MacroQuotesSnapshot(

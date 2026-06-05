@@ -32,6 +32,8 @@ class CacheConfig {
         manager.registerCustomCache("macro-snapshot", build(Duration.ofHours(6), 10))
         manager.registerCustomCache("investor-rank", build(Duration.ofHours(6), 50))
         manager.registerCustomCache("ai-picks", build(Duration.ofMinutes(30), 5))
+        // 시즈널리티 백테스트 — 장기 히스토리 기반이라 거의 안 변함. 일 단위 캐시.
+        manager.registerCustomCache("seasonality", build(Duration.ofHours(24), 500))
         return manager
     }
 
