@@ -89,6 +89,8 @@ class MarketOverviewService(
             watchlist = snapshot.watchlist,
             portfolio = snapshot.portfolio,
             koreaMarket = core.koreaMarket,
+            usdKrw = core.macroQuotes?.usdKrw,
+            us10y = core.macroQuotes?.us10y,
         )
         val compositeRiskKr = compositeRiskService.buildKr(
             koreaMarket = core.koreaMarket,

@@ -58,7 +58,7 @@ class CompositeRiskServiceTest {
 
         assertTrue(result.score in 1..10, "score=${result.score}")
         assertTrue(result.score100 in 0..100, "score100=${result.score100}")
-        assertEquals(4, result.components.size)
+        assertEquals(6, result.components.size)
         // VIX/한국지수/뉴스 컴포넌트는 데이터 없을 때 "데이터 대기" 라벨
         assertTrue(result.components.any { it.state == "데이터 대기" })
     }
@@ -179,7 +179,11 @@ class CompositeRiskServiceTest {
         val highPizz = pizzSignals(100, 100, 100)
         val crashNews = (1..10).map { news("폭락 쇼크 패닉 위기") }
 
-        val result = service.build(highPizz, highVix, crashNews, emptyList(), emptyPortfolio, krMarket(-10.0))
+        val result = service.build(
+            highPizz, highVix, crashNews, emptyList(), emptyPortfolio, krMarket(-10.0),
+            usdKrw = FredSeriesSnapshot(1600.0, 5.0, emptyList()),   // 고환율·급약세 → fx 100
+            us10y = FredSeriesSnapshot(6.0, 20.0, emptyList()),      // 고금리·급등 → rate 95
+        )
         assertEquals(10, result.score)
         assertEquals("고위험", result.level)
     }

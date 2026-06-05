@@ -22,12 +22,16 @@ class CompositeRiskService {
         watchlist: List<WatchItem>,
         portfolio: PortfolioSummary,
         koreaMarket: MarketSection? = null,
+        usdKrw: FredSeriesSnapshot? = null,
+        us10y: FredSeriesSnapshot? = null,
     ): CompositeRiskSignal = assemble(
         components = listOf(
-            vixComponent(vix, VIX_WEIGHT),
-            krComponent(koreaMarket, KR_WEIGHT),
-            pizzComponent(alternativeSignals, PIZZ_WEIGHT),
-            newsComponent(news, NEWS_WEIGHT),
+            vixComponent(vix, 0.22),
+            krComponent(koreaMarket, 0.22),
+            fxComponent(usdKrw, 0.15),
+            rateComponent(us10y, 0.13),
+            pizzComponent(alternativeSignals, 0.13),
+            newsComponent(news, 0.15),
         ),
         marketLabel = "",
         watchlist = watchlist,
@@ -313,11 +317,6 @@ class CompositeRiskService {
     }
 
     companion object {
-        private const val VIX_WEIGHT = 0.3
-        private const val KR_WEIGHT = 0.3
-        private const val PIZZ_WEIGHT = 0.2
-        private const val NEWS_WEIGHT = 0.2
-
         // 한국 지수 일간 변동 → 위험. 하락은 크게(낙폭×32: -3.1%→100), 상승은 작게(×10: 변동성만 반영).
         private const val KR_DOWN_SLOPE = 32.0
         private const val KR_UP_SLOPE = 10.0
