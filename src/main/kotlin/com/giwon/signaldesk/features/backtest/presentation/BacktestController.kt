@@ -1,6 +1,7 @@
 package com.giwon.signaldesk.features.backtest.presentation
 
 import com.giwon.signaldesk.features.auth.application.AuthContext
+import com.giwon.signaldesk.features.backtest.application.CustomBacktestResult
 import com.giwon.signaldesk.features.backtest.application.SeasonalityBacktestService
 import com.giwon.signaldesk.features.backtest.application.SeasonalityReport
 import com.giwon.signaldesk.features.backtest.application.SeasonalityRule
@@ -52,6 +53,23 @@ class BacktestController(
     fun sectorRotation(@RequestParam market: String): ApiResponse<SectorRotationReport?> {
         val report = sectorService.report(market)
         return ApiResponse(report != null, report)
+    }
+
+    /** 가설 빌더 — 커스텀 윈도우(매년 진입일~청산일 보유) 백테스트. */
+    @GetMapping("/custom")
+    fun customWindow(
+        @RequestParam market: String,
+        @RequestParam ticker: String,
+        @RequestParam(required = false, defaultValue = "") name: String,
+        @RequestParam entryMonth: Int,
+        @RequestParam entryDay: Int,
+        @RequestParam exitMonth: Int,
+        @RequestParam exitDay: Int,
+        @RequestParam(required = false) costPct: Double?,
+    ): ApiResponse<CustomBacktestResult?> {
+        val cost = costPct ?: if (market.equals("KR", ignoreCase = true)) 0.25 else 0.10
+        val result = seasonalityService.customWindow(market, ticker, name, entryMonth, entryDay, exitMonth, exitDay, cost)
+        return ApiResponse(result != null, result)
     }
 
     @PostMapping("/rules")

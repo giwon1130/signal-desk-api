@@ -66,6 +66,44 @@ class SeasonalityBacktestService(
         else -> emptyList()
     }
 
+    // ─── 가설 빌더: 커스텀 윈도우(매년 진입일~청산일 보유) 백테스트 ───────────
+    fun customWindow(
+        market: String, ticker: String, name: String,
+        entryMonth: Int, entryDay: Int, exitMonth: Int, exitDay: Int, cost: Double,
+    ): CustomBacktestResult? {
+        if (entryMonth !in 1..12 || exitMonth !in 1..12 || entryDay !in 1..31 || exitDay !in 1..31) return null
+        val bars = loadBars(market, ticker, "15y").sortedBy { it.date }
+        if (bars.size < MIN_BARS) return null
+        // 청산이 진입보다 달력상 앞이면 '이듬해' 청산(예: 12/20 → 1/31).
+        val crossYear = exitMonth < entryMonth || (exitMonth == entryMonth && exitDay <= entryDay)
+        val perYear = ArrayList<YearReturn>()
+        for (y in bars.map { it.date.year }.toSortedSet()) {
+            val entryT = safeDate(y, entryMonth, entryDay) ?: continue
+            val exitT = safeDate(if (crossYear) y + 1 else y, exitMonth, exitDay) ?: continue
+            // 목표일 당일~10일 내 첫 거래일(주말·휴장 보정)
+            val entryBar = bars.firstOrNull { !it.date.isBefore(entryT) && it.date.isBefore(entryT.plusDays(10)) } ?: continue
+            val exitBar = bars.firstOrNull { !it.date.isBefore(exitT) && it.date.isBefore(exitT.plusDays(10)) } ?: continue
+            if (exitBar.date.isAfter(entryBar.date) && entryBar.adjClose > 0) {
+                perYear.add(YearReturn(y, round2((exitBar.adjClose / entryBar.adjClose - 1) * 100)))
+            }
+        }
+        if (perYear.size < 3) return null
+        val rets = perYear.map { it.returnPct }
+        val mean = rets.average(); val med = median(rets)
+        val winRate = rets.count { it > 0 }.toDouble() / rets.size * 100
+        return CustomBacktestResult(
+            market = market.uppercase(), ticker = ticker, name = name.ifBlank { ticker },
+            window = "${entryMonth}/${entryDay} → ${exitMonth}/${exitDay}${if (crossYear) " (이듬해)" else ""}",
+            meanPct = round2(mean), medianPct = round2(med), winRatePct = round1(winRate),
+            sampleYears = rets.size, worstYearPct = round2(rets.min()), bestYearPct = round2(rets.max()),
+            netAfterCostPct = round2(mean - cost), tier = tierOf(winRate, mean, med, rets.size),
+            costPct = cost, perYear = perYear.sortedByDescending { it.year },
+        )
+    }
+
+    private fun safeDate(y: Int, m: Int, d: Int): java.time.LocalDate? =
+        runCatching { java.time.LocalDate.of(y, m, minOf(d, java.time.YearMonth.of(y, m).lengthOfMonth())) }.getOrNull()
+
     // ─── 월별 ──────────────────────────────────────────────────────────────
     private fun monthlyStats(bars: List<HistoryBar>, cost: Double): List<MonthStat> {
         // (연,월) → 그 달 마지막 거래일 종가 (bars 오름차순이라 마지막 write = 월말)
@@ -226,3 +264,23 @@ data class WeekendTrade(val meanPct: Double, val winRatePct: Double, val n: Int,
 
 /** kind: BUY_MONTH / AVOID_MONTH */
 data class RuleCard(val kind: String, val title: String, val detail: String, val month: Int?, val tier: String)
+
+/** 가설 빌더 — 커스텀 윈도우 백테스트 결과. */
+data class CustomBacktestResult(
+    val market: String,
+    val ticker: String,
+    val name: String,
+    val window: String,
+    val meanPct: Double,
+    val medianPct: Double,
+    val winRatePct: Double,
+    val sampleYears: Int,
+    val worstYearPct: Double,
+    val bestYearPct: Double,
+    val netAfterCostPct: Double,
+    val tier: String,
+    val costPct: Double,
+    val perYear: List<YearReturn>,
+)
+
+data class YearReturn(val year: Int, val returnPct: Double)
