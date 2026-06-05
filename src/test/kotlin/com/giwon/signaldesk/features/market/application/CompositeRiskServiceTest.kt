@@ -214,29 +214,31 @@ class CompositeRiskServiceTest {
 
     // ─── 시장별 합성 (KR / US) ───────────────────────────────────────────────
     @Test
-    fun `buildKr 는 한국 지수·한국 뉴스만 반영하고 미국 신호는 무시`() {
+    fun `buildKr 는 한국 지수·환율·한국 뉴스를 반영하고 미국 신호는 무시`() {
         val krDanger = service.buildKr(
             koreaMarket = krMarket(-3.0, -2.0),
             news = listOf(news("코스피 사이드카 급락", "KR"), news("S&P 사상 최고치 랠리", "US")),
             watchlist = emptyList(), portfolio = emptyPortfolio,
         )
-        assertEquals(2, krDanger.components.size)
+        assertEquals(3, krDanger.components.size)
         assertTrue(krDanger.components.any { it.label == "한국 지수 변동" })
+        assertTrue(krDanger.components.any { it.label == "원/달러 환율" })
         assertTrue(krDanger.components.none { it.label == "VIX 변동성" })
         assertTrue(krDanger.score >= 5, "score=${krDanger.score}")   // 한국 급락+위험뉴스 → 높음
         assertTrue(krDanger.headline.contains("한국"), "headline=${krDanger.headline}")
     }
 
     @Test
-    fun `buildUs 는 美 VIX·미국 뉴스·PizzINT 로 산출하고 한국은 무시`() {
+    fun `buildUs 는 美 VIX·미 10년물·미국 뉴스·PizzINT 로 산출하고 한국은 무시`() {
         val us = service.buildUs(
             vix = vix(14.0),
             alternativeSignals = pizzSignals(60, 60, 60),
             news = listOf(news("코스피 사이드카 급락", "KR"), news("뉴욕증시 최고치 마감", "US")),
             watchlist = emptyList(), portfolio = emptyPortfolio,
         )
-        assertEquals(3, us.components.size)
+        assertEquals(4, us.components.size)
         assertTrue(us.components.any { it.label == "VIX 변동성" })
+        assertTrue(us.components.any { it.label == "미 10년물 금리" })
         assertTrue(us.components.none { it.label == "한국 지수 변동" })
         // 한국 급락 뉴스는 US 합성에서 걸러져 위험도를 올리지 않는다 → 낮음
         assertTrue(us.score <= 4, "score=${us.score}")

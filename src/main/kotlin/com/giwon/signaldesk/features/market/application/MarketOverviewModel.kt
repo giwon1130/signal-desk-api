@@ -95,6 +95,7 @@ internal data class CachedMarketCore(
     val marketSessions: List<MarketSessionStatus>,
     val koreaMarket: MarketSection,
     val usMarket: MarketSection,
+    val macroQuotes: MacroQuotesSnapshot? = null,
     val briefing: DailyBriefing,
     val sourceNotes: List<SourceNote>,
 )

@@ -34,34 +34,38 @@ class CompositeRiskService {
         portfolio = portfolio,
     )
 
-    /** 한국 투자자 관점 — 한국 지수 변동(0.6) + 한국 뉴스 위험(0.4). */
+    /** 한국 투자자 관점 — 한국 지수(0.45) + 원/달러 환율(0.25) + 한국 뉴스(0.30). */
     fun buildKr(
         koreaMarket: MarketSection?,
         news: List<MarketNews>,
         watchlist: List<WatchItem>,
         portfolio: PortfolioSummary,
+        usdKrw: FredSeriesSnapshot? = null,
     ): CompositeRiskSignal = assemble(
         components = listOf(
-            krComponent(koreaMarket, 0.6),
-            newsComponent(news.filter { it.market.equals("KR", ignoreCase = true) }, 0.4),
+            krComponent(koreaMarket, 0.45),
+            fxComponent(usdKrw, 0.25),
+            newsComponent(news.filter { it.market.equals("KR", ignoreCase = true) }, 0.30),
         ),
         marketLabel = "한국 ",
         watchlist = watchlist,
         portfolio = portfolio,
     )
 
-    /** 미국 투자자 관점 — 美 VIX(0.5) + 미국 뉴스 위험(0.3) + 지정학 PizzINT(0.2). */
+    /** 미국 투자자 관점 — 美 VIX(0.40) + 미 10년물 금리(0.20) + 미국 뉴스(0.25) + 지정학 PizzINT(0.15). */
     fun buildUs(
         vix: VixSnapshot?,
         alternativeSignals: List<AlternativeSignal>,
         news: List<MarketNews>,
         watchlist: List<WatchItem>,
         portfolio: PortfolioSummary,
+        us10y: FredSeriesSnapshot? = null,
     ): CompositeRiskSignal = assemble(
         components = listOf(
-            vixComponent(vix, 0.5),
-            newsComponent(news.filter { it.market.equals("US", ignoreCase = true) }, 0.3),
-            pizzComponent(alternativeSignals, 0.2),
+            vixComponent(vix, 0.40),
+            rateComponent(us10y, 0.20),
+            newsComponent(news.filter { it.market.equals("US", ignoreCase = true) }, 0.25),
+            pizzComponent(alternativeSignals, 0.15),
         ),
         marketLabel = "미국 ",
         watchlist = watchlist,
@@ -142,6 +146,74 @@ class CompositeRiskService {
                 else -> "안정"
             },
             detail = indices.joinToString(" · ") { "${it.label} ${"%+.2f".format(it.changeRate)}%" },
+        )
+    }
+
+    // ─── 원/달러 환율 (한국 관점) ────────────────────────────────────────────
+    // 원화 급약세(환율 급등)·고환율은 외국인 자금 이탈·수입물가 부담으로 한국 시장 위험을 키운다.
+    private fun fxComponent(usdKrw: FredSeriesSnapshot?, weight: Double): RiskComponent {
+        if (usdKrw == null) {
+            return RiskComponent(
+                label = "원/달러 환율", score = 45, weight = weight,
+                state = "데이터 대기", detail = "환율 응답 없음 — 중립값으로 처리",
+            )
+        }
+        val ch = usdKrw.changeRate          // 전일 대비 %, +면 원화 약세
+        val level = usdKrw.currentValue     // 원
+        val changeRisk = (ch * 22.0).coerceIn(-12.0, 70.0)
+        val levelRisk = when {
+            level >= 1450 -> 35.0
+            level >= 1400 -> 22.0
+            level >= 1350 -> 10.0
+            else -> 0.0
+        }
+        val score = (changeRisk + levelRisk).roundToInt().coerceIn(0, 100)
+        val signed = if (ch >= 0) "+${"%.2f".format(ch)}" else "%.2f".format(ch)
+        return RiskComponent(
+            label = "원/달러 환율",
+            score = score,
+            weight = weight,
+            state = when {
+                score >= 70 -> "원화 급약세 경계"
+                score >= 40 -> "원화 약세 부담"
+                else -> "안정"
+            },
+            detail = "환율 ${"%,.0f".format(level)}원 · 전일 $signed%",
+        )
+    }
+
+    // ─── 미 10년물 금리 (미국 관점) ──────────────────────────────────────────
+    // 금리 급등·고금리는 주식 할인율을 끌어올려(특히 성장/기술주) 위험을 키운다.
+    private fun rateComponent(us10y: FredSeriesSnapshot?, weight: Double): RiskComponent {
+        if (us10y == null) {
+            return RiskComponent(
+                label = "미 10년물 금리", score = 45, weight = weight,
+                state = "데이터 대기", detail = "금리 응답 없음 — 중립값으로 처리",
+            )
+        }
+        val yld = us10y.currentValue        // 수익률 %
+        val chPct = us10y.changeRate        // 전일 대비 %
+        val prev = if (chPct > -100.0) yld / (1 + chPct / 100.0) else yld
+        val bp = (yld - prev) * 100.0       // 전일 대비 bp
+        val changeRisk = (bp * 4.0).coerceIn(-12.0, 60.0)
+        val levelRisk = when {
+            yld >= 5.0 -> 35.0
+            yld >= 4.5 -> 22.0
+            yld >= 4.0 -> 10.0
+            else -> 0.0
+        }
+        val score = (changeRisk + levelRisk).roundToInt().coerceIn(0, 100)
+        val signedBp = if (bp >= 0) "+${"%.1f".format(bp)}" else "%.1f".format(bp)
+        return RiskComponent(
+            label = "미 10년물 금리",
+            score = score,
+            weight = weight,
+            state = when {
+                score >= 70 -> "금리 급등 경계"
+                score >= 40 -> "금리 부담"
+                else -> "안정"
+            },
+            detail = "미 10년물 ${"%.2f".format(yld)}% · 전일 ${signedBp}bp",
         )
     }
 
@@ -281,6 +353,7 @@ class CompositeRiskService {
             "2) 한국 지수 변동 (가중 0.3) — KOSPI/KOSDAQ 일간 등락에서 낙폭 중심으로 위험 산출\n" +
             "3) PizzINT 종합 (가중 0.2) — Pentagon Pizza 0.5 / Policy Buzz 0.3 / Bar Counter 0.2 가중 평균 후 baseline 보정\n" +
             "4) 뉴스 키워드 (가중 0.2) — 주요 헤드라인 표본의 위험 키워드 밀도\n" +
-            "네 sub-score(0~100)를 가중 합산한 뒤 1~10 위험도로 환산."
+            "각 sub-score(0~100)를 가중 합산한 뒤 1~10 위험도로 환산.\n" +
+            "※ 한국 관점엔 원/달러 환율(원화 약세·고환율=위험), 미국 관점엔 미 10년물 금리(금리 급등=위험)를 추가 반영."
     }
 }

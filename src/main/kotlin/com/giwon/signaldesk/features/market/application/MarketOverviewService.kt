@@ -95,6 +95,7 @@ class MarketOverviewService(
             news = news,
             watchlist = snapshot.watchlist,
             portfolio = snapshot.portfolio,
+            usdKrw = core.macroQuotes?.usdKrw,
         )
         val compositeRiskUs = compositeRiskService.buildUs(
             vix = core.vixSnapshot,
@@ -102,6 +103,7 @@ class MarketOverviewService(
             news = news,
             watchlist = snapshot.watchlist,
             portfolio = snapshot.portfolio,
+            us10y = core.macroQuotes?.us10y,
         )
         return MarketSummaryResponse(
             generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
@@ -154,6 +156,8 @@ class MarketOverviewService(
             val vixFuture = CompletableFuture.supplyAsync { cboeVixClient.fetchVix() }
             val koreanQuotesFuture = CompletableFuture.supplyAsync { enrichmentService.loadKoreanQuotes() }
             val usIndicesFuture = CompletableFuture.supplyAsync { usIndexService.fetchUsIndices() }
+            // 위험도용 거시 시세 — 원/달러 환율 + 미 10년물(야후 라이브)
+            val macroQuotesFuture = CompletableFuture.supplyAsync { usIndexService.fetchMacroQuotes() }
             // 빅테크 6종 (NVDA/MSFT/AAPL/AMZN/TSLA/META) — 빅테크 sentiment 산출 baseline
             val usBigtechQuotesFuture = CompletableFuture.supplyAsync { naverGlobalQuoteClient.fetchUsQuotes(US_BIGTECH_TICKERS) }
             // 미국 거래량 상위 — leadingStocks 동적화용
@@ -171,6 +175,9 @@ class MarketOverviewService(
                 .getOrDefault(emptyMap())
             val usIndicesSnapshot = runCatching { usIndicesFuture.join() }
                 .onFailure { logger.warn("US indices (FRED) fetch failed. msg={}", it.message) }
+                .getOrNull()
+            val macroQuotes = runCatching { macroQuotesFuture.join() }
+                .onFailure { logger.warn("Macro quotes (FX/UST) fetch failed. msg={}", it.message) }
                 .getOrNull()
             val usBigtechQuotes = runCatching { usBigtechQuotesFuture.join() }
                 .onFailure { logger.warn("US bigtech quotes (Naver global) fetch failed. msg={}", it.message) }
@@ -201,6 +208,7 @@ class MarketOverviewService(
                 marketSessions = marketSessions,
                 koreaMarket = koreaMarket,
                 usMarket = buildUsMarket(vixSnapshot, usIndicesSnapshot, usBigtechQuotes, usMostActives),
+                macroQuotes = macroQuotes,
                 briefing = DailyBriefing(
                     headline = "오늘은 한국은 반도체, 미국은 빅테크가 중심이고, 과열 추격보다는 눌림 확인 후 진입이 맞습니다.",
                     preMarket = listOf("한국/미국 관심 종목 각각 3개만 우선순위 설정", "KOSPI/KOSDAQ, NASDAQ/S&P 방향과 VIX 같이 확인", "외국인/기관 수급이 붙는 종목만 먼저 본다"),

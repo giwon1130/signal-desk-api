@@ -102,6 +102,18 @@ class YahooQuoteClient(
         return UsIndicesSnapshot(sp500 = sp500, nasdaq = nasdaq)
     }
 
+    /**
+     * 위험도용 거시 시세 — 원/달러 환율(KRW=X) + 미 10년물 금리(^TNX). 라이브(전일 대비 정확).
+     * FRED 는 다음 영업일 발행이라 stale → 위험 신호엔 야후만 사용(실패 시 null → 컴포넌트 중립).
+     */
+    fun fetchMacroQuotes(): MacroQuotesSnapshot? {
+        if (!enabled) return null
+        val usdKrw = fetchIndexSeries("KRW=X")
+        val us10y = fetchIndexSeries("^TNX")
+        if (usdKrw == null && us10y == null) return null
+        return MacroQuotesSnapshot(usdKrw = usdKrw, us10y = us10y)
+    }
+
     private fun fetchIndexSeries(symbol: String): FredSeriesSnapshot? {
         val encoded = URLEncoder.encode(symbol, StandardCharsets.UTF_8)
         val req = HttpRequest.newBuilder()
@@ -135,4 +147,10 @@ data class GlobalIndex(
     val label: String,
     val value: Double,
     val changeRate: Double,
+)
+
+/** 위험도용 거시 시세 묶음 — 원/달러 환율 + 미 10년물 금리(둘 다 야후 라이브). */
+data class MacroQuotesSnapshot(
+    val usdKrw: FredSeriesSnapshot?,   // 원/달러 환율 (KRW=X), currentValue=원, changeRate=전일 대비 %
+    val us10y: FredSeriesSnapshot?,    // 미 10년물 금리 (^TNX), currentValue=% 수익률, changeRate=전일 대비 %
 )
