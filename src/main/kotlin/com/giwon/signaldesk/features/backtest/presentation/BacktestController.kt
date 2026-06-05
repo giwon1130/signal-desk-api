@@ -5,6 +5,8 @@ import com.giwon.signaldesk.features.backtest.application.SeasonalityBacktestSer
 import com.giwon.signaldesk.features.backtest.application.SeasonalityReport
 import com.giwon.signaldesk.features.backtest.application.SeasonalityRule
 import com.giwon.signaldesk.features.backtest.application.SeasonalityRuleService
+import com.giwon.signaldesk.features.backtest.application.SectorRotationReport
+import com.giwon.signaldesk.features.backtest.application.SectorRotationService
 import com.giwon.signaldesk.features.market.presentation.ApiResponse
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/backtest")
 class BacktestController(
     private val seasonalityService: SeasonalityBacktestService,
+    private val sectorService: SectorRotationService,
     @Autowired(required = false) private val ruleService: SeasonalityRuleService? = null,
     @Autowired(required = false) private val authContext: AuthContext? = null,
 ) {
@@ -41,6 +44,13 @@ class BacktestController(
     ): ApiResponse<SeasonalityReport?> {
         val cost = costPct ?: if (market.equals("KR", ignoreCase = true)) 0.25 else 0.10
         val report = seasonalityService.report(market, ticker, name, years, cost)
+        return ApiResponse(report != null, report)
+    }
+
+    /** 섹터 로테이션 — 섹터별 월간 시즈널리티 매트릭스. */
+    @GetMapping("/sector-rotation")
+    fun sectorRotation(@RequestParam market: String): ApiResponse<SectorRotationReport?> {
+        val report = sectorService.report(market)
         return ApiResponse(report != null, report)
     }
 
