@@ -68,16 +68,23 @@ class JdbcPushRepository(
 
     override fun recordAlert(
         userId: UUID, market: String, ticker: String, name: String,
-        direction: AlertDirection, date: LocalDate, changeRate: Double,
+        direction: AlertDirection, date: LocalDate, changeRate: Double, reason: String?,
     ) {
+        // 같은 종목/방향/날짜 재알림(더 강한 변동)이면 행을 갱신 — 최신 변동률·사유로 덮고
+        // read_at=null 로 되돌려 '안 읽음'으로 다시 뜨게(새 푸시가 갔으므로). sent_at 도 갱신해 최상단으로.
         jdbcTemplate.update(
             """
-            insert into signal_desk_push_alert_log (id, user_id, market, ticker, name, direction, alert_date, change_rate)
-            values (?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?)
-            on conflict (user_id, ticker, direction, alert_date) do nothing
+            insert into signal_desk_push_alert_log (id, user_id, market, ticker, name, direction, alert_date, change_rate, reason)
+            values (?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?, ?)
+            on conflict (user_id, ticker, direction, alert_date) do update set
+                change_rate = excluded.change_rate,
+                reason      = coalesce(excluded.reason, signal_desk_push_alert_log.reason),
+                name        = excluded.name,
+                sent_at     = now(),
+                read_at     = null
             """.trimIndent(),
             UUID.randomUUID().toString(), userId.toString(), market, ticker, name, direction.name,
-            java.sql.Date.valueOf(date), changeRate,
+            java.sql.Date.valueOf(date), changeRate, reason,
         )
     }
 
@@ -112,7 +119,7 @@ class JdbcPushRepository(
     override fun listAlertHistory(userId: UUID, limit: Int): List<AlertHistoryItem> =
         jdbcTemplate.query(
             """
-            select market, ticker, name, direction, change_rate, alert_date, sent_at
+            select id, market, ticker, name, direction, change_rate, reason, alert_date, sent_at, read_at
             from signal_desk_push_alert_log
             where user_id = ?::uuid
             order by sent_at desc
@@ -120,16 +127,37 @@ class JdbcPushRepository(
             """.trimIndent(),
             { rs, _ ->
                 AlertHistoryItem(
+                    id = rs.getString("id"),
                     market = rs.getString("market") ?: "",
                     ticker = rs.getString("ticker"),
                     name = rs.getString("name") ?: rs.getString("ticker"),
                     direction = AlertDirection.valueOf(rs.getString("direction")),
                     changeRate = rs.getDouble("change_rate"),
+                    reason = rs.getString("reason"),
                     alertDate = rs.getDate("alert_date").toString(),
                     sentAt = rs.getTimestamp("sent_at").toInstant().toString(),
+                    readAt = rs.getTimestamp("read_at")?.toInstant()?.toString(),
                 )
             },
             userId.toString(), limit,
+        )
+
+    override fun markAllAlertsRead(userId: UUID): Int =
+        jdbcTemplate.update(
+            "update signal_desk_push_alert_log set read_at = now() where user_id = ?::uuid and read_at is null",
+            userId.toString(),
+        )
+
+    override fun deleteAlert(userId: UUID, id: UUID): Boolean =
+        jdbcTemplate.update(
+            "delete from signal_desk_push_alert_log where id = ?::uuid and user_id = ?::uuid",
+            id.toString(), userId.toString(),
+        ) > 0
+
+    override fun clearAlerts(userId: UUID): Int =
+        jdbcTemplate.update(
+            "delete from signal_desk_push_alert_log where user_id = ?::uuid",
+            userId.toString(),
         )
 
     override fun alertStats(days: Int): AlertStats {

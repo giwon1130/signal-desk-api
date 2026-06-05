@@ -126,7 +126,7 @@ class WatchlistAlertService(
         // (과거 direction varchar(8) 오버플로로 한 건 예외가 전체 scan 을 깨뜨려 dedup 무력화된 적 있음)
         candidates.forEach { c ->
             runCatching {
-                pushRepository.recordAlert(c.userId, c.market, c.ticker, c.name, c.direction, today, c.changeRate)
+                pushRepository.recordAlert(c.userId, c.market, c.ticker, c.name, c.direction, today, c.changeRate, reasonByTicker[c.ticker])
                 // 목표가/손절 도달 알림은 1회 발송 후 자동 해제 — 재설정 전까진 재알림 X.
                 when (c.direction) {
                     AlertDirection.PRICE_ABOVE -> pushRepository.clearPriceAlert(c.userId, c.ticker, clearAbove = true)

@@ -20,13 +20,16 @@ data class AlertLogEntry(
 )
 
 data class AlertHistoryItem(
+    val id: String,
     val market: String,
     val ticker: String,
     val name: String,
     val direction: AlertDirection,
     val changeRate: Double,
+    val reason: String?,
     val alertDate: String,
     val sentAt: String,
+    val readAt: String?,
 )
 
 data class AlertCandidate(

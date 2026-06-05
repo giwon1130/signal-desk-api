@@ -12,9 +12,18 @@ interface PushRepository {
     fun loadRecentAlertLog(date: LocalDate): Set<AlertLogEntry>
     fun recordAlert(
         userId: UUID, market: String, ticker: String, name: String,
-        direction: AlertDirection, date: LocalDate, changeRate: Double,
+        direction: AlertDirection, date: LocalDate, changeRate: Double, reason: String? = null,
     )
     fun listAlertHistory(userId: UUID, limit: Int): List<AlertHistoryItem>
+
+    /** 사용자의 모든 알림을 읽음 처리(알림함 열람 시). 반환: 갱신된 행 수. */
+    fun markAllAlertsRead(userId: UUID): Int
+
+    /** 개별 알림 삭제(본인 소유만). 반환: 삭제 여부. */
+    fun deleteAlert(userId: UUID, id: UUID): Boolean
+
+    /** 사용자의 모든 알림 삭제. 반환: 삭제 행 수. */
+    fun clearAlerts(userId: UUID): Int
 
     /**
      * 급등/급락 단계적 재알림용 — 최근 sinceDate 이후 (user,ticker,direction) 별

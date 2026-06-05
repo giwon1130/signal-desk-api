@@ -71,6 +71,38 @@ class PushAlertHistoryController(
         val userId = authContext?.requireUserId(auth) ?: return ApiResponse(false, emptyList())
         return ApiResponse(true, repo.listAlertHistory(userId, limit.coerceIn(1, 200)))
     }
+
+    /** 알림함 열람 시 — 본인의 모든 알림을 읽음 처리. 반환: 갱신 건수. */
+    @PostMapping("/read")
+    fun markAllRead(
+        @RequestHeader("Authorization", required = false) auth: String?,
+    ): ApiResponse<Int> {
+        val repo = pushRepository ?: return ApiResponse(false, 0)
+        val userId = authContext?.requireUserId(auth) ?: return ApiResponse(false, 0)
+        return ApiResponse(true, repo.markAllAlertsRead(userId))
+    }
+
+    /** 개별 알림 삭제. */
+    @DeleteMapping("/{id}")
+    fun deleteOne(
+        @RequestHeader("Authorization", required = false) auth: String?,
+        @PathVariable id: String,
+    ): ApiResponse<Boolean> {
+        val repo = pushRepository ?: return ApiResponse(false, false)
+        val userId = authContext?.requireUserId(auth) ?: return ApiResponse(false, false)
+        val uuid = runCatching { java.util.UUID.fromString(id) }.getOrNull() ?: return ApiResponse(false, false)
+        return ApiResponse(true, repo.deleteAlert(userId, uuid))
+    }
+
+    /** 전체 삭제. 반환: 삭제 건수. */
+    @DeleteMapping
+    fun clearAll(
+        @RequestHeader("Authorization", required = false) auth: String?,
+    ): ApiResponse<Int> {
+        val repo = pushRepository ?: return ApiResponse(false, 0)
+        val userId = authContext?.requireUserId(auth) ?: return ApiResponse(false, 0)
+        return ApiResponse(true, repo.clearAlerts(userId))
+    }
 }
 
 @RestController
