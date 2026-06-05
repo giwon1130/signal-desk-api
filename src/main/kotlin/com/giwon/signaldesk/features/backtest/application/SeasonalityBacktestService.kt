@@ -56,9 +56,13 @@ class SeasonalityBacktestService(
 
     private fun loadBars(market: String, ticker: String, range: String): List<HistoryBar> = when (market.uppercase()) {
         "US" -> yahooQuoteClient.fetchDailyHistory(ticker, range)
-        // KR: 코스피(.KS) 우선, 비면 코스닥(.KQ). 야후 KR 히스토리는 길이가 짧을 수 있음.
-        "KR" -> yahooQuoteClient.fetchDailyHistory("$ticker.KS", range)
-            .ifEmpty { yahooQuoteClient.fetchDailyHistory("$ticker.KQ", range) }
+        // KR: 코스피(.KS) 우선. 야후는 코스닥도 .KS 로 받아주지만, .KS 가 부실(빈값/짧음)하면
+        // 코스닥(.KQ)도 받아 더 긴 쪽을 쓴다(상장 종목별 커버리지 차이 방어).
+        "KR" -> {
+            val ks = yahooQuoteClient.fetchDailyHistory("$ticker.KS", range)
+            if (ks.size >= MIN_BARS) ks
+            else yahooQuoteClient.fetchDailyHistory("$ticker.KQ", range).let { kq -> if (kq.size > ks.size) kq else ks }
+        }
         else -> emptyList()
     }
 
