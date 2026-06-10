@@ -2,6 +2,7 @@ package com.giwon.signaldesk.features.push.application
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.core.RowMapper
 import org.springframework.stereotype.Service
 import java.util.UUID
 
@@ -32,6 +33,8 @@ data class AlertPreferences(
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class AlertPreferenceService(private val jdbc: JdbcTemplate) {
 
+    private val userIdMapper = RowMapper { rs, _ -> UUID.fromString(rs.getString("id")) }
+
     fun get(userId: UUID): AlertPreferences {
         val row = jdbc.query(
             "select kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference, evening_brief_enabled, midday_brief_enabled, close_brief_enabled, volume_alert_enabled, quiet_hours_enabled, quiet_start_hour, quiet_end_hour from signal_desk_alert_preferences where user_id = ?::uuid",
@@ -57,23 +60,17 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
     }
 
     fun update(userId: UUID, request: AlertPreferences): AlertPreferences {
+        // insert 컬럼 / placeholder / do-update-set 를 UPSERT_COLUMNS 단일 소스에서 생성 (드리프트 방지).
+        // 파라미터 순서는 UPSERT_COLUMNS 와 1:1 로 맞춰야 한다 (아래 vararg 순서).
+        val cols = UPSERT_COLUMNS.joinToString(", ")
+        val placeholders = UPSERT_COLUMNS.joinToString(", ") { "?" }
+        val updates = UPSERT_COLUMNS.joinToString(",\n                ") { "$it = excluded.$it" }
         jdbc.update(
             """
-            insert into signal_desk_alert_preferences (user_id, kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference, evening_brief_enabled, midday_brief_enabled, close_brief_enabled, volume_alert_enabled, quiet_hours_enabled, quiet_start_hour, quiet_end_hour, updated_at)
-            values (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+            insert into signal_desk_alert_preferences (user_id, $cols, updated_at)
+            values (?::uuid, $placeholders, now())
             on conflict (user_id) do update set
-                kr_enabled = excluded.kr_enabled,
-                us_enabled = excluded.us_enabled,
-                premarket_enabled = excluded.premarket_enabled,
-                composite_risk_enabled = excluded.composite_risk_enabled,
-                market_preference = excluded.market_preference,
-                evening_brief_enabled = excluded.evening_brief_enabled,
-                midday_brief_enabled = excluded.midday_brief_enabled,
-                close_brief_enabled = excluded.close_brief_enabled,
-                volume_alert_enabled = excluded.volume_alert_enabled,
-                quiet_hours_enabled = excluded.quiet_hours_enabled,
-                quiet_start_hour = excluded.quiet_start_hour,
-                quiet_end_hour = excluded.quiet_end_hour,
+                $updates,
                 updated_at = now()
             """.trimIndent(),
             userId.toString(), request.krEnabled, request.usEnabled, request.premarketEnabled, request.compositeRiskEnabled,
@@ -86,49 +83,25 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
     }
 
     fun loadEnabledUsers(market: String, includePremarket: Boolean = false): Set<UUID> {
-        val column = when {
-            includePremarket -> "premarket_enabled"
-            market == "US" -> "us_enabled"
-            else -> "kr_enabled"
+        val (column, default) = when {
+            includePremarket -> "premarket_enabled" to DEFAULT.premarketEnabled
+            market == "US" -> "us_enabled" to DEFAULT.usEnabled
+            else -> "kr_enabled" to DEFAULT.krEnabled
         }
-        // 명시적으로 등록 안 한 사용자는 DEFAULT 적용 — left join + coalesce.
-        val defaultValue = when {
-            includePremarket -> DEFAULT.premarketEnabled
-            market == "US" -> DEFAULT.usEnabled
-            else -> DEFAULT.krEnabled
-        }
-        val sql = """
-            select u.id from signal_desk_users u
-            left join signal_desk_alert_preferences p on p.user_id = u.id
-            where coalesce(p.$column, ?) = true
-        """.trimIndent()
-        return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, defaultValue).toSet()
+        return loadUsersWhere(column, default)
     }
 
     /** 합성 위험도 알림(composite_risk_enabled) ON 사용자. 미등록 사용자는 DEFAULT 적용. */
-    fun loadCompositeRiskEnabledUsers(): Set<UUID> {
-        val sql = """
-            select u.id from signal_desk_users u
-            left join signal_desk_alert_preferences p on p.user_id = u.id
-            where coalesce(p.composite_risk_enabled, ?) = true
-        """.trimIndent()
-        return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, DEFAULT.compositeRiskEnabled).toSet()
-    }
+    fun loadCompositeRiskEnabledUsers(): Set<UUID> =
+        loadUsersWhere("composite_risk_enabled", DEFAULT.compositeRiskEnabled)
 
     /**
      * US 이브닝 브리프(evening_brief_enabled) ON 사용자. 미등록은 DEFAULT(false) 적용.
      * 추가 가드: marketPreference 가 'KR' 인 사용자는 미장 안 보는 사람이라 자동 제외.
      * (사용자가 토글을 안 끈 채로 KR-only 로 바꿔도 무의미한 푸시 안 가게)
      */
-    fun loadEveningBriefEnabledUsers(): Set<UUID> {
-        val sql = """
-            select u.id from signal_desk_users u
-            left join signal_desk_alert_preferences p on p.user_id = u.id
-            where coalesce(p.evening_brief_enabled, ?) = true
-              and coalesce(p.market_preference, 'BOTH') in ('US', 'BOTH')
-        """.trimIndent()
-        return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, DEFAULT.eveningBriefEnabled).toSet()
-    }
+    fun loadEveningBriefEnabledUsers(): Set<UUID> =
+        loadUsersWhere("evening_brief_enabled", DEFAULT.eveningBriefEnabled, marketIn = setOf("US", "BOTH"))
 
     /**
      * KR 장중/마감 브리프 ON 사용자. 미등록은 defaultOn 적용 (마감=기본 ON, 장중=기본 OFF).
@@ -137,13 +110,24 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
      */
     fun loadIntradayBriefEnabledUsers(column: String, defaultOn: Boolean): Set<UUID> {
         require(column in setOf("midday_brief_enabled", "close_brief_enabled")) { "invalid column: $column" }
+        return loadUsersWhere(column, defaultOn, marketIn = setOf("KR", "BOTH"))
+    }
+
+    /**
+     * users LEFT JOIN alert_preferences 에서 coalesce(p.<column>, default)=true 인 사용자 id.
+     * 미등록(prefs row 없음) 사용자는 default 적용. marketIn 주면 market_preference 가드 추가.
+     * column/marketIn 은 호출부 상수만 받는다(외부 입력 X) — SQL 인젝션 무관.
+     */
+    private fun loadUsersWhere(column: String, default: Boolean, marketIn: Set<String>? = null): Set<UUID> {
+        val marketClause = marketIn
+            ?.let { " and coalesce(p.market_preference, 'BOTH') in (${it.joinToString(",") { m -> "'$m'" }})" }
+            ?: ""
         val sql = """
             select u.id from signal_desk_users u
             left join signal_desk_alert_preferences p on p.user_id = u.id
-            where coalesce(p.$column, ?) = true
-              and coalesce(p.market_preference, 'BOTH') in ('KR', 'BOTH')
+            where coalesce(p.$column, ?) = true$marketClause
         """.trimIndent()
-        return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, defaultOn).toSet()
+        return jdbc.query(sql, userIdMapper, default).toSet()
     }
 
     /**
@@ -159,7 +143,7 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
             where u.id in ($placeholders) and coalesce(p.volume_alert_enabled, ?) = true
         """.trimIndent()
         val params = (userIds.map { it.toString() } + DEFAULT.volumeAlertEnabled).toTypedArray()
-        return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, *params).toSet()
+        return jdbc.query(sql, userIdMapper, *params).toSet()
     }
 
     /**
@@ -183,6 +167,13 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
     }
 
     companion object {
+        /** upsert 의 insert/placeholder/do-update-set 를 생성하는 단일 컬럼 소스 (user_id, updated_at 제외). */
+        private val UPSERT_COLUMNS = listOf(
+            "kr_enabled", "us_enabled", "premarket_enabled", "composite_risk_enabled", "market_preference",
+            "evening_brief_enabled", "midday_brief_enabled", "close_brief_enabled",
+            "volume_alert_enabled", "quiet_hours_enabled", "quiet_start_hour", "quiet_end_hour",
+        )
+
         val DEFAULT = AlertPreferences(
             krEnabled = true, usEnabled = false, premarketEnabled = true, compositeRiskEnabled = true,
             marketPreference = "BOTH", eveningBriefEnabled = false,

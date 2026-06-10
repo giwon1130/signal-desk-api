@@ -1,5 +1,6 @@
 package com.giwon.signaldesk.features.ai.application
 
+import com.giwon.signaldesk.common.isKrStockCode
 import com.giwon.signaldesk.features.disclosure.application.DisclosureImportance
 import com.giwon.signaldesk.features.disclosure.application.DisclosureSeenRepository
 import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
@@ -143,7 +144,7 @@ class HiddenSignalService(
             userId.toString(), userId.toString(),
         )
         return rows
-            .filter { it.first.length == 6 && it.first.all(Char::isDigit) }
+            .filter { it.first.isKrStockCode() }
             .associate { it.first to it.second }
     }
 

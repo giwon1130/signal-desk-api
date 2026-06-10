@@ -1,5 +1,6 @@
 package com.giwon.signaldesk.features.disclosure.application
 
+import com.giwon.signaldesk.common.isKrStockCode
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushRepository
@@ -57,7 +58,7 @@ class DartDisclosureService(
         log.info("dart scan — new disclosures count={}", newItems.size)
 
         // 상장사 + 사용자 보유/관심 종목 매칭만 푸시
-        val listed = newItems.filter { it.stockCode.length == 6 && it.stockCode.all(Char::isDigit) }
+        val listed = newItems.filter { it.stockCode.isKrStockCode() }
         if (listed.isNotEmpty()) {
             dispatchPushes(listed)
         }
@@ -116,7 +117,7 @@ class DartDisclosureService(
             { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker") },
         )
         return (watch + portfolio)
-            .filter { it.second.length == 6 && it.second.all(Char::isDigit) }
+            .filter { it.second.isKrStockCode() }
             .groupBy({ it.first }, { it.second })
             .mapValues { it.value.toSet() }
     }

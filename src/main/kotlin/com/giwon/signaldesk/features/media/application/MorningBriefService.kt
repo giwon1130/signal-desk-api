@@ -1,5 +1,6 @@
 package com.giwon.signaldesk.features.media.application
 
+import com.giwon.signaldesk.common.isKrStockCode
 import com.giwon.signaldesk.features.disclosure.application.DisclosureSeenRepository
 import com.giwon.signaldesk.features.events.application.FinnhubClient
 import com.giwon.signaldesk.features.events.application.MarketEventService
@@ -181,7 +182,7 @@ class MorningBriefService(
             { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker") },
         )
         return (watch + portfolio)
-            .filter { it.second.length == 6 && it.second.all(Char::isDigit) }
+            .filter { it.second.isKrStockCode() }
             .groupBy({ it.first }, { it.second })
             .mapValues { it.value.toSet() }
     }

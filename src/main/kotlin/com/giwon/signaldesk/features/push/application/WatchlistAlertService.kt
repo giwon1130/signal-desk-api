@@ -72,28 +72,21 @@ class WatchlistAlertService(
         // 거래량 급증 비율 산출 — 시장별로 데이터 소스 다름.
         //   KR: Naver 차트 API의 일봉으로 평균 대비 ratio 계산.
         //   US: Yahoo Finance most_actives top 30에 들어왔으면 그 날 거래량 폭증 종목 → volume/avgVolume 비율 사용.
-        val volumeRatioByTicker: Map<String, Double> = when (market) {
-            "KR" -> {
-                val volumeAlertTickers = watchRows.filter { it.volumeAlert }.map { it.ticker }.toSet()
-                if (volumeAlertTickers.isNotEmpty()) {
-                    volumeAlertTickers.mapNotNull { ticker ->
-                        val bars = chartClient.fetchDailyBars(ticker, count = 22)
-                        val ratio = technicalCalculator.volumeRatio(bars)
-                        if (ratio != null) ticker to ratio else null
-                    }.toMap()
-                } else emptyMap()
-            }
-            "US" -> {
-                val volumeAlertTickers = watchRows.filter { it.volumeAlert }.map { it.ticker }.toSet()
-                if (volumeAlertTickers.isNotEmpty()) {
-                    yahooFinanceScreenerClient.fetchMostActives(30)
-                        .filter { it.ticker in volumeAlertTickers }
-                        .mapNotNull { q ->
-                            val avg = q.avgVolume
-                            if (avg != null && avg > 0) q.ticker to (q.volume.toDouble() / avg.toDouble()) else null
-                        }.toMap()
-                } else emptyMap()
-            }
+        // 거래량 감시 대상(종목별 volume_alert 또는 전역 토글로 켜진 종목) — 시장 무관하게 한 번만 산출.
+        val volumeAlertTickers = watchRows.filter { it.volumeAlert }.map { it.ticker }.toSet()
+        val volumeRatioByTicker: Map<String, Double> = when {
+            volumeAlertTickers.isEmpty() -> emptyMap()
+            market == "KR" -> volumeAlertTickers.mapNotNull { ticker ->
+                val bars = chartClient.fetchDailyBars(ticker, count = 22)
+                val ratio = technicalCalculator.volumeRatio(bars)
+                if (ratio != null) ticker to ratio else null
+            }.toMap()
+            market == "US" -> yahooFinanceScreenerClient.fetchMostActives(30)
+                .filter { it.ticker in volumeAlertTickers }
+                .mapNotNull { q ->
+                    val avg = q.avgVolume
+                    if (avg != null && avg > 0) q.ticker to (q.volume.toDouble() / avg.toDouble()) else null
+                }.toMap()
             else -> emptyMap()
         }
 
