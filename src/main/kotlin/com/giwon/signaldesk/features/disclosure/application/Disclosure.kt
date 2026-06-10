@@ -14,4 +14,7 @@ data class Disclosure(
     val reportNm: String,
     val rceptDt: String,
     val flrNm: String,
-)
+) {
+    /** 제목 기반 중요도 — JSON 직렬화 시 "importance" 필드로 노출 (앱 필터/배지용). */
+    val importance: DisclosureImportance get() = DisclosureClassifier.classify(reportNm)
+}

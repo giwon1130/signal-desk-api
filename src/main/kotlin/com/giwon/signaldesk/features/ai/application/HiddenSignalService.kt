@@ -1,5 +1,6 @@
 package com.giwon.signaldesk.features.ai.application
 
+import com.giwon.signaldesk.features.disclosure.application.DisclosureImportance
 import com.giwon.signaldesk.features.disclosure.application.DisclosureSeenRepository
 import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
 import com.giwon.signaldesk.features.market.application.TopMover
@@ -67,9 +68,9 @@ class HiddenSignalService(
 
         return tickers.mapNotNull { ticker ->
             val triggers = buildList {
-                disclosuresByTicker[ticker]?.let { ds ->
-                    add(SignalTrigger("DISCLOSURE", "공시 ${ds.size}건", ds.first().reportNm))
-                }
+                disclosuresByTicker[ticker]?.filter { it.importance != DisclosureImportance.LOW }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { ds -> add(SignalTrigger("DISCLOSURE", "공시 ${ds.size}건", ds.first().reportNm)) }
                 flow?.kospiForeignBuy?.firstOrNull { it.ticker == ticker }?.let {
                     add(SignalTrigger("FOREIGN_BUY", "외인 순매수 ${it.rank}위", null))
                 }

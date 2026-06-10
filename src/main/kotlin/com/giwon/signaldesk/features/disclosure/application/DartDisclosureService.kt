@@ -70,7 +70,11 @@ class DartDisclosureService(
         val tickersByUser = loadUserKrTickers()  // Map<UUID, Set<String>>
         if (tickersByUser.isEmpty()) return
         val allTickers = tickersByUser.values.flatten().toSet()
-        val relevant = items.filter { it.stockCode in allTickers }
+        // 보유/관심 종목 + HIGH(주가에 직접 작용하는 핵심 사안)만 푸시. MEDIUM·LOW 는 앱에서만 확인.
+        val relevant = items.filter {
+            it.stockCode in allTickers &&
+                DisclosureClassifier.classify(it.reportNm) == DisclosureImportance.HIGH
+        }
         if (relevant.isEmpty()) return
 
         val devicesByUser = pushRepo.listAllDevicesGroupedByUser()
