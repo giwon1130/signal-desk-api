@@ -22,4 +22,13 @@ class HealthControllerTest(
                 jsonPath("$.application", equalTo("signal-desk-api"))
             }
     }
+
+    @Test
+    fun `존재하지 않는 경로는 500이 아니라 404`() {
+        mockMvc.get("/nonexistent-path")
+            .andExpect {
+                status { isNotFound() }
+                jsonPath("$.error", equalTo("요청한 경로를 찾을 수 없습니다."))
+            }
+    }
 }

@@ -10,6 +10,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.MissingRequestHeaderException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.servlet.NoHandlerFoundException
+import org.springframework.web.servlet.resource.NoResourceFoundException
 import java.time.format.DateTimeParseException
 
 /** 인증 필요 → 401. */
@@ -50,6 +52,11 @@ class ValidationExceptionHandler {
     @ExceptionHandler(NotFoundException::class)
     fun notFound(e: NotFoundException) =
         ResponseEntity.status(HttpStatus.NOT_FOUND).body(body(e.message))
+
+    /** 매칭되는 핸들러가 없는 경로 — catch-all 500에 삼키지 않고 404로. */
+    @ExceptionHandler(NoResourceFoundException::class, NoHandlerFoundException::class)
+    fun unknownPath(e: Exception): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(HttpStatus.NOT_FOUND).body(body("요청한 경로를 찾을 수 없습니다."))
 
     // ─── 검증/요청 형식 → 400 ────────────────────────────────────────────────
     @ExceptionHandler(IllegalArgumentException::class, IllegalStateException::class)
