@@ -35,8 +35,8 @@ class MarketOverviewControllerTest(
             .andExpect {
                 status { isOk() }
                 jsonPath("$.success") { value(true) }
-                // Fear Meter / KR Heat / US Heat / Flow Bias 4종은 항상 생성된다.
-                jsonPath("$.data.marketSummary.length()") { value(4) }
+                // Fear Meter / KR Heat / KR Overheat / US Heat / Flow Bias 5종은 항상 생성된다.
+                jsonPath("$.data.marketSummary.length()") { value(5) }
                 // 합성 위험도: 美VIX / 한국지수 / 환율 / 미10년물 / PizzINT / 뉴스 6개 컴포넌트 + 1~10 점수.
                 jsonPath("$.data.compositeRisk.components.length()") { value(6) }
                 jsonPath("$.data.compositeRisk.score") { exists() }
