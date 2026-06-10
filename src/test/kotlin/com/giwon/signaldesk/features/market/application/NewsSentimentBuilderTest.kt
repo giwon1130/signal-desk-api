@@ -58,11 +58,16 @@ class NewsSentimentBuilderTest {
         assertEquals(1, result.neutralCount)
     }
 
+    private val kst = java.time.ZoneId.of("Asia/Seoul")
+    private fun isoOn(date: java.time.LocalDate) =
+        date.atTime(10, 24).atZone(kst).toInstant().toString()
+
     @Test
     fun `publishedAt 은 highlights 에 그대로 carry`() {
         // Phase 5 에서 추가된 publishedAt 필드 — RSS pubDate → ISO-8601 변환
         // NewsSentimentBuilder 가 그 값을 highlights 에 잃지 않고 전달하는지 검증.
-        val iso = "2026-04-25T10:24:00Z"
+        // (오늘 필터가 생겼으므로 '오늘' 발행분으로 만들어 필터를 통과시킨다.)
+        val iso = isoOn(java.time.LocalDate.now(kst))
         val result = NewsSentimentBuilder.build("KR", listOf(
             news(title = "코스피 급등", publishedAt = iso),
             news(title = "단순 뉴스", publishedAt = null),
@@ -72,6 +77,20 @@ class NewsSentimentBuilderTest {
         assertEquals(iso, highlightWithTime.publishedAt)
         assertNotNull(highlightWithoutTime)
         assertEquals(null, highlightWithoutTime.publishedAt)
+    }
+
+    @Test
+    fun `어제 발행 뉴스는 오늘 필터에서 제외되고 오늘+날짜없음은 유지`() {
+        val today = java.time.LocalDate.now(kst)
+        val result = NewsSentimentBuilder.build("KR", listOf(
+            news(title = "오늘 뉴스 급등", publishedAt = isoOn(today)),
+            news(title = "어제 뉴스 급락", publishedAt = isoOn(today.minusDays(1))),
+            news(title = "날짜없는 뉴스", publishedAt = null),
+        ))
+        val titles = result.highlights.map { it.title }
+        assertTrue(titles.contains("오늘 뉴스 급등"), "오늘 뉴스 누락")
+        assertTrue(titles.contains("날짜없는 뉴스"), "날짜없는 뉴스 누락(과필터)")
+        assertTrue(!titles.contains("어제 뉴스 급락"), "어제 뉴스가 노출됨")
     }
 
     @Test

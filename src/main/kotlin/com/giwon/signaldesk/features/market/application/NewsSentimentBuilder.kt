@@ -1,5 +1,8 @@
 package com.giwon.signaldesk.features.market.application
 
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlin.math.roundToInt
 
 /**
@@ -24,8 +27,15 @@ object NewsSentimentBuilder {
     /** 시장별 노출 하이라이트 최대 개수. 소스는 시장당 30~50건을 받으므로 표본은 충분. */
     private const val MAX_HIGHLIGHTS = 15
 
+    private val KST = ZoneId.of("Asia/Seoul")
+
     fun build(market: String, news: List<MarketNews>): NewsSentiment {
-        val filtered = news.filter { it.market.equals(market, ignoreCase = true) }
+        // '오늘의 뉴스' — Google News RSS 는 관련도순이라 어제 기사가 섞여 들어온다.
+        // KST 오늘 발행분만 남긴다. (입력을 거르므로 sentiment 점수·하이라이트가 모두 오늘 기준)
+        val today = LocalDate.now(KST)
+        val filtered = news
+            .filter { it.market.equals(market, ignoreCase = true) }
+            .filter { isPublishedOn(it.publishedAt, today) }
         val classified = filtered.map { it to classifyTone(it.title) }
         val pos = classified.count { it.second == 1 }
         val neg = classified.count { it.second == -1 }
@@ -69,6 +79,17 @@ object NewsSentimentBuilder {
             neutralCount = rawTotal - pos - neg,
             highlights = highlights,
         )
+    }
+
+    /**
+     * publishedAt(UTC instant, 예 "2026-06-10T01:24:00Z") 이 KST 기준 today 인가.
+     * 날짜가 없거나(null) 파싱 실패하면 true — 날짜 모르는 항목을 숨겨 과필터하지 않는다.
+     */
+    private fun isPublishedOn(publishedAt: String?, today: LocalDate): Boolean {
+        if (publishedAt.isNullOrBlank()) return true
+        return runCatching {
+            Instant.parse(publishedAt).atZone(KST).toLocalDate() == today
+        }.getOrDefault(true)
     }
 
     private fun classifyTone(title: String): Int {
