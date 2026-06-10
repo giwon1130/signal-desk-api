@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component
  * DART(KR) / SEC EDGAR(US) dedup 테이블의 오래된 row 정리.
  *
  * 두 테이블 모두 푸시·HiddenSignals 가 '최근 7일' 만 본다 — 더 오래된 row 는 dedup 가드 외 역할이 없다.
- * 60일 보관(보수적)으로 무한 누적 → Railway DB 비용/속도 영향 방지.
+ * 14일 보관(기능 7일 + 카드 여유)으로 무한 누적 → Railway DB 비용/속도 영향 방지.
  * 실제 삭제 로직은 DisclosureSeenCleanupService (수동 정리 엔드포인트와 공유).
  *
  * 새벽 03:30 KST — 트래픽 적고 다른 scheduler 와 겹치지 않는 시간대.
@@ -36,6 +36,6 @@ class DisclosureSeenCleanupScheduler(
     }
 
     companion object {
-        private const val RETENTION_DAYS = 60
+        private const val RETENTION_DAYS = 14
     }
 }
