@@ -46,4 +46,33 @@ class MarketHeatCalculatorTest {
     fun `flowBiasDetail - 데이터 없으면 안내 문구`() {
         assertTrue(MarketHeatCalculator.flowBiasDetail(section()).contains("데이터"))
     }
+
+    // ─── 과열도 (60일선 이격도) ──────────────────────────────────────────────
+    private fun krWithCloses(closes: List<Double>): MarketSection {
+        val points = closes.map { ChartPoint(label = "", value = it, open = it, high = it, low = it, close = it, volume = 0L) }
+        val stats = ChartStats(closes.last(), closes.max(), closes.min(), 0.0, 0.0, 0L)
+        val idx = IndexMetric("KOSPI", closes.last(), 0.0, listOf(ChartPeriodSnapshot("D", "일봉", points, stats)))
+        return MarketSection("KR", "한국", listOf(idx), emptyList(), emptyList(), emptyList())
+    }
+
+    @Test
+    fun `과열도 - 현재가가 60일선 위로 크게 벌어지면 높음`() {
+        // 60일 평균 ~100 인데 현재 108 → 이격도 +8% → 과열 경계
+        val s = krWithCloses(List(59) { 100.0 } + 108.0)
+        val score = MarketHeatCalculator.krOverheat(s)
+        assertTrue(score >= 70, "score=$score")
+        assertEquals("과열 경계", MarketHeatCalculator.krOverheatState(s))
+    }
+
+    @Test
+    fun `과열도 - 현재가가 60일선 아래로 벌어지면 과매도권`() {
+        val s = krWithCloses(List(59) { 100.0 } + 92.0)  // 이격도 -8%
+        assertTrue(MarketHeatCalculator.krOverheat(s) < 42, "score=${MarketHeatCalculator.krOverheat(s)}")
+        assertEquals("과매도권", MarketHeatCalculator.krOverheatState(s))
+    }
+
+    @Test
+    fun `과열도 - 차트 데이터 없으면 50 중립`() {
+        assertEquals(50.0, MarketHeatCalculator.krOverheat(section()))
+    }
 }

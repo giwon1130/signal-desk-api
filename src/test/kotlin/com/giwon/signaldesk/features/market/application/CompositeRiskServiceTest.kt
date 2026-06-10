@@ -94,8 +94,8 @@ class CompositeRiskServiceTest {
     // ─── 한국 지수 변동 컴포넌트 ─────────────────────────────────────────────
     @Test
     fun `한국 지수 급락하면 KR 컴포넌트 높음`() {
-        // KOSPI -3% → 낙폭×32 = 96 → '급변동 경계'. (이전엔 KR 입력 자체가 없어 합성에서 빠졌다)
-        val result = service.build(emptyList(), null, emptyList(), emptyList(), emptyPortfolio, krMarket(-3.0, 1.0))
+        // KOSPI -6% → 낙폭×14 = 84 → '급변동 경계'. (재보정: -3.1%면 포화하던 ×32 → -7.1%에서 100 되는 ×14)
+        val result = service.build(emptyList(), null, emptyList(), emptyList(), emptyPortfolio, krMarket(-6.0, 1.0))
         val kr = result.components.first { it.label == "한국 지수 변동" }
         assertTrue(kr.score >= 70, "score=${kr.score}")
         assertEquals("급변동 경계", kr.state)
@@ -111,9 +111,10 @@ class CompositeRiskServiceTest {
 
     @Test
     fun `한국 급락이 합성 위험도를 끌어올린다 (미국이 잠잠해도)`() {
-        // 미국은 잠잠(VIX 14)인데 한국만 급락(-3%): 이전엔 VIX 낮으면 '안정'이었지만 이제 KR이 위험도를 올린다.
+        // 미국은 잠잠(VIX 14)인데 한국만 급락(-8% 서킷브레이커권 → KR 100): VIX 낮아도 KR이 위험도를 올린다.
+        // (legacy build() 의 KR 가중 0.22 — 프로덕션 buildKr 는 0.45 로 더 크게 반영)
         val calmUsOnly = service.build(emptyList(), vix(14.0), emptyList(), emptyList(), emptyPortfolio)
-        val krCrash = service.build(emptyList(), vix(14.0), emptyList(), emptyList(), emptyPortfolio, krMarket(-3.0, -2.5))
+        val krCrash = service.build(emptyList(), vix(14.0), emptyList(), emptyList(), emptyPortfolio, krMarket(-8.0, -7.0))
         assertTrue(krCrash.score100 > calmUsOnly.score100 + 10,
             "krCrash=${krCrash.score100} vs calmUs=${calmUsOnly.score100}")
     }

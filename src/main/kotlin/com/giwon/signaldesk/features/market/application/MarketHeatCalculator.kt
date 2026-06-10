@@ -58,6 +58,38 @@ object MarketHeatCalculator {
     fun krHeat(korea: MarketSection): Double =
         (50 + korea.indices.map { it.changeRate }.average() * 8).coerceIn(0.0, 100.0)
 
+    /**
+     * 한국 과열도 — 코스피 현재가가 중기추세(60일선)보다 얼마나 위로 벌어졌나(이격도) → 밸류에이션/추세 과열.
+     * 당일 등락(krHeat=강도)과 다르다: 한 번 급락해도 고점권에 스트레칭돼 있으면 과열은 여전히 높다.
+     * 50=60일선, 높을수록 과열(상단 스트레칭). 60일선 대비 ±10%에서 0/100 포화.
+     */
+    fun krOverheat(korea: MarketSection): Double {
+        val disp = krDisparityPct(korea) ?: return 50.0
+        return (50 + disp * 5).coerceIn(0.0, 100.0)
+    }
+
+    fun krOverheatState(korea: MarketSection): String = when {
+        krOverheat(korea) >= 70 -> "과열 경계"
+        krOverheat(korea) >= 58 -> "과열 주의"
+        krOverheat(korea) >= 42 -> "중립권"
+        else -> "과매도권"
+    }
+
+    fun krOverheatNote(korea: MarketSection): String {
+        val disp = krDisparityPct(korea) ?: return "코스피 차트 데이터 대기"
+        return "코스피 60일선 대비 ${"%+.1f".format(disp)}% (이격도) — 추세 대비 스트레칭"
+    }
+
+    /** 코스피 종가 시계열로 60일선 이격도(%). 데이터 부족하면 null. */
+    private fun krDisparityPct(korea: MarketSection): Double? {
+        val idx = korea.indices.firstOrNull { it.label == "KOSPI" } ?: korea.indices.firstOrNull() ?: return null
+        val closes = idx.periods.firstOrNull { it.key == "D" }?.points?.map { it.close }?.filter { it > 0 } ?: emptyList()
+        if (closes.size < 5) return null
+        val ma = closes.takeLast(60).average()
+        if (ma <= 0) return null
+        return (closes.last() / ma - 1.0) * 100.0
+    }
+
     fun krHeatState(korea: MarketSection): String {
         val kospi = korea.indices.firstOrNull { it.label == "KOSPI" }?.changeRate ?: 0.0
         val kosdaq = korea.indices.firstOrNull { it.label == "KOSDAQ" }?.changeRate ?: 0.0

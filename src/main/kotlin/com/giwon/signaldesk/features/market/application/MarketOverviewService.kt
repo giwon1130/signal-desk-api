@@ -201,7 +201,8 @@ class MarketOverviewService(
                 summary = "장 시작 전 점검 → 단타 픽 확인 → 보유 모니터까지, 오늘 하루를 한 화면에서 따라가는 개인 투자 대시보드야.",
                 marketSummary = listOf(
                     SummaryMetric("Fear Meter", MarketHeatCalculator.fearMeter(vixSnapshot), MarketHeatCalculator.fearMeterState(vixSnapshot), MarketHeatCalculator.fearMeterNote(vixSnapshot)),
-                    SummaryMetric("KR Heat", MarketHeatCalculator.krHeat(koreaMarket), MarketHeatCalculator.krHeatState(koreaMarket), "코스피/코스닥 등락률과 거래 강도를 기준으로 계산"),
+                    SummaryMetric("KR Heat", MarketHeatCalculator.krHeat(koreaMarket), MarketHeatCalculator.krHeatState(koreaMarket), "코스피/코스닥 등락률 기준 당일 강도(50=중립)"),
+                    SummaryMetric("KR Overheat", MarketHeatCalculator.krOverheat(koreaMarket), MarketHeatCalculator.krOverheatState(koreaMarket), MarketHeatCalculator.krOverheatNote(koreaMarket)),
                     run { val h = MarketHeatCalculator.usHeat(vixSnapshot, usIndicesSnapshot); SummaryMetric("US Heat", h, MarketHeatCalculator.usHeatState(h), "미국 지수와 VIX를 기준으로 계산") },
                     SummaryMetric("Flow Bias", MarketHeatCalculator.flowBias(koreaMarket), MarketHeatCalculator.flowBiasState(koreaMarket), MarketHeatCalculator.flowBiasDetail(koreaMarket))
                 ),

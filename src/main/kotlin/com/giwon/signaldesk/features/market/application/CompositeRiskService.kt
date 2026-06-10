@@ -135,7 +135,7 @@ class CompositeRiskService {
                 state = "데이터 대기", detail = "KR 지수 응답 없음 — 중립값으로 처리",
             )
         }
-        // 하락은 위험으로 크게(낙폭×32), 상승은 변동성으로 작게(×10). 가장 불안한 지수가 분위기를 끈다.
+        // 하락은 위험으로 크게(낙폭×14 → -7.1%에서 100), 상승은 변동성으로 작게(×10). 가장 불안한 지수가 분위기를 끈다.
         val score = indices.maxOf { idx ->
             val ch = idx.changeRate
             (if (ch < 0) -ch * KR_DOWN_SLOPE else ch * KR_UP_SLOPE).coerceIn(0.0, 100.0)
@@ -165,10 +165,13 @@ class CompositeRiskService {
         val ch = usdKrw.changeRate          // 전일 대비 %, +면 원화 약세
         val level = usdKrw.currentValue     // 원
         val changeRisk = (ch * 22.0).coerceIn(-12.0, 70.0)
+        // 고환율 구조적 위험을 더 반영 — 사용자 피드백: 1400원대 고환율인데 점수가 너무 낮았음.
+        // 레벨만으로도 약세부담(40)~급약세경계(55+) 구간에 닿도록 상향.
         val levelRisk = when {
-            level >= 1450 -> 35.0
-            level >= 1400 -> 22.0
-            level >= 1350 -> 10.0
+            level >= 1450 -> 55.0
+            level >= 1400 -> 40.0
+            level >= 1350 -> 25.0
+            level >= 1300 -> 12.0
             else -> 0.0
         }
         val score = (changeRisk + levelRisk).roundToInt().coerceIn(0, 100)
@@ -317,8 +320,9 @@ class CompositeRiskService {
     }
 
     companion object {
-        // 한국 지수 일간 변동 → 위험. 하락은 크게(낙폭×32: -3.1%→100), 상승은 작게(×10: 변동성만 반영).
-        private const val KR_DOWN_SLOPE = 32.0
+        // 한국 지수 일간 변동 → 위험. 하락은 크게(낙폭×14: -7.1%→100, 서킷브레이커권까지 헤드룸),
+        // 상승은 작게(×10: 변동성만 반영). (이전 ×32 는 -3.1%만 돼도 포화 → 폭락 구분 불가했음)
+        private const val KR_DOWN_SLOPE = 14.0
         private const val KR_UP_SLOPE = 10.0
 
         // VIX 정규화 기준: 13 이하 = 위험 0, 36 이상 = 위험 100.
