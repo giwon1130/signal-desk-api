@@ -23,7 +23,7 @@ import java.util.UUID
  *   - ±5% 급등락 (기존)
  *   - 현재가 ≤ alertBelow → 매수 타이밍 알림
  *   - 현재가 ≥ alertAbove → 상한 도달 알림
- *   - volumeRatio ≥ 3.0 AND volumeAlert=true → 거래량 급증 알림
+ *   - volumeRatio ≥ 2.0 AND (종목별 volume_alert OR 전역 volume_alert_enabled) → 거래량 급증 알림
  */
 @Service
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
@@ -53,8 +53,14 @@ class WatchlistAlertService(
         val devicesByUser = allDevices.filterKeys { it in enabledUsers }
         if (devicesByUser.isEmpty()) return
 
-        val watchRows = loadWatchRowsFor(devicesByUser.keys, market)
-        if (watchRows.isEmpty()) return
+        val rawRows = loadWatchRowsFor(devicesByUser.keys, market)
+        if (rawRows.isEmpty()) return
+        // 거래량 전역 토글 ON 사용자는 종목별 volume_alert 와 무관하게 거래량 감시 적용.
+        // volumeAlert 플래그를 켜두면 아래 fetch 필터와 detector 가 그대로 인식한다.
+        val volumeGlobalUsers = alertPreferenceService.loadVolumeAlertEnabledUsers(devicesByUser.keys)
+        val watchRows = rawRows.map {
+            if (!it.volumeAlert && it.userId in volumeGlobalUsers) it.copy(volumeAlert = true) else it
+        }
 
         val tickers = watchRows.map { it.ticker }.toSet()
         val quotes: Map<String, StockQuote> = when (market) {
@@ -169,6 +175,7 @@ class WatchlistAlertService(
             title = title,
             body = body,
             data = mapOf("ticker" to c.ticker, "market" to c.market, "direction" to c.direction.name),
+            userId = c.userId,
         )
     }
 

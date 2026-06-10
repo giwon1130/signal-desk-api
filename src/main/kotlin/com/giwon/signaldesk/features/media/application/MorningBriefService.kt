@@ -210,6 +210,7 @@ class MorningBriefService(
                     title = title,
                     body = body,
                     data = mapOf("type" to "MORNING_BRIEF"),
+                    userId = userId,
                 )
             }
         }

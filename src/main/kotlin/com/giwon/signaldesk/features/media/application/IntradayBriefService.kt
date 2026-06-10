@@ -166,13 +166,14 @@ class IntradayBriefService(
         }
         val title = "$emoji ${analysis.headline.ifBlank { slot.titleSuffix }}"
         val body = analysis.summary.take(180)
-        val messages = targets.flatMap { (_, devices) ->
+        val messages = targets.flatMap { (userId, devices) ->
             devices.map { d ->
                 ExpoPushClient.Message(
                     to = d.expoToken,
                     title = title,
                     body = body,
                     data = mapOf("type" to slot.pushType),
+                    userId = userId,
                 )
             }
         }

@@ -95,13 +95,14 @@ class EveningBriefService(
             saveMediaSummary(today, analysis, gainers, losers)
         }
 
-        val messages = targets.flatMap { (_, devices) ->
+        val messages = targets.flatMap { (userId, devices) ->
             devices.map { d ->
                 ExpoPushClient.Message(
                     to = d.expoToken,
                     title = title,
                     body = body,
                     data = mapOf("type" to "EVENING_BRIEF"),
+                    userId = userId,
                 )
             }
         }

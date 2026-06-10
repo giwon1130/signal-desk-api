@@ -34,7 +34,10 @@ data class AuthResponse(
 @RestController
 @RequestMapping("/auth")
 @Conditional(JdbcStoreCondition::class)
-class AuthController(private val authService: AuthService) {
+class AuthController(
+    private val authService: AuthService,
+    private val accountDeletionService: com.giwon.signaldesk.features.auth.application.AccountDeletionService,
+) {
 
     @PostMapping("/signup")
     fun signup(@Valid @RequestBody req: SignupRequest): ResponseEntity<AuthResponse> =
@@ -57,6 +60,15 @@ class AuthController(private val authService: AuthService) {
     @PostMapping("/oauth/kakao")
     fun kakaoOAuth(@Valid @RequestBody req: KakaoOAuthRequest): ResponseEntity<AuthResponse> =
         ResponseEntity.ok(authService.kakaoOAuth(req.accessToken).toResponse())
+
+    /** 회원 탈퇴 — 토큰의 본인 계정 + 모든 데이터 영구 삭제. */
+    @DeleteMapping("/account")
+    fun deleteAccount(@RequestHeader("Authorization") authorization: String): ResponseEntity<Map<String, Any>> {
+        val token = authorization.removePrefix("Bearer ").trim()
+        val userId = authService.me(token).userId   // 토큰 검증 + 본인 식별
+        accountDeletionService.deleteAccount(java.util.UUID.fromString(userId))
+        return ResponseEntity.ok(mapOf("success" to true))
+    }
 
     private fun AuthService.AuthResult.toResponse() =
         AuthResponse(token, userId, email, nickname)

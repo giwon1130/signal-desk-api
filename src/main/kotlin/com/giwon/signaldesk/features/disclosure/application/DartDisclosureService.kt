@@ -96,6 +96,7 @@ class DartDisclosureService(
                             "stockCode" to item.stockCode,
                             "url" to "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${item.rceptNo}",
                         ),
+                        userId = userId,
                     )
                 }
             }

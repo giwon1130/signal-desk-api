@@ -107,6 +107,7 @@ class SecEdgarDisclosureService(
                             "accessionNo" to item.accessionNo,
                             "url" to item.url,
                         ),
+                        userId = userId,
                     )
                 }
             }

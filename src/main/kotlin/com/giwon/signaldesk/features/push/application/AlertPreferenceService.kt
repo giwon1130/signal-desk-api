@@ -20,6 +20,12 @@ data class AlertPreferences(
     val middayBriefEnabled: Boolean = false,
     // KR 마감 브리프 (15:40 KST). 디폴트 false.
     val closeBriefEnabled: Boolean = false,
+    // 거래량 급증 알림 전역 토글 — 종목별 volume_alert 와 별개. 켜면 모든 종목 적용. 디폴트 true.
+    val volumeAlertEnabled: Boolean = true,
+    // 방해금지: 켜면 야간 시간대 푸시 보류. 디폴트 OFF.
+    val quietHoursEnabled: Boolean = false,
+    val quietStartHour: Int = 22,
+    val quietEndHour: Int = 7,
 )
 
 @Service
@@ -28,7 +34,7 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
 
     fun get(userId: UUID): AlertPreferences {
         val row = jdbc.query(
-            "select kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference, evening_brief_enabled, midday_brief_enabled, close_brief_enabled from signal_desk_alert_preferences where user_id = ?::uuid",
+            "select kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference, evening_brief_enabled, midday_brief_enabled, close_brief_enabled, volume_alert_enabled, quiet_hours_enabled, quiet_start_hour, quiet_end_hour from signal_desk_alert_preferences where user_id = ?::uuid",
             { rs, _ ->
                 AlertPreferences(
                     krEnabled = rs.getBoolean("kr_enabled"),
@@ -39,6 +45,10 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
                     eveningBriefEnabled = rs.getBoolean("evening_brief_enabled"),
                     middayBriefEnabled = rs.getBoolean("midday_brief_enabled"),
                     closeBriefEnabled = rs.getBoolean("close_brief_enabled"),
+                    volumeAlertEnabled = rs.getBoolean("volume_alert_enabled"),
+                    quietHoursEnabled = rs.getBoolean("quiet_hours_enabled"),
+                    quietStartHour = rs.getInt("quiet_start_hour"),
+                    quietEndHour = rs.getInt("quiet_end_hour"),
                 )
             },
             userId.toString(),
@@ -49,8 +59,8 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
     fun update(userId: UUID, request: AlertPreferences): AlertPreferences {
         jdbc.update(
             """
-            insert into signal_desk_alert_preferences (user_id, kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference, evening_brief_enabled, midday_brief_enabled, close_brief_enabled, updated_at)
-            values (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, now())
+            insert into signal_desk_alert_preferences (user_id, kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference, evening_brief_enabled, midday_brief_enabled, close_brief_enabled, volume_alert_enabled, quiet_hours_enabled, quiet_start_hour, quiet_end_hour, updated_at)
+            values (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
             on conflict (user_id) do update set
                 kr_enabled = excluded.kr_enabled,
                 us_enabled = excluded.us_enabled,
@@ -60,11 +70,17 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
                 evening_brief_enabled = excluded.evening_brief_enabled,
                 midday_brief_enabled = excluded.midday_brief_enabled,
                 close_brief_enabled = excluded.close_brief_enabled,
+                volume_alert_enabled = excluded.volume_alert_enabled,
+                quiet_hours_enabled = excluded.quiet_hours_enabled,
+                quiet_start_hour = excluded.quiet_start_hour,
+                quiet_end_hour = excluded.quiet_end_hour,
                 updated_at = now()
             """.trimIndent(),
             userId.toString(), request.krEnabled, request.usEnabled, request.premarketEnabled, request.compositeRiskEnabled,
             request.marketPreference.uppercase().takeIf { it in setOf("KR", "US", "BOTH") } ?: "BOTH",
             request.eveningBriefEnabled, request.middayBriefEnabled, request.closeBriefEnabled,
+            request.volumeAlertEnabled, request.quietHoursEnabled,
+            request.quietStartHour.coerceIn(0, 23), request.quietEndHour.coerceIn(0, 23),
         )
         return request
     }
@@ -130,11 +146,54 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
         return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, defaultOn).toSet()
     }
 
+    /**
+     * 주어진 사용자들 중 거래량 전역 토글(volume_alert_enabled) ON 인 사용자 집합.
+     * 미등록 사용자는 DEFAULT(true) 적용.
+     */
+    fun loadVolumeAlertEnabledUsers(userIds: Set<UUID>): Set<UUID> {
+        if (userIds.isEmpty()) return emptySet()
+        val placeholders = userIds.joinToString(",") { "?" }
+        val sql = """
+            select u.id from signal_desk_users u
+            left join signal_desk_alert_preferences p on p.user_id = u.id
+            where u.id in ($placeholders) and coalesce(p.volume_alert_enabled, ?) = true
+        """.trimIndent()
+        val params = (userIds.map { it.toString() } + DEFAULT.volumeAlertEnabled).toTypedArray()
+        return jdbc.query(sql, { rs, _ -> UUID.fromString(rs.getString("id")) }, *params).toSet()
+    }
+
+    /**
+     * 방해금지 ON 사용자의 시간창(quiet_start_hour, quiet_end_hour). OFF/미등록은 맵에 없음(=보류 안 함).
+     * 푸시 게이트에서 현재 KST 시각이 이 창 안이면 메시지 보류.
+     */
+    fun loadQuietHoursFor(userIds: Set<UUID>): Map<UUID, Pair<Int, Int>> {
+        if (userIds.isEmpty()) return emptyMap()
+        val placeholders = userIds.joinToString(",") { "?" }
+        val sql = """
+            select user_id, quiet_start_hour, quiet_end_hour
+            from signal_desk_alert_preferences
+            where quiet_hours_enabled = true and user_id in ($placeholders)
+        """.trimIndent()
+        val params = userIds.map { it.toString() }.toTypedArray()
+        return jdbc.query(
+            sql,
+            { rs, _ -> UUID.fromString(rs.getString("user_id")) to (rs.getInt("quiet_start_hour") to rs.getInt("quiet_end_hour")) },
+            *params,
+        ).toMap()
+    }
+
     companion object {
         val DEFAULT = AlertPreferences(
             krEnabled = true, usEnabled = false, premarketEnabled = true, compositeRiskEnabled = true,
             marketPreference = "BOTH", eveningBriefEnabled = false,
             middayBriefEnabled = false, closeBriefEnabled = true,
+            volumeAlertEnabled = true, quietHoursEnabled = false, quietStartHour = 22, quietEndHour = 7,
         )
+
+        /** 현재 시각(hour, 0-23)이 [start, end) 방해금지 창 안인가. start>end 면 자정 넘김(예: 22~7). */
+        fun isWithinQuietHours(nowHour: Int, startHour: Int, endHour: Int): Boolean =
+            if (startHour == endHour) false
+            else if (startHour < endHour) nowHour in startHour until endHour
+            else nowHour >= startHour || nowHour < endHour
     }
 }
