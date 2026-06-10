@@ -81,10 +81,17 @@ class WatchlistAlertDetectorTest {
     }
 
     @Test
-    fun `거래량 급증 알림 켜져있고 3배 이상이면 VOLUME_SPIKE`() {
-        val result = detector.detect(listOf(rowWithAlerts("005930", 80000, volumeAlert = true, volumeRatio = 3.5)), emptySet(), today)
+    fun `거래량 급증 알림 켜져있고 2배 이상이면 VOLUME_SPIKE`() {
+        // 임계치 2.0배 (2026-06-10 3.0→2.0 완화). 경계값 2.0 포함.
+        val result = detector.detect(listOf(rowWithAlerts("005930", 80000, volumeAlert = true, volumeRatio = 2.0)), emptySet(), today)
         assertEquals(1, result.size)
         assertEquals(AlertDirection.VOLUME_SPIKE, result[0].direction)
+    }
+
+    @Test
+    fun `거래량 2배 미만이면 후보 아님`() {
+        val result = detector.detect(listOf(rowWithAlerts("005930", 80000, volumeAlert = true, volumeRatio = 1.9)), emptySet(), today)
+        assertTrue(result.isEmpty())
     }
 
     @Test

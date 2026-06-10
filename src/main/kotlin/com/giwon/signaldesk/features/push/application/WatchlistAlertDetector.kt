@@ -10,7 +10,7 @@ import kotlin.math.abs
  *   - 변화율 ±5% 이상 (UP / DOWN) — 단, 최근 3일 마지막 알림 강도 + 5%p 이상일 때만 재알림 (스팸 방지)
  *   - 현재가 ≤ alertBelow (PRICE_BELOW) — 매수 타이밍 알림 (발송 후 service 가 자동 해제)
  *   - 현재가 ≥ alertAbove (PRICE_ABOVE) — 상한 도달 알림 (발송 후 service 가 자동 해제)
- *   - volumeRatio ≥ 3.0 AND volumeAlert=true (VOLUME_SPIKE) — 하루 1회
+ *   - volumeRatio ≥ 2.0 AND volumeAlert=true (VOLUME_SPIKE) — 하루 1회
  *   - 같은 유저+종목+방향+날짜 조합은 하루 1회만 (dedup)
  *
  * 급등/급락 단계 재알림 (2026-05-29): 한번 +5% 알림 후 매일 반복 스팸 → 마지막 알림 강도보다
@@ -20,7 +20,7 @@ import kotlin.math.abs
 class WatchlistAlertDetector {
 
     private val changeRateThresholdPct = 5.0
-    private val volumeSpikeThreshold = 3.0
+    private val volumeSpikeThreshold = 2.0
     private val rateStepPct = 5.0  // 재알림 최소 추가 변동폭 (%p)
 
     data class WatchRow(
