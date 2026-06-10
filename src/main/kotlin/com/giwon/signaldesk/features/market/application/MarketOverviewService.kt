@@ -239,10 +239,19 @@ class MarketOverviewService(
         return synchronized(this) {
             val rechecked = cachedNews
             if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < effectiveTtl) return@synchronized rechecked
+            val fetched = googleNewsRssClient.fetchMarketNews()
+            // fetch 실패/빈 결과인데 직전 정상 뉴스가 있으면 그걸 유지 — transient 실패(Railway↔Google RSS
+            // 일시 차단/타임아웃)로 '오늘의 뉴스'가 0건 되는 것을 막는다. createdAt 만 갱신해 다음 TTL 까지
+            // 재시도 폭주는 막되, 표시는 마지막 정상분을 계속 쓴다.
+            if (fetched.isNullOrEmpty() && rechecked != null && rechecked.news.isNotEmpty()) {
+                val kept = rechecked.copy(createdAt = Instant.now())
+                cachedNews = kept
+                return@synchronized kept
+            }
             val snapshot = CachedNewsSection(
                 createdAt = Instant.now(),
                 generatedAt = LocalDateTime.now().toString(),
-                news = googleNewsRssClient.fetchMarketNews() ?: emptyList(),
+                news = fetched ?: emptyList(),
             )
             cachedNews = snapshot
             snapshot
