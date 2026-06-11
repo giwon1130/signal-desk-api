@@ -26,6 +26,7 @@ import java.util.UUID
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class AssistantService(
     private val objectMapper: com.fasterxml.jackson.databind.ObjectMapper,
+    private val jdbc: org.springframework.jdbc.core.JdbcTemplate,
     private val geminiClient: GeminiClient,
     private val marketOverviewService: MarketOverviewService,
     private val workspaceRepository: SignalDeskWorkspaceRepository,
@@ -34,20 +35,99 @@ class AssistantService(
     private val seasonalityRuleService: SeasonalityRuleService,
     private val krQuotes: NaverFinanceQuoteClient,
     private val usQuotes: NaverGlobalQuoteClient,
+    @org.springframework.beans.factory.annotation.Value("\${signal-desk.assistant.free-daily-limit:10}") private val freeDailyLimit: Int,
+    @org.springframework.beans.factory.annotation.Value("\${signal-desk.assistant.pro-daily-limit:100}") private val proDailyLimit: Int,
+    @org.springframework.beans.factory.annotation.Value("\${signal-desk.assistant.admin-emails:}") adminEmailsRaw: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+    private val adminEmails = adminEmailsRaw.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
 
-    fun ask(userId: UUID, question: String): String? {
+    data class AskResult(
+        val answer: String?,
+        val limitExceeded: Boolean,
+        /** 오늘 남은 질문 수. 무제한(운영자)이면 null. */
+        val remaining: Int?,
+        val dailyLimit: Int?,
+    )
+
+    fun ask(userId: UUID, question: String): AskResult {
         val q = question.trim()
         require(q.isNotBlank()) { "질문을 입력해 주세요." }
         require(q.length <= MAX_QUESTION_LENGTH) { "질문은 ${MAX_QUESTION_LENGTH}자 이내로 입력해 주세요." }
-        if (!geminiClient.isEnabled()) return null
+        if (!geminiClient.isEnabled()) return AskResult(null, limitExceeded = false, remaining = null, dailyLimit = null)
+
+        val today = LocalDate.now(KST)
+        val limit = dailyLimitFor(userId)
+
+        // 한도 차감 (원자적) — 무제한(null)이면 카운트만 기록.
+        if (limit != null && !tryConsume(userId, today, limit)) {
+            return AskResult(null, limitExceeded = true, remaining = 0, dailyLimit = limit)
+        }
+        if (limit == null) recordUnlimitedUsage(userId, today)
 
         val prompt = buildPrompt(userId, q)
         val answer = geminiClient.generateText(prompt, timeoutSeconds = 30)?.let(::unwrapPlainText)
-        log.info("assistant ask — user={} qLen={} answered={}", userId.toString().take(8), q.length, answer != null)
-        return answer
+        if (answer == null && limit != null) refund(userId, today) // Gemini 실패는 한도에서 환불
+        val used = usedToday(userId, today)
+        log.info("assistant ask — user={} qLen={} answered={} used={}/{}", userId.toString().take(8), q.length, answer != null, used, limit ?: -1)
+        return AskResult(
+            answer = answer,
+            limitExceeded = false,
+            remaining = limit?.let { (it - used).coerceAtLeast(0) },
+            dailyLimit = limit,
+        )
     }
+
+    // ── 한도 ────────────────────────────────────────────────────────────────
+    /** null = 무제한(운영자). PRO 는 pro-daily-limit, 그 외 free-daily-limit. */
+    private fun dailyLimitFor(userId: UUID): Int? {
+        val row = jdbc.query(
+            "select email, plan from signal_desk_users where id = ?::uuid",
+            { rs, _ -> rs.getString("email").lowercase() to (rs.getString("plan") ?: "FREE") },
+            userId.toString(),
+        ).firstOrNull() ?: return freeDailyLimit
+        val (email, plan) = row
+        if (email in adminEmails) return null
+        return if (plan.equals("PRO", ignoreCase = true)) proDailyLimit else freeDailyLimit
+    }
+
+    /** count < limit 일 때만 +1 — 동시 요청에도 한도를 안 넘게 조건부 upsert. */
+    private fun tryConsume(userId: UUID, date: LocalDate, limit: Int): Boolean =
+        jdbc.update(
+            """
+            insert into signal_desk_assistant_usage (user_id, usage_date, question_count) values (?::uuid, ?, 1)
+            on conflict (user_id, usage_date) do update set question_count = signal_desk_assistant_usage.question_count + 1
+            where signal_desk_assistant_usage.question_count < ?
+            """.trimIndent(),
+            userId.toString(), java.sql.Date.valueOf(date), limit,
+        ) > 0
+
+    private fun recordUnlimitedUsage(userId: UUID, date: LocalDate) {
+        runCatching {
+            jdbc.update(
+                """
+                insert into signal_desk_assistant_usage (user_id, usage_date, question_count) values (?::uuid, ?, 1)
+                on conflict (user_id, usage_date) do update set question_count = signal_desk_assistant_usage.question_count + 1
+                """.trimIndent(),
+                userId.toString(), java.sql.Date.valueOf(date),
+            )
+        }
+    }
+
+    private fun refund(userId: UUID, date: LocalDate) {
+        runCatching {
+            jdbc.update(
+                "update signal_desk_assistant_usage set question_count = greatest(question_count - 1, 0) where user_id = ?::uuid and usage_date = ?",
+                userId.toString(), java.sql.Date.valueOf(date),
+            )
+        }
+    }
+
+    private fun usedToday(userId: UUID, date: LocalDate): Int =
+        jdbc.queryForObject(
+            "select coalesce(max(question_count), 0) from signal_desk_assistant_usage where user_id = ?::uuid and usage_date = ?",
+            Int::class.java, userId.toString(), java.sql.Date.valueOf(date),
+        ) ?: 0
 
     /**
      * 모델이 지시를 무시하고 {"response": "..."} 같은 JSON 이나 코드블록으로 감싸는 경우 방어 —
