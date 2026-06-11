@@ -66,6 +66,10 @@ class AssistantService(
                 }
             }
         }
+        // 전체가 따옴표 한 쌍으로 감싸진 경우(JSON 문자열 흉내)도 벗긴다.
+        if (t.length >= 2 && t.startsWith("\"") && t.endsWith("\"")) {
+            t = t.substring(1, t.length - 1).trim()
+        }
         return t
     }
 
