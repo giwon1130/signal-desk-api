@@ -1,5 +1,7 @@
 package com.giwon.signaldesk.features.market.application
 
+import com.giwon.signaldesk.common.KST
+
 import com.giwon.signaldesk.features.workspace.application.SignalDeskWorkspaceRepository
 import org.springframework.stereotype.Service
 import java.time.LocalDate
@@ -28,7 +30,7 @@ class WorkspaceEnrichmentService(
                 price = it.price, changeRate = it.changeRate, sector = it.sector,
                 stance = it.stance, note = it.note, source = "USER")
         }
-        return WatchlistResponse(LocalDateTime.now().toString(), refresher.refreshWatchlist(items, quotes))
+        return WatchlistResponse(LocalDateTime.now(KST).toString(), refresher.refreshWatchlist(items, quotes))
     }
 
     fun getPortfolio(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): PortfolioResponse {
@@ -40,7 +42,7 @@ class WorkspaceEnrichmentService(
                 targetPrice = it.targetPrice, stopLossPrice = it.stopLossPrice)
         }
         val merged = mergePortfolio(emptyPortfolio(), userPositions)
-        return PortfolioResponse(LocalDateTime.now().toString(), refresher.refreshPortfolio(merged, quotes))
+        return PortfolioResponse(LocalDateTime.now(KST).toString(), refresher.refreshPortfolio(merged, quotes))
     }
 
     fun getAiRecommendations(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): AiRecommendationsResponse {
@@ -56,7 +58,7 @@ class WorkspaceEnrichmentService(
                 success = it.success, source = "USER", id = it.id)
         }
         val merged = mergeAiRecommendations(emptyAiRecommendations(), userPicks, userTrack)
-        return AiRecommendationsResponse(LocalDateTime.now().toString(), refresher.refreshAiRecommendations(merged, quotes))
+        return AiRecommendationsResponse(LocalDateTime.now(KST).toString(), refresher.refreshAiRecommendations(merged, quotes))
     }
 
     fun buildWorkspaceSnapshot(quotes: Map<String, StockQuote>, userId: UUID? = null): WorkspaceSnapshot {
@@ -104,7 +106,7 @@ class WorkspaceEnrichmentService(
     )
 
     private fun emptyAiRecommendations() = AIRecommendationSection(
-        generatedDate = LocalDate.now().toString(),
+        generatedDate = LocalDate.now(KST).toString(),
         summary = "",
         picks = emptyList(),
         trackRecords = emptyList(),

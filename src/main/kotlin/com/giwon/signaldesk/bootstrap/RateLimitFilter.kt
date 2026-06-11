@@ -1,5 +1,6 @@
 package com.giwon.signaldesk.bootstrap
 
+import com.github.benmanes.caffeine.cache.Caffeine
 import io.github.bucket4j.Bandwidth
 import io.github.bucket4j.Bucket
 import jakarta.servlet.FilterChain
@@ -11,7 +12,6 @@ import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
 import java.time.Duration
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * IP 기반 in-memory rate limiter (Bucket4j).
@@ -24,20 +24,25 @@ import java.util.concurrent.ConcurrentHashMap
  *  - 그 외                                → 통과 (push device 등록 등 사용 빈도 낮음)
  *
  * IP 식별:
- *  - X-Forwarded-For 첫 번째 토큰 (Railway proxy 가 채움)
+ *  - X-Forwarded-For 마지막 토큰 — 신뢰 가능한 건 Railway proxy 가 "덧붙인" 마지막 항목뿐.
+ *    첫 토큰은 클라이언트가 임의 헤더로 위조 가능 → 요청마다 새 버킷을 받아 limit 우회됐었다.
  *  - 없으면 remoteAddr fallback
  *
  * 한계:
  *  - 단일 인스턴스 메모리 — 여러 컨테이너로 scale-out 시 IP 별 limit 이 인스턴스마다 따로
  *    (1 인스턴스 운영 중이라 OK)
- *  - 시간 기반 만료 없음 — 메모리 누수 가능. ConcurrentHashMap 크기 1만 넘으면 단순 비움.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 class RateLimitFilter : OncePerRequestFilter() {
 
     private val logger = LoggerFactory.getLogger(javaClass)
-    private val buckets = ConcurrentHashMap<String, Bucket>()
+
+    // 크기 상한 + 유휴 만료 — 전체 clear() 는 모든 IP 의 limit 을 동시에 리셋해 우회 수단이 됐었다.
+    private val buckets = Caffeine.newBuilder()
+        .maximumSize(10_000)
+        .expireAfterAccess(Duration.ofMinutes(10))
+        .build<String, Bucket>()
 
     override fun doFilterInternal(request: HttpServletRequest, response: HttpServletResponse, chain: FilterChain) {
         val path = request.requestURI ?: ""
@@ -49,7 +54,7 @@ class RateLimitFilter : OncePerRequestFilter() {
 
         val ip = clientIp(request)
         val key = "${rule.name}:$ip"
-        val bucket = buckets.computeIfAbsent(key) { rule.newBucket() }
+        val bucket = buckets.get(key) { rule.newBucket() }
 
         if (bucket.tryConsume(1)) {
             chain.doFilter(request, response)
@@ -60,13 +65,10 @@ class RateLimitFilter : OncePerRequestFilter() {
             response.setHeader("Retry-After", "60")
             response.writer.write("""{"success":false,"error":"요청이 너무 많아요. 잠시 후 다시 시도해주세요."}""")
         }
-
-        // 메모리 누수 방지 — 1만 키 초과 시 단순 비움 (작은 단계라 휴리스틱으로 충분)
-        if (buckets.size > 10_000) buckets.clear()
     }
 
     private fun clientIp(req: HttpServletRequest): String {
-        val xff = req.getHeader("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()
+        val xff = req.getHeader("X-Forwarded-For")?.split(",")?.lastOrNull()?.trim()
         return if (!xff.isNullOrBlank()) xff else req.remoteAddr ?: "unknown"
     }
 

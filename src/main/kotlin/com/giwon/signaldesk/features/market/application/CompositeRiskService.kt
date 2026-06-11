@@ -1,5 +1,7 @@
 package com.giwon.signaldesk.features.market.application
 
+import com.giwon.signaldesk.common.KST
+
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 import kotlin.math.roundToInt
@@ -94,7 +96,7 @@ class CompositeRiskService {
             components = components,
             description = DESCRIPTION,
             methodology = METHODOLOGY,
-            asOf = LocalDateTime.now().toString(),
+            asOf = LocalDateTime.now(KST).toString(),
             personalImpact = buildPersonalImpact(score, watchlist, portfolio),
         )
     }

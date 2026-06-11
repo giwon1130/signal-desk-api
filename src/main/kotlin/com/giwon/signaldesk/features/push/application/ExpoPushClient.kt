@@ -41,8 +41,13 @@ class ExpoPushClient(
         if (!enabled || messages.isEmpty()) return
         val gated = applyQuietHours(messages)
         if (gated.isEmpty()) return
+        // Expo push API 는 요청당 100건 제한 — 초과 시 배치 전체가 거부되므로 청크로 나눠 보낸다.
+        gated.chunked(100).forEach { sendChunk(it) }
+    }
+
+    private fun sendChunk(chunk: List<Message>) {
         runCatching {
-            val payload = objectMapper.writeValueAsString(gated)
+            val payload = objectMapper.writeValueAsString(chunk)
             val req = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint))
                 .timeout(Duration.ofSeconds(5))
@@ -51,7 +56,21 @@ class ExpoPushClient(
                 .POST(HttpRequest.BodyPublishers.ofString(payload))
                 .build()
             val resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString())
-            log.info("Expo push sent. status={}, count={}, bodyPrefix={}", resp.statusCode(), gated.size, resp.body().take(200))
+            if (resp.statusCode() !in 200..299) {
+                log.warn("Expo push rejected. status={}, count={}, bodyPrefix={}", resp.statusCode(), chunk.size, resp.body().take(300))
+                return
+            }
+            // 티켓 단위 오류(DeviceNotRegistered 등)는 200 응답 안에 들어온다 — 조용히 삼키지 않게 토큰과 함께 남긴다.
+            val tickets = runCatching { objectMapper.readTree(resp.body())["data"] }.getOrNull()
+            var errorCount = 0
+            tickets?.forEachIndexed { i, t ->
+                if (t["status"]?.asText() == "error") {
+                    errorCount++
+                    val detail = t["details"]?.get("error")?.asText() ?: t["message"]?.asText() ?: "unknown"
+                    log.warn("Expo push ticket error. token={}, error={}", chunk.getOrNull(i)?.to, detail)
+                }
+            }
+            log.info("Expo push sent. count={}, ticketErrors={}", chunk.size, errorCount)
         }.onFailure { log.warn("Expo push failed: ${it.message}") }
     }
 

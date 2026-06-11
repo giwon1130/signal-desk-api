@@ -63,12 +63,13 @@ class LeagueSchedulerService(
     private fun notifyStart(league: League) {
         val tokens = participantTokens(league)
         if (tokens.isEmpty()) return
-        val msgs = tokens.map { token ->
+        val msgs = tokens.map { (uid, token) ->
             ExpoPushClient.Message(
                 to = token,
                 title = "🏁 ${league.name} 시작!",
                 body = "지금부터 거래하세요 — 종료 시점 수익률 1등이 우승",
                 data = mapOf("type" to "LEAGUE_STARTED", "leagueId" to league.id.toString()),
+                userId = uid, // 방해금지 게이트 적용
             )
         }
         expoPush.send(msgs)
@@ -85,24 +86,26 @@ class LeagueSchedulerService(
         val winnerLabel = winner?.let {
             "🏆 ${it.nickname} +${"%.2f".format((it.finalReturnRate?.toDouble() ?: 0.0) * 100)}%"
         } ?: "🏆 정산 완료"
-        val msgs = tokens.map { token ->
+        val msgs = tokens.map { (uid, token) ->
             ExpoPushClient.Message(
                 to = token,
                 title = "${league.name} 종료",
                 body = "$winnerLabel — 결과 확인하기",
                 data = mapOf("type" to "LEAGUE_FINISHED", "leagueId" to league.id.toString()),
+                userId = uid, // 방해금지 게이트 적용
             )
         }
         expoPush.send(msgs)
         log.info("league finish push — id={} sent={} winner={}", league.id, msgs.size, winner?.nickname)
     }
 
-    private fun participantTokens(league: League): List<String> {
+    /** (userId, expoToken) 쌍 — userId 는 방해금지 판정에 필요. */
+    private fun participantTokens(league: League): List<Pair<java.util.UUID, String>> {
         val participantUserIds = participants.findByLeague(league.id).map { it.userId }.toSet()
         if (participantUserIds.isEmpty()) return emptyList()
         val devicesByUser = pushRepo.listAllDevicesGroupedByUser()
         return participantUserIds.flatMap { uid ->
-            devicesByUser[uid].orEmpty().map { it.expoToken }
+            devicesByUser[uid].orEmpty().map { uid to it.expoToken }
         }
     }
 }

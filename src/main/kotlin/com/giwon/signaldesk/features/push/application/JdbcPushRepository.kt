@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import java.sql.ResultSet
 import java.time.LocalDate
+import java.time.ZoneId
 import java.util.UUID
 
 @Component
@@ -109,9 +110,15 @@ class JdbcPushRepository(
     }
 
     override fun clearPriceAlert(userId: UUID, ticker: String, clearAbove: Boolean) {
-        val column = if (clearAbove) "alert_above" else "alert_below"
+        val watchColumn = if (clearAbove) "alert_above" else "alert_below"
         jdbcTemplate.update(
-            "update signal_desk_watchlist set $column = null where user_id = ?::uuid and ticker = ?",
+            "update signal_desk_watchlist set $watchColumn = null where user_id = ?::uuid and ticker = ?",
+            userId.toString(), ticker,
+        )
+        // 포트폴리오의 목표가/손절가도 같은 알림 트리거 — 여기 안 지우면 매일 재발송된다.
+        val portfolioColumn = if (clearAbove) "target_price" else "stop_loss_price"
+        jdbcTemplate.update(
+            "update signal_desk_portfolio_positions set $portfolioColumn = null where user_id = ?::uuid and ticker = ?",
             userId.toString(), ticker,
         )
     }
@@ -162,7 +169,8 @@ class JdbcPushRepository(
 
     override fun alertStats(days: Int): AlertStats {
         val sinceDays = days.coerceIn(1, 90)
-        val sinceDate = LocalDate.now().minusDays(sinceDays.toLong() - 1)
+        // alert_date 는 KST 기준으로 기록 — 서버(UTC)의 zone 없는 now() 면 KST 00~09시에 하루 어긋난다.
+        val sinceDate = LocalDate.now(ZoneId.of("Asia/Seoul")).minusDays(sinceDays.toLong() - 1)
 
         val totalCount = jdbcTemplate.queryForObject(
             "select count(*) from signal_desk_push_alert_log where alert_date >= ?",

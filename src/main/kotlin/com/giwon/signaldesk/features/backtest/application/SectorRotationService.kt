@@ -1,5 +1,7 @@
 package com.giwon.signaldesk.features.backtest.application
 
+import com.giwon.signaldesk.common.KST
+
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
 import java.time.LocalDate
@@ -39,8 +41,8 @@ class SectorRotationService(
 
         return SectorRotationReport(
             market = market.uppercase(),
-            asOf = LocalDateTime.now().toString(),
-            currentMonth = LocalDate.now().monthValue,
+            asOf = LocalDateTime.now(KST).toString(),
+            currentMonth = LocalDate.now(KST).monthValue,
             sectors = seasonalities,
         )
     }

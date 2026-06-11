@@ -1,5 +1,7 @@
 package com.giwon.signaldesk.features.market.application
 
+import com.giwon.signaldesk.common.KST
+
 import com.giwon.signaldesk.features.media.application.GeminiClient
 import com.giwon.signaldesk.features.media.application.MoverReasonInput
 import org.slf4j.LoggerFactory
@@ -93,7 +95,7 @@ class MoverReasonService(
             )
         }
 
-        val byTicker = geminiClient.summarizeMoverReasons(LocalDate.now().toString(), inputs)
+        val byTicker = geminiClient.summarizeMoverReasons(LocalDate.now(KST).toString(), inputs)
             .associateBy { it.ticker.trim() }
 
         val result = picks.mapNotNull { p ->
@@ -150,7 +152,7 @@ class MoverReasonService(
             }
         }.map { it.join() }
         return runCatching {
-            geminiClient.summarizeMoverReasons(LocalDate.now().toString(), inputs)
+            geminiClient.summarizeMoverReasons(LocalDate.now(KST).toString(), inputs)
                 .associate { it.ticker.trim() to it.reason.trim() }
                 .filterValues { it.isNotBlank() }
         }.getOrElse { log.warn("watch mover reasons failed", it); emptyMap() }

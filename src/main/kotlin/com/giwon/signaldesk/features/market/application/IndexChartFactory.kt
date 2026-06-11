@@ -1,5 +1,7 @@
 package com.giwon.signaldesk.features.market.application
 
+import com.giwon.signaldesk.common.KST
+
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Random
@@ -20,7 +22,7 @@ fun buildIndexChartPeriodsFromOhlc(
     weeklyCandles: List<IndexCandle>,
     monthlyCandles: List<IndexCandle>,
 ): List<ChartPeriodSnapshot> {
-    val today = LocalDate.now()
+    val today = LocalDate.now(KST)
 
     // 차트 윈도우: D=90 / W=52 / M=36. 앱에서 가로 스크롤로 과거 데이터까지 탐색 가능해야 하므로 여유 있게 남긴다.
     val dailyPoints = if (dailyCandles.isNotEmpty()) {
@@ -106,7 +108,7 @@ fun buildIndexChartPeriods(
     changeRate: Double,
     baseSeries: List<Double>,
 ): List<ChartPeriodSnapshot> {
-    val today = LocalDate.now()
+    val today = LocalDate.now(KST)
 
     // ── 일봉: 90 거래일 ─────────────────────────────────────────────
     val dailyCloses = pickRealOrSimulate(baseSeries, latest, today, size = 90, dailyVolatility = 0.012)

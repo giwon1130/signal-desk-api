@@ -107,11 +107,19 @@ class FredIndexClient(
 
     private fun fetchViaWget(uri: URI, seriesId: String): List<Double>? {
         return runCatching {
-            val process = ProcessBuilder("wget", "-qO-", uri.toString())
+            // wget 자체 타임아웃(-T 5, 재시도 1회) — 기본값(900초 read timeout)이면 응답이 멈춘
+            // FRED 가 스케줄러 스레드/거래 경로를 무한정 묶는다. 타임아웃 시 wget 이 종료되며
+            // 파이프가 닫혀 아래 readText() 도 함께 풀린다. waitFor 상한은 2중 안전장치.
+            val process = ProcessBuilder("wget", "-qO-", "-T", "5", "-t", "1", uri.toString())
                 .redirectErrorStream(true)
                 .start()
             val body = process.inputStream.bufferedReader().use { it.readText() }
-            val exitCode = process.waitFor()
+            if (!process.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                logger.warn("FRED wget fetch timed out. seriesId={}", seriesId)
+                return null
+            }
+            val exitCode = process.exitValue()
             if (exitCode != 0) {
                 logger.warn("FRED wget fetch failed. seriesId={}, exitCode={}, bodyPrefix={}", seriesId, exitCode, body.take(120))
                 return null

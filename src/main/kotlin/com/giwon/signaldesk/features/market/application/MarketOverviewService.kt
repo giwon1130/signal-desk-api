@@ -1,5 +1,7 @@
 package com.giwon.signaldesk.features.market.application
 
+import com.giwon.signaldesk.common.KST
+
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Duration
@@ -153,7 +155,7 @@ class MarketOverviewService(
             val rechecked = cachedCore
             if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < effectiveTtl) return@synchronized rechecked
 
-            val generatedAt = LocalDateTime.now()
+            val generatedAt = LocalDateTime.now(KST)
             val koreaMarketFuture = CompletableFuture.supplyAsync { krxOfficialClient.loadKoreaMarketSection() ?: emptyKoreaMarket() }
             val vixFuture = CompletableFuture.supplyAsync { cboeVixClient.fetchVix() }
             val koreanQuotesFuture = CompletableFuture.supplyAsync { enrichmentService.loadKoreanQuotes() }
@@ -251,7 +253,7 @@ class MarketOverviewService(
             }
             val snapshot = CachedNewsSection(
                 createdAt = Instant.now(),
-                generatedAt = LocalDateTime.now().toString(),
+                generatedAt = LocalDateTime.now(KST).toString(),
                 news = fetched ?: emptyList(),
             )
             cachedNews = snapshot

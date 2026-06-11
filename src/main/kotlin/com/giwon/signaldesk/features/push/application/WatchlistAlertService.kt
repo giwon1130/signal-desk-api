@@ -99,7 +99,9 @@ class WatchlistAlertService(
             )
         }
 
-        val today = LocalDate.now(clock)
+        // dedup 기준일은 "그 시장의 하루" — US 세션(KST 22:30~05:00)은 KST 자정을 걸쳐서
+        // KST 날짜로 끊으면 세션 중간에 dedup 이 리셋돼 같은 알림이 두 번 나간다.
+        val today = LocalDate.now(clock.withZone(marketZone(market)))
         val alreadySent = pushRepository.loadRecentAlertLog(today)
         // 급등/급락 단계적 재알림 — 최근 3일 마지막 알림 강도 대비 +5%p 이상일 때만.
         val recentMaxRate = pushRepository.loadRecentAlertedRates(today.minusDays(2))
@@ -171,6 +173,9 @@ class WatchlistAlertService(
             userId = c.userId,
         )
     }
+
+    private fun marketZone(market: String): ZoneId =
+        if (market == "US") ZoneId.of("America/New_York") else ZoneId.of("Asia/Seoul")
 
     private fun loadWatchRowsFor(userIds: Collection<UUID>, market: String): List<WatchlistAlertDetector.WatchRow> {
         if (userIds.isEmpty()) return emptyList()

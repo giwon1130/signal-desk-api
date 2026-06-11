@@ -88,6 +88,7 @@ class ReadingCallAlertService(
                         "ticker" to call.ticker,
                         "market" to call.market,
                     ),
+                    userId = uid, // 방해금지 게이트 적용 (US 콜 적중은 KST 새벽에 뜬다)
                 )
             }
         }
