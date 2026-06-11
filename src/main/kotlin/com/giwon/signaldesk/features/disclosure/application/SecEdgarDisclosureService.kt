@@ -3,6 +3,7 @@ package com.giwon.signaldesk.features.disclosure.application
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushRepository
+import com.giwon.signaldesk.features.workspace.application.UserWatchTickerRepository
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
@@ -23,6 +24,7 @@ import java.util.UUID
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class SecEdgarDisclosureService(
     private val jdbc: JdbcTemplate,
+    private val userWatchTickers: UserWatchTickerRepository,
     private val client: SecEdgarClient,
     private val tickerRegistry: SecEdgarTickerRegistry,
     private val pushRepo: PushRepository,
@@ -82,7 +84,8 @@ class SecEdgarDisclosureService(
     }
 
     private fun dispatchPushes(items: List<Pair<UsDisclosureItem, String>>) {
-        val tickersByUser = loadUserUsTickers()
+        // 모든 사용자의 US watchlist + portfolio 티커 (대문자 정규화).
+        val tickersByUser = userWatchTickers.tickersByUser(market = "US")
         if (tickersByUser.isEmpty()) return
         val allUserTickers = tickersByUser.values.flatten().toSet()
         val relevant = items.filter { (_, ticker) -> ticker in allUserTickers }
@@ -117,17 +120,5 @@ class SecEdgarDisclosureService(
             expoPushClient.send(messages)
             log.info("SEC EDGAR push dispatched — messages={}", messages.size)
         }
-    }
-
-    private fun loadUserUsTickers(): Map<UUID, Set<String>> {
-        val watch = jdbc.query(
-            "SELECT user_id, ticker FROM signal_desk_watchlist WHERE market = 'US' AND user_id IS NOT NULL",
-            { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker").uppercase() },
-        )
-        val portfolio = jdbc.query(
-            "SELECT user_id, ticker FROM signal_desk_portfolio_positions WHERE market = 'US' AND user_id IS NOT NULL",
-            { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker").uppercase() },
-        )
-        return (watch + portfolio).groupBy({ it.first }, { it.second }).mapValues { it.value.toSet() }
     }
 }

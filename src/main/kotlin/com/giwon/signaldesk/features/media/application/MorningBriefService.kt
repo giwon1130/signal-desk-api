@@ -1,6 +1,5 @@
 package com.giwon.signaldesk.features.media.application
 
-import com.giwon.signaldesk.common.isKrStockCode
 import com.giwon.signaldesk.features.disclosure.application.DisclosureSeenRepository
 import com.giwon.signaldesk.features.events.application.FinnhubClient
 import com.giwon.signaldesk.features.events.application.MarketEventService
@@ -15,9 +14,9 @@ import com.giwon.signaldesk.features.market.application.YahooQuoteClient
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushRepository
+import com.giwon.signaldesk.features.workspace.application.UserWatchTickerRepository
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Instant
@@ -43,7 +42,7 @@ import java.util.concurrent.CompletableFuture
 @Service
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class MorningBriefService(
-    private val jdbc: JdbcTemplate,
+    private val userWatchTickers: UserWatchTickerRepository,
     private val vixClient: CboeVixClient,
     private val fredIndexClient: FredIndexClient,
     private val usIndexService: UsIndexService,
@@ -79,7 +78,7 @@ class MorningBriefService(
         }
 
         // 사용자 보유/관심 종목 + 매칭 공시
-        val userTickers = loadAllUserKrTickers()  // Map<UUID, Set<String>>
+        val userTickers = userWatchTickers.tickersByUser(market = "KR")  // Map<UUID, Set<String>>
         val allTickers = userTickers.values.flatten().toSet()
         val matchedDisclosures = if (allTickers.isNotEmpty()) {
             disclosureSeenRepository.findRecentByStockCodes(allTickers, limit = 50)
@@ -170,21 +169,6 @@ class MorningBriefService(
         val todayStr = today.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
         val yesterdayStr = yesterday.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
         return rceptDt == todayStr || rceptDt == yesterdayStr
-    }
-
-    private fun loadAllUserKrTickers(): Map<UUID, Set<String>> {
-        val watch = jdbc.query(
-            "select user_id, ticker from signal_desk_watchlist where market = 'KR' and user_id is not null",
-            { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker") },
-        )
-        val portfolio = jdbc.query(
-            "select user_id, ticker from signal_desk_portfolio_positions where market = 'KR' and user_id is not null",
-            { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker") },
-        )
-        return (watch + portfolio)
-            .filter { it.second.isKrStockCode() }
-            .groupBy({ it.first }, { it.second })
-            .mapValues { it.value.toSet() }
     }
 
     private fun dispatchPushes(

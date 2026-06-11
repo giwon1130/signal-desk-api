@@ -4,9 +4,9 @@ import com.giwon.signaldesk.common.isKrStockCode
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushRepository
+import com.giwon.signaldesk.features.workspace.application.UserWatchTickerRepository
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.LocalDate
@@ -28,7 +28,7 @@ import java.util.UUID
 @Service
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class DartDisclosureService(
-    private val jdbc: JdbcTemplate,
+    private val userWatchTickers: UserWatchTickerRepository,
     private val client: DartDisclosureClient,
     private val seenRepo: DisclosureSeenRepository,
     private val pushRepo: PushRepository,
@@ -68,7 +68,8 @@ class DartDisclosureService(
     }
 
     private fun dispatchPushes(items: List<DartListItem>) {
-        val tickersByUser = loadUserKrTickers()  // Map<UUID, Set<String>>
+        // 모든 사용자의 KR watchlist + portfolio stock_code (6자리 숫자만).
+        val tickersByUser = userWatchTickers.tickersByUser(market = "KR")  // Map<UUID, Set<String>>
         if (tickersByUser.isEmpty()) return
         val allTickers = tickersByUser.values.flatten().toSet()
         // 보유/관심 종목 + HIGH(주가에 직접 작용하는 핵심 사안)만 푸시. MEDIUM·LOW 는 앱에서만 확인.
@@ -106,33 +107,9 @@ class DartDisclosureService(
         log.info("dart disclosure push dispatched. items={}, messages={}", relevant.size, messages.size)
     }
 
-    /** 모든 사용자의 KR watchlist + portfolio stock_code (6자리 숫자만). user_id 가 null 인 레거시 row 는 제외. */
-    private fun loadUserKrTickers(): Map<UUID, Set<String>> {
-        val watch = jdbc.query(
-            "select user_id, ticker from signal_desk_watchlist where market = 'KR' and user_id is not null",
-            { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker") },
-        )
-        val portfolio = jdbc.query(
-            "select user_id, ticker from signal_desk_portfolio_positions where market = 'KR' and user_id is not null",
-            { rs, _ -> UUID.fromString(rs.getString("user_id")) to rs.getString("ticker") },
-        )
-        return (watch + portfolio)
-            .filter { it.second.isKrStockCode() }
-            .groupBy({ it.first }, { it.second })
-            .mapValues { it.value.toSet() }
-    }
-
     /** 단일 사용자의 보유/관심 KR 종목 최근 공시. */
     fun listRecentForUser(userId: UUID, limit: Int = 30): List<Disclosure> {
-        val tickers = jdbc.queryForList(
-            """
-            select ticker from signal_desk_watchlist where user_id = ?::uuid and market = 'KR'
-            union
-            select ticker from signal_desk_portfolio_positions where user_id = ?::uuid and market = 'KR'
-            """.trimIndent(),
-            String::class.java,
-            userId.toString(), userId.toString(),
-        ).toSet()
+        val tickers = userWatchTickers.tickersForUser(userId, market = "KR")
         return seenRepo.findRecentByStockCodes(tickers, limit)
     }
 }

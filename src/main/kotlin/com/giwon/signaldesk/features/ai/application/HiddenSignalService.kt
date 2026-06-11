@@ -1,12 +1,12 @@
 package com.giwon.signaldesk.features.ai.application
 
-import com.giwon.signaldesk.common.isKrStockCode
 import com.giwon.signaldesk.features.disclosure.application.DisclosureImportance
 import com.giwon.signaldesk.features.disclosure.application.DisclosureSeenRepository
 import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
 import com.giwon.signaldesk.features.market.application.TopMover
 import com.giwon.signaldesk.features.market.application.TopMoversResponse
 import com.giwon.signaldesk.features.market.application.TopMoversService
+import com.giwon.signaldesk.features.workspace.application.UserWatchTickerRepository
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
@@ -27,6 +27,7 @@ import java.util.UUID
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class HiddenSignalService(
     private val jdbc: JdbcTemplate,
+    private val userWatchTickers: UserWatchTickerRepository,
     private val disclosureSeenRepository: DisclosureSeenRepository,
     private val investorRankClient: NaverInvestorRankClient,
     private val topMoversService: TopMoversService,
@@ -34,8 +35,9 @@ class HiddenSignalService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     fun signalsForUser(userId: UUID): HiddenSignalsResponse {
-        val krNameByTicker = loadUserKrTickers(userId)
-        val usNameByTicker = loadUserUsTickers(userId)
+        // 사용자의 보유/관심 ticker → 종목명 (KR=6자리 검증, US=대문자 정규화).
+        val krNameByTicker = userWatchTickers.namedTickersForUser(userId, market = "KR")
+        val usNameByTicker = userWatchTickers.namedTickersForUser(userId, market = "US")
         if (krNameByTicker.isEmpty() && usNameByTicker.isEmpty()) {
             return HiddenSignalsResponse(Instant.now().toString(), emptyList())
         }
@@ -130,38 +132,6 @@ class HiddenSignalService(
             { rs, _ -> UsDisclosureHit(rs.getString("ticker"), rs.getString("form_type")) },
             *tickers.toTypedArray(),
         )
-    }
-
-    /** 사용자의 KR watchlist + portfolio — ticker(6자리 숫자) → 종목명. */
-    private fun loadUserKrTickers(userId: UUID): Map<String, String> {
-        val rows = jdbc.query(
-            """
-            select ticker, name from signal_desk_watchlist where user_id = ?::uuid and market = 'KR'
-            union
-            select ticker, name from signal_desk_portfolio_positions where user_id = ?::uuid and market = 'KR'
-            """.trimIndent(),
-            { rs, _ -> rs.getString("ticker") to rs.getString("name") },
-            userId.toString(), userId.toString(),
-        )
-        return rows
-            .filter { it.first.isKrStockCode() }
-            .associate { it.first to it.second }
-    }
-
-    /** 사용자의 US watchlist + portfolio — ticker(영문) → 종목명. 대문자 정규화. */
-    private fun loadUserUsTickers(userId: UUID): Map<String, String> {
-        val rows = jdbc.query(
-            """
-            select ticker, name from signal_desk_watchlist where user_id = ?::uuid and market = 'US'
-            union
-            select ticker, name from signal_desk_portfolio_positions where user_id = ?::uuid and market = 'US'
-            """.trimIndent(),
-            { rs, _ -> rs.getString("ticker") to rs.getString("name") },
-            userId.toString(), userId.toString(),
-        )
-        return rows
-            .filter { it.first.isNotBlank() }
-            .associate { it.first.uppercase() to it.second }
     }
 
     private data class UsDisclosureHit(val ticker: String, val formType: String)
