@@ -1,5 +1,7 @@
 package com.giwon.signaldesk.features.workspace.application
 
+import com.zaxxer.hikari.HikariConfig
+import com.zaxxer.hikari.HikariDataSource
 import org.flywaydb.core.Flyway
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -7,7 +9,6 @@ import org.springframework.context.annotation.Conditional
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.jdbc.datasource.DriverManagerDataSource
 import java.net.URI
 import javax.sql.DataSource
 
@@ -16,14 +17,19 @@ import javax.sql.DataSource
 @EnableConfigurationProperties(SignalDeskJdbcProperties::class)
 class SignalDeskJdbcConfig {
 
-    @Bean
+    @Bean(destroyMethod = "close")
     fun signalDeskDataSource(properties: SignalDeskJdbcProperties): DataSource {
-        val dataSource = DriverManagerDataSource()
-        dataSource.setDriverClassName(properties.driverClassName)
-        dataSource.url = properties.resolveJdbcUrl()
-        dataSource.username = properties.username
-        dataSource.password = properties.password
-        return dataSource
+        val config = HikariConfig()
+        config.driverClassName = properties.driverClassName
+        config.jdbcUrl = properties.resolveJdbcUrl()
+        config.username = properties.username
+        config.password = properties.password
+        // Railway PG 무료 플랜 커넥션 여유가 작다 — 본인 트래픽엔 5면 충분.
+        config.maximumPoolSize = 5
+        config.minimumIdle = 1
+        config.connectionTimeout = 5_000
+        config.idleTimeout = 300_000
+        return HikariDataSource(config)
     }
 
     @Bean

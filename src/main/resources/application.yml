@@ -12,12 +12,12 @@ spring:
     name: signal-desk-api
   flyway:
     enabled: false  # Flyway는 SignalDeskJdbcConfig에서 직접 실행 (jdbc 모드일 때만)
-  datasource:
-    hikari:
-      maximum-pool-size: 5      # default 10 → 본인 트래픽엔 5로 충분
-      minimum-idle: 1
-      connection-timeout: 5000
-      idle-timeout: 300000
+  # 커넥션 풀(HikariCP) 설정은 SignalDeskJdbcConfig 빈에서 직접 구성 —
+  # DataSourceAutoConfiguration 이 제외돼 있어 spring.datasource.* 는 적용되지 않는다.
+  task:
+    scheduling:
+      pool:
+        size: 6  # @Scheduled ~20개가 기본 1스레드 공유 → 느린 잡(캐시워밍/Gemini)이 실시간 시세 브로드캐스트를 막던 것 해소
 
 logging:
   level:
