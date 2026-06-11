@@ -67,6 +67,12 @@ class JdbcTradeRepository(
             mapper, leagueId.toString(), limit,
         )
 
+    override fun findAllByLeague(leagueId: UUID): List<Trade> =
+        jdbc.query(
+            "select * from signal_desk_mock_trade where league_id = ?::uuid",
+            mapper, leagueId.toString(),
+        )
+
     override fun findByUserInLeague(leagueId: UUID, userId: UUID): List<Trade> =
         jdbc.query(
             """

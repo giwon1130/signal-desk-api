@@ -47,6 +47,12 @@ class PositionService(
         return aggregate(all).filter { it.quantity > 0 }
     }
 
+    /** league 전체 참가자의 보유 종목 — 거래 1회 조회 후 사용자별 합산 (리더보드 N+1 방지). */
+    fun positionsByUser(leagueId: UUID): Map<UUID, List<Position>> =
+        trades.findAllByLeague(leagueId)
+            .groupBy { it.userId }
+            .mapValues { (_, ts) -> aggregate(ts).filter { it.quantity > 0 } }
+
     /** 보유 종목 + 현재가/수익률 (LeaderboardService 평가 로직과 동일한 통화 환산). */
     fun positionViewsForUser(leagueId: UUID, userId: UUID): List<PositionView> {
         val positions = positionsForUser(leagueId, userId)

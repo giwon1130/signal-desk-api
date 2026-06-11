@@ -81,6 +81,15 @@ class JdbcReadingRepository(
         jdbc.query("select * from signal_desk_reading_leader where user_id = ?::uuid", leaderMapper, userId.toString())
             .firstOrNull()
 
+    override fun findLeaders(userIds: Collection<UUID>): Map<UUID, Leader> {
+        if (userIds.isEmpty()) return emptyMap()
+        val placeholders = userIds.joinToString(",") { "?::uuid" }
+        return jdbc.query(
+            "select * from signal_desk_reading_leader where user_id in ($placeholders)",
+            leaderMapper, *userIds.map { it.toString() }.toTypedArray(),
+        ).associateBy { it.userId }
+    }
+
     override fun findLeaderByInviteCode(code: String): Leader? =
         jdbc.query("select * from signal_desk_reading_leader where invite_code = ?", leaderMapper, code)
             .firstOrNull()
@@ -187,6 +196,15 @@ class JdbcReadingRepository(
             "select * from signal_desk_reading_call where post_id = ?::uuid order by created_at",
             callMapper, postId.toString(),
         )
+
+    override fun callsByPosts(postIds: Collection<UUID>): Map<UUID, List<ReadingCall>> {
+        if (postIds.isEmpty()) return emptyMap()
+        val placeholders = postIds.joinToString(",") { "?::uuid" }
+        return jdbc.query(
+            "select * from signal_desk_reading_call where post_id in ($placeholders) order by created_at",
+            callMapper, *postIds.map { it.toString() }.toTypedArray(),
+        ).groupBy { it.postId }
+    }
 
     override fun callsByLeader(leaderUserId: UUID): List<ReadingCall> =
         jdbc.query(

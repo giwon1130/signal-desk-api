@@ -29,15 +29,35 @@ class MoverReasonService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     @Volatile private var cache: Cached? = null
+    private val refreshing = java.util.concurrent.atomic.AtomicBoolean(false)
     private data class Cached(val at: Instant, val list: List<MoverReason>)
 
-    /** 캐시가 신선하면 그대로, 아니면 동기 재계산(15분에 한 번). 실패 시 직전 캐시 유지. */
+    /**
+     * 캐시가 신선하면 그대로. stale 이면 즉시 직전 캐시를 응답하고 백그라운드 single-flight 로
+     * 재계산 — 사용자 요청이 Gemini 파이프라인(최악 수십 초)을 기다리지 않게.
+     * 캐시가 아예 없을 때(부팅 직후 1회)만 동기 계산.
+     */
     fun reasons(): List<MoverReason> {
         val c = cache
         if (c != null && Duration.between(c.at, Instant.now()).toMinutes() < TTL_MINUTES) return c.list
-        return runCatching { compute() }.getOrElse {
-            log.warn("mover reasons compute failed", it)
-            c?.list ?: emptyList()
+        if (c == null) {
+            return runCatching { compute() }.getOrElse {
+                log.warn("mover reasons compute failed", it)
+                emptyList()
+            }
+        }
+        refreshAsync()
+        return c.list
+    }
+
+    private fun refreshAsync() {
+        if (!refreshing.compareAndSet(false, true)) return
+        java.util.concurrent.CompletableFuture.runAsync {
+            try {
+                runCatching { compute() }.onFailure { log.warn("mover reasons refresh failed", it) }
+            } finally {
+                refreshing.set(false)
+            }
         }
     }
 

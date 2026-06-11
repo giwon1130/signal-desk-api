@@ -59,8 +59,9 @@ class LeaderboardService(
                 }
         }
 
-        // RUNNING/OPEN — 현재가 fetch 후 평가.
-        val allPositions = parts.associateWith { positions.positionsForUser(leagueId, it.userId) }
+        // RUNNING/OPEN — 현재가 fetch 후 평가. 포지션은 거래 1회 조회로 일괄 합산 (참가자별 쿼리 N+1 방지).
+        val positionsByUser = positions.positionsByUser(leagueId)
+        val allPositions = parts.associateWith { positionsByUser[it.userId].orEmpty() }
         val krTickers = allPositions.values.flatten().filter { it.market == "KR" }.map { it.ticker }.toSet()
         val usTickers = allPositions.values.flatten().filter { it.market == "US" }.map { it.ticker }.toSet()
         val krPrices = if (krTickers.isNotEmpty()) runCatching { krQuotes.fetchKoreanQuotes(krTickers) }.getOrNull().orEmpty() else emptyMap()

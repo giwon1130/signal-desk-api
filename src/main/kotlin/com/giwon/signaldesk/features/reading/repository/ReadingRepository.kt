@@ -17,6 +17,8 @@ interface ReadingRepository {
     // Leader
     fun createLeader(leader: Leader): Leader
     fun findLeader(userId: UUID): Leader?
+    /** 일괄 조회 — 피드 렌더에서 리더별 단건 조회 N+1 방지. */
+    fun findLeaders(userIds: Collection<UUID>): Map<UUID, Leader>
     fun findLeaderByInviteCode(code: String): Leader?
     fun updateLeaderStatus(userId: UUID, status: LeaderStatus)
 
@@ -36,6 +38,8 @@ interface ReadingRepository {
     // Call
     fun insertCall(call: ReadingCall): ReadingCall
     fun callsByPost(postId: UUID): List<ReadingCall>
+    /** 일괄 조회 — 피드 렌더에서 글별 단건 조회 N+1 방지. */
+    fun callsByPosts(postIds: Collection<UUID>): Map<UUID, List<ReadingCall>>
     fun callsByLeader(leaderUserId: UUID): List<ReadingCall>
     fun activeCalls(): List<ReadingCall>
     /** 콜 상태/HIT 시각만 갱신 (entry_price 등 가격 정보는 불변). */

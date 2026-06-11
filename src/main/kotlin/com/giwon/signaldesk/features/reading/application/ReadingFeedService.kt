@@ -65,11 +65,12 @@ class ReadingFeedService(
 
     private fun buildPostViews(posts: List<ReadingPost>): List<PostWithCalls> {
         if (posts.isEmpty()) return emptyList()
-        val callsByPost = posts.associate { it.id to repo.callsByPost(it.id) }
+        // 글/리더 단위 in 절 일괄 조회 — 글 50개 피드가 쿼리 50+회를 만들던 N+1 방지.
+        val callsByPost = repo.callsByPosts(posts.map { it.id })
         val allCalls = callsByPost.values.flatten()
         val priceMap = priceService.currentPrices(allCalls.map { it.market to it.ticker })
-        val leaderNames = posts.map { it.leaderUserId }.distinct()
-            .associateWith { repo.findLeader(it)?.displayName ?: "리더" }
+        val leaders = repo.findLeaders(posts.map { it.leaderUserId }.distinct())
+        val leaderNames = leaders.mapValues { (_, l) -> l.displayName }
         return posts.map { post ->
             val perfs = (callsByPost[post.id] ?: emptyList()).map { c ->
                 toPerformance(c, priceMap[c.market to c.ticker])
