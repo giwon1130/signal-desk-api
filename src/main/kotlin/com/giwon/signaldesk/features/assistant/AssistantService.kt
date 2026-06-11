@@ -133,20 +133,21 @@ class AssistantService(
         ) ?: 0
 
     /**
-     * 모델이 지시를 무시하고 {"response": "..."} 같은 JSON 이나 코드블록으로 감싸는 경우 방어 —
-     * 단일 문자열 필드 JSON 이면 내용물만 꺼낸다.
+     * 모델이 지시를 무시하고 JSON/코드블록으로 감싸는 경우 방어.
+     * 단일 문자열 필드면 내용물만, 다중 필드/배열이면 문자열 leaf 들을 문장으로 결합 —
+     * "포트폴리오 점검" 류 질문에서 {"보유":"...","조언":"..."} 형태가 관측됨.
      */
     private fun unwrapPlainText(raw: String): String {
         var t = raw.trim()
         if (t.startsWith("```")) {
             t = t.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
         }
-        if (t.startsWith("{")) {
+        if (t.startsWith("{") || t.startsWith("[")) {
             runCatching {
                 val node = objectMapper.readTree(t)
-                if (node.isObject && node.size() == 1 && node.first().isTextual) {
-                    return node.first().asText().trim()
-                }
+                val leaves = ArrayList<String>()
+                collectTextLeaves(node, leaves)
+                if (leaves.isNotEmpty()) return leaves.joinToString(" ").trim()
             }
         }
         // 전체가 따옴표 한 쌍으로 감싸진 경우(JSON 문자열 흉내)도 벗긴다.
@@ -154,6 +155,13 @@ class AssistantService(
             t = t.substring(1, t.length - 1).trim()
         }
         return t
+    }
+
+    private fun collectTextLeaves(node: com.fasterxml.jackson.databind.JsonNode, out: MutableList<String>) {
+        when {
+            node.isTextual -> node.asText().trim().takeIf { it.isNotBlank() }?.let { out.add(it) }
+            node.isArray || node.isObject -> node.forEach { collectTextLeaves(it, out) }
+        }
     }
 
     private fun buildPrompt(userId: UUID, question: String, history: List<HistoryTurn> = emptyList()): String {
@@ -244,6 +252,9 @@ class AssistantService(
             appendLine()
             appendLine("[질문]")
             appendLine(question)
+            // 모델은 프롬프트 끝의 지시를 가장 잘 따른다 — 평문 강제를 한 번 더.
+            appendLine()
+            appendLine("(반드시 평문 문장으로만 답하세요. JSON, 마크다운, 목록 기호, 코드블록 금지.)")
         }
     }
 
