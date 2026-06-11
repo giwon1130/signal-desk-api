@@ -8,33 +8,32 @@ import com.giwon.signaldesk.features.market.application.UsIndicesSnapshot
 import com.giwon.signaldesk.features.market.application.YahooFinanceScreenerClient
 import com.giwon.signaldesk.features.market.application.YahooQuote
 import com.giwon.signaldesk.features.push.application.AlertPreferenceService
-import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushRepository
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import java.time.Clock
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.UUID
-import java.util.concurrent.CompletableFuture
 
 /**
  * US 이브닝 브리프 — NY 장 마감 직후(06:30 KST) NASDAQ/S&P 변동·주도주·실적·뉴스를 Gemini로 종합해 한 줄 푸시.
  * Gemini 키 없으면 template 합성으로 fallback.
+ *
+ * US 전용 데이터 소스(스크리너 급등락·전일 실적)와 fallback 푸시 정책 때문에
+ * [BriefPipeline.run] 골격은 쓰지 않고 공용 단계(병렬 수집 헬퍼·요약 조립·푸시 발송)만 재사용한다.
  */
 @Service
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class EveningBriefService(
+    private val pipeline: BriefPipeline,
     private val cboeVixClient: CboeVixClient,
     private val usIndexService: UsIndexService,
     private val yahooFinanceScreenerClient: YahooFinanceScreenerClient,
     private val finnhubClient: FinnhubClient,
     private val googleNewsRssClient: GoogleNewsRssClient,
     private val geminiClient: GeminiClient,
-    private val expoPushClient: ExpoPushClient,
     private val pushRepository: PushRepository,
     private val alertPreferenceService: AlertPreferenceService,
     private val mediaSummaryRepository: MediaSummaryRepository,
@@ -53,16 +52,16 @@ class EveningBriefService(
             return
         }
 
-        // 외부 데이터 병렬 수집 — 모닝 브리프와 동일 패턴.
-        val vixF = supplyAsync { cboeVixClient.fetchVix() }
-        val indicesF = supplyAsync { usIndexService.fetchUsIndices() }
-        val gainersF = supplyAsync { yahooFinanceScreenerClient.fetchGainers(5) }
-        val losersF = supplyAsync { yahooFinanceScreenerClient.fetchLosers(5) }
+        // 외부 데이터 병렬 수집 — 모닝 브리프와 동일 패턴 (US 전용 소스라 BriefPipeline 수집 단계와는 별도).
+        val vixF = pipeline.supplyAsync { cboeVixClient.fetchVix() }
+        val indicesF = pipeline.supplyAsync { usIndexService.fetchUsIndices() }
+        val gainersF = pipeline.supplyAsync { yahooFinanceScreenerClient.fetchGainers(5) }
+        val losersF = pipeline.supplyAsync { yahooFinanceScreenerClient.fetchLosers(5) }
         val today = LocalDate.now(clock)
-        val earningsF = supplyAsync {
+        val earningsF = pipeline.supplyAsync {
             finnhubClient.fetchEarningsCalendar(today.minusDays(1).toString(), today.toString())
         }
-        val headlinesF = supplyAsync { googleNewsRssClient.fetchMarketNews() }
+        val headlinesF = pipeline.supplyAsync { googleNewsRssClient.fetchMarketNews() }
 
         val vix = vixF.join()
         val indices = indicesF.join()
@@ -84,7 +83,7 @@ class EveningBriefService(
         } else null
 
         val (title, body) = if (analysis != null) {
-            buildGeminiMessage(analysis)
+            pipeline.briefPushContent(analysis, fallbackTitle = "미국장 마감 브리프")
         } else {
             buildTemplateMessage(indices, gainers, losers, earnings.size)
         }
@@ -95,33 +94,11 @@ class EveningBriefService(
             saveMediaSummary(today, analysis, gainers, losers)
         }
 
-        val messages = targets.flatMap { (userId, devices) ->
-            devices.map { d ->
-                ExpoPushClient.Message(
-                    to = d.expoToken,
-                    title = title,
-                    body = body,
-                    data = mapOf("type" to "EVENING_BRIEF"),
-                    userId = userId,
-                )
-            }
-        }
-        expoPushClient.send(messages)
+        val sent = pipeline.sendToTargets(targets, pushType = "EVENING_BRIEF") { title to body }
         log.info(
             "Evening brief dispatched. recipients={}, messages={}, source={}",
-            targets.size, messages.size, if (analysis != null) "gemini" else "template",
+            targets.size, sent, if (analysis != null) "gemini" else "template",
         )
-    }
-
-    private fun buildGeminiMessage(analysis: MarketInsightAnalysis): Pair<String, String> {
-        val emoji = when (analysis.sentiment) {
-            MediaSentiment.BULLISH -> "🟢"
-            MediaSentiment.BEARISH -> "🔴"
-            MediaSentiment.NEUTRAL -> "🟡"
-        }
-        val title = "$emoji ${analysis.headline.ifBlank { "미국장 마감 브리프" }}"
-        val body = analysis.summary.take(180)
-        return title to body
     }
 
     private fun buildTemplateMessage(
@@ -170,30 +147,19 @@ class EveningBriefService(
             log.info("EveningBrief MediaSummary already exists. videoId={}", videoId)
             return
         }
-        val title = "${today.format(DateTimeFormatter.ofPattern("M월 d일"))} 미국장 마감 브리프"
         // 주도주(상승·하락) 상위 6개를 keyTickers 로 — MediaSummaryCard 에서 chip 으로 렌더.
         val keyTickers = (gainers + losers).take(6).map { it.ticker }.distinct()
-        val summary = MediaSummary(
-            id = UUID.randomUUID().toString(),
+        val summary = pipeline.buildSummary(
+            videoId = videoId,
             channelId = "evening-brief",
             channelTitle = "미국장 마감 브리프",
-            videoId = videoId,
-            videoTitle = title,
-            videoUrl = "",
-            publishedAt = Instant.now(),
+            videoTitle = "${today.format(DateTimeFormatter.ofPattern("M월 d일"))} 미국장 마감 브리프",
             transcriptLength = analysis.summary.length + analysis.keyPoints.sumOf { it.length },
-            summary = analysis.headline + "\n\n" + analysis.summary,
-            flowAnalysis = analysis.keyPoints.joinToString("\n") { "• $it" },
             keyTickers = keyTickers,
-            sentiment = analysis.sentiment,
-            hasTranscript = true,
             source = MediaSource.EVENING_BRIEF,
-            createdAt = Instant.now(),
+            analysis = analysis,
         )
         mediaSummaryRepository.save(summary)
         log.info("EveningBrief MediaSummary saved. videoId={}, keyTickers={}", videoId, keyTickers.size)
     }
-
-    private fun <T> supplyAsync(block: () -> T?): CompletableFuture<T?> =
-        CompletableFuture.supplyAsync { runCatching(block).getOrNull() }
 }
