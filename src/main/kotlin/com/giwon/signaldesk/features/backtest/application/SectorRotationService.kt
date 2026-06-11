@@ -18,7 +18,8 @@ import java.util.concurrent.CompletableFuture
 class SectorRotationService(
     private val seasonality: SeasonalityBacktestService,
 ) {
-    @Cacheable(cacheNames = ["seasonality"], key = "'sector:' + #market", unless = "#result == null")
+    // sync=true: 캐시 미스 시 ETF 11개 × 15y fetch(수 초~수십 초) — 동시 요청이 중복 계산하지 않게 single-flight.
+    @Cacheable(cacheNames = ["seasonality"], key = "'sector:' + #market.toUpperCase()", unless = "#result == null", sync = true)
     fun report(market: String): SectorRotationReport? {
         val sectors = sectorsFor(market)
         if (sectors.isEmpty()) return null
@@ -69,7 +70,9 @@ class SectorRotationService(
         )
         private val KR_SECTORS = listOf(
             SectorDef("semi", "반도체", "091160"),
-            SectorDef("battery", "2차전지", "266370"),
+            // 305720=KODEX 2차전지산업 (과거 266370 은 KODEX IT 였음 — 잘못된 코드로 IT 데이터가 노출됐었다).
+            // 2018-09 상장이라 히스토리 ~7년 — 등급(MIN_YEARS=8) 미달로 당분간 NOISE 표시.
+            SectorDef("battery", "2차전지", "305720"),
             SectorDef("it", "IT", "139260"),
             SectorDef("auto", "자동차", "091180"),
             SectorDef("bank", "은행", "091170"),

@@ -34,6 +34,9 @@ class CacheConfig {
         manager.registerCustomCache("ai-picks", build(Duration.ofMinutes(30), 5))
         // 시즈널리티 백테스트 — 장기 히스토리 기반이라 거의 안 변함. 일 단위 캐시.
         manager.registerCustomCache("seasonality", build(Duration.ofHours(24), 500))
+        // 야후 장기 일봉(15y≈3800봉) — 가설 빌더가 클릭마다 풀 fetch 하던 것 방지.
+        // 엔트리가 커서(수백 KB) 개수 상한을 작게 — 60개 ≈ 섹터 ETF 18종 + 개별 종목 여유분.
+        manager.registerCustomCache("yahoo-history", build(Duration.ofHours(6), 60))
         return manager
     }
 

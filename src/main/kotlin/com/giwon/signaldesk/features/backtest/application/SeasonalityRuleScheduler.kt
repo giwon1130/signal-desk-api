@@ -13,7 +13,9 @@ import java.time.ZoneId
  * 저장된 시즌 규칙 → 해당 월이 다가오면 푸시.
  *  - BUY_MONTH: 그 달 시작 2일 전(강세 진입 리드타임)
  *  - AVOID_MONTH: 그 달 1일(회피 주의)
- * 매일 08:00 KST 실행 — 트리거 날짜는 1년에 한 번만 맞으므로 자연히 월 1회 발송(별도 dedup 불필요).
+ * 매일 08:00 KST 실행. 트리거일 "정확히 일치" 방식은 그날 서버가 죽어 있으면 그 해 알림이
+ * 통째로 사라지므로, 트리거일 이후 CATCH_UP_DAYS 의 만회 윈도우를 두고
+ * last_notified_on 으로 같은 트리거 중복 발송을 막는다.
  */
 @Service
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
@@ -27,20 +29,36 @@ class SeasonalityRuleScheduler(
     @Scheduled(cron = "0 0 8 * * *", zone = "Asia/Seoul")
     fun notifyDueRules() {
         val today = LocalDate.now(ZoneId.of("Asia/Seoul"))
-        val due = mutableListOf<DueRule>()
-        val plus2 = today.plusDays(2)
-        if (plus2.dayOfMonth == 1) due += ruleService.findDue("BUY_MONTH", plus2.monthValue)
-        if (today.dayOfMonth == 1) due += ruleService.findDue("AVOID_MONTH", today.monthValue)
+        val due = ruleService.findAllEnabled().filter { isDue(it, today) }
         if (due.isEmpty()) return
 
         val devicesByUser = pushRepository.listAllDevicesGroupedByUser()
         val messages = due.flatMap { rule ->
             devicesByUser[rule.userId].orEmpty().map { d -> buildMessage(d.expoToken, rule) }
         }
-        if (messages.isEmpty()) return
-        runCatching { expoPushClient.send(messages) }
-            .onSuccess { log.info("Seasonality alerts dispatched. dueRules={}, messages={}", due.size, messages.size) }
-            .onFailure { log.warn("Seasonality alert send failed", it) }
+        if (messages.isNotEmpty()) {
+            runCatching { expoPushClient.send(messages) }
+                .onSuccess { log.info("Seasonality alerts dispatched. dueRules={}, messages={}", due.size, messages.size) }
+                .onFailure { log.warn("Seasonality alert send failed", it) }
+        }
+        // 발송 기록은 디바이스 유무와 무관하게 남긴다 — 디바이스 없는 사용자는 어차피 못 받고,
+        // 기록을 안 남기면 윈도우 내내 due 로 재계산만 반복한다.
+        due.forEach { rule ->
+            runCatching { ruleService.markNotified(rule.id, today) }
+                .onFailure { log.warn("Seasonality markNotified failed — rule={}", rule.id, it) }
+        }
+    }
+
+    /** 가장 최근 트리거일이 [트리거, 트리거+CATCH_UP_DAYS] 안이고 아직 그 트리거에 발송 안 했으면 due. */
+    private fun isDue(r: DueRule, today: LocalDate): Boolean {
+        val lead = if (r.kind == "BUY_MONTH") 2L else 0L
+        // 작년~내년 후보 중 오늘 이전(포함)의 가장 최근 트리거 (1월 BUY 트리거 = 전년 12/30 케이스 포함)
+        val trigger = (today.year - 1..today.year + 1)
+            .map { y -> LocalDate.of(y, r.month, 1).minusDays(lead) }
+            .filter { !it.isAfter(today) }
+            .maxOrNull() ?: return false
+        if (today.isAfter(trigger.plusDays(CATCH_UP_DAYS))) return false
+        return r.lastNotifiedOn == null || r.lastNotifiedOn.isBefore(trigger)
     }
 
     private fun buildMessage(token: String, r: DueRule): ExpoPushClient.Message {
@@ -59,6 +77,11 @@ class SeasonalityRuleScheduler(
         return ExpoPushClient.Message(
             to = token, title = title, body = body,
             data = mapOf("type" to "SEASONALITY", "market" to r.market, "ticker" to r.ticker, "month" to r.month, "kind" to r.kind),
+            userId = r.userId, // 방해금지 게이트 적용
         )
+    }
+
+    companion object {
+        private const val CATCH_UP_DAYS = 3L
     }
 }

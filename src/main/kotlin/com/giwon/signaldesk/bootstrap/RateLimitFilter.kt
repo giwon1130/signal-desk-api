@@ -77,6 +77,8 @@ class RateLimitFilter : OncePerRequestFilter() {
         path.startsWith("/auth/") -> AUTH_RULE
         // 시장 데이터 — 정상 사용자 60 req/min 충분
         path.startsWith("/api/v1/market/") -> MARKET_RULE
+        // 백테스트 — 비인증 공개 + 캐시 미스마다 야후 장기 일봉 fetch. 티커 바꿔가며 때리는 봇 방어.
+        path.startsWith("/api/v1/backtest/") -> BACKTEST_RULE
         else -> null
     }
 
@@ -89,5 +91,6 @@ class RateLimitFilter : OncePerRequestFilter() {
     companion object {
         private val AUTH_RULE = Rule(name = "auth", capacity = 5, refillPerMinute = 5)
         private val MARKET_RULE = Rule(name = "market", capacity = 60, refillPerMinute = 60)
+        private val BACKTEST_RULE = Rule(name = "backtest", capacity = 20, refillPerMinute = 20)
     }
 }

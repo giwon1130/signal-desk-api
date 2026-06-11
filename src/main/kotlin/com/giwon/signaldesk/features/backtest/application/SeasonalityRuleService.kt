@@ -65,12 +65,13 @@ class SeasonalityRuleService(
             id.toString(), userId.toString(),
         ) > 0
 
-    /** 스케줄러용 — 활성 규칙 중 (kind, month) 해당분. userId 포함. */
-    fun findDue(kind: String, month: Int): List<DueRule> =
+    /** 스케줄러용 — 활성 규칙 전체(소량 테이블). 트리거 판정은 스케줄러가 날짜 계산으로. */
+    fun findAllEnabled(): List<DueRule> =
         jdbcTemplate.query(
-            "select user_id, market, ticker, name, kind, month, mean_pct, win_rate_pct, sample_years from signal_desk_seasonality_rules where enabled and kind = ? and month = ?",
+            "select id, user_id, market, ticker, name, kind, month, mean_pct, win_rate_pct, sample_years, last_notified_on from signal_desk_seasonality_rules where enabled",
             { rs, _ ->
                 DueRule(
+                    id = UUID.fromString(rs.getString("id")),
                     userId = UUID.fromString(rs.getString("user_id")),
                     market = rs.getString("market"), ticker = rs.getString("ticker"),
                     name = rs.getString("name") ?: rs.getString("ticker"),
@@ -78,10 +79,18 @@ class SeasonalityRuleService(
                     meanPct = rs.getObject("mean_pct") as Double?,
                     winRatePct = rs.getObject("win_rate_pct") as Double?,
                     sampleYears = rs.getObject("sample_years") as Int?,
+                    lastNotifiedOn = rs.getDate("last_notified_on")?.toLocalDate(),
                 )
             },
-            kind, month,
         )
+
+    /** 발송 기록 — 같은 트리거 윈도우 안에서 중복 발송 방지. */
+    fun markNotified(ruleId: UUID, on: java.time.LocalDate) {
+        jdbcTemplate.update(
+            "update signal_desk_seasonality_rules set last_notified_on = ? where id = ?::uuid",
+            java.sql.Date.valueOf(on), ruleId.toString(),
+        )
+    }
 }
 
 data class SeasonalityRule(
@@ -99,6 +108,7 @@ data class SeasonalityRule(
 
 /** 스케줄러 내부용 — 발송 대상 규칙(userId 포함). */
 data class DueRule(
+    val id: UUID,
     val userId: UUID,
     val market: String,
     val ticker: String,
@@ -108,4 +118,5 @@ data class DueRule(
     val meanPct: Double?,
     val winRatePct: Double?,
     val sampleYears: Int?,
+    val lastNotifiedOn: java.time.LocalDate?,
 )

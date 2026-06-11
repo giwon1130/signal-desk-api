@@ -20,7 +20,8 @@ import kotlin.math.abs
 class SeasonalityBacktestService(
     private val yahooQuoteClient: YahooQuoteClient,
 ) {
-    @Cacheable(cacheNames = ["seasonality"], key = "#market + ':' + #ticker + ':' + #years", unless = "#result == null")
+    // cost 가 키에 빠지면 다른 costPct 요청에 첫 캐시가 그대로 반환된다. sync=true 로 동시 미스 single-flight.
+    @Cacheable(cacheNames = ["seasonality"], key = "#market + ':' + #ticker + ':' + #years + ':' + #costPct", unless = "#result == null", sync = true)
     fun report(market: String, ticker: String, name: String, years: Int, costPct: Double): SeasonalityReport? {
         val span = years.coerceIn(3, 20)
         val bars = loadBars(market, ticker, "${span}y")
@@ -112,7 +113,10 @@ class SeasonalityBacktestService(
         val keys = monthEnd.keys.toList()
 
         val byMonth = HashMap<Int, MutableList<Double>>()
-        for (i in 1 until keys.size) {
+        // 마지막 (연,월)은 진행 중일 수 있어 표본에서 제외 — 월중에 조회하면 "월초~오늘"의
+        // 부분 수익률이 그 달 통계·등급을 오염시킨다. 완결이 보장되는 건 뒤에 다음 달이
+        // 존재하는 구간뿐이라, 최종 월 수익률 1개를 버리는 비용으로 정확성을 지킨다.
+        for (i in 1 until keys.size - 1) {
             val prev = monthEnd[keys[i - 1]]!!
             val curr = monthEnd[keys[i]]!!
             if (prev <= 0.0) continue

@@ -121,6 +121,12 @@ class YahooQuoteClient(
      * 시즈널리티 백테스트용 장기 일봉 — 배당·분할 조정 종가(adjclose). range 예: "15y".
      * adjclose 없으면 raw close 폴백. 날짜는 거래소 gmtoffset 반영한 현지 거래일. 실패 시 빈 리스트.
      */
+    @org.springframework.cache.annotation.Cacheable(
+        cacheNames = ["yahoo-history"],
+        key = "#symbol + ':' + #range",
+        unless = "#result.isEmpty()",
+        sync = true,
+    )
     fun fetchDailyHistory(symbol: String, range: String = "15y"): List<HistoryBar> {
         if (!enabled) return emptyList()
         val encoded = URLEncoder.encode(symbol, StandardCharsets.UTF_8)
