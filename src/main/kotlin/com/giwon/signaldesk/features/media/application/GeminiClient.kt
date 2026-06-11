@@ -194,6 +194,15 @@ class GeminiClient(
         }
     }
 
+    /** 어시스턴트 등 자유 질문용 — 프롬프트 → 평문 응답 텍스트 (실패 시 null). */
+    fun generateText(prompt: String, timeoutSeconds: Long = 30): String? {
+        val body = call(prompt, timeoutSeconds, label = "assistant") ?: return null
+        return runCatching { GeminiResponseParsing.plainText(body, objectMapper) }.getOrElse {
+            log.warn("Gemini plain text parse failed", it)
+            null
+        }
+    }
+
     // ─── private: 공통 호출 + 파싱 ────────────────────────────────────────────
 
     private fun callInsight(prompt: String): MarketInsightAnalysis? {

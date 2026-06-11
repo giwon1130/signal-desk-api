@@ -77,6 +77,19 @@ internal object GeminiResponseParsing {
         )
     }
 
+    /** 자유 텍스트 응답 — parts 의 비-thought text 결합 (어시스턴트 등 비-JSON 응답용). */
+    fun plainText(body: String, mapper: ObjectMapper): String? {
+        val root = mapper.readTree(body)
+        val parts = root["candidates"]?.firstOrNull()?.get("content")?.get("parts") ?: return null
+        val text = buildString {
+            parts.forEach { part ->
+                if (part["thought"]?.asBoolean() == true) return@forEach
+                part["text"]?.asText()?.let { append(it) }
+            }
+        }.trim()
+        return text.ifBlank { null }
+    }
+
     /**
      * candidates[0].content.parts[] 에서 thought=true 가 아닌 text 들을 합쳐 JSON 으로 파싱.
      * @param label 로깅용 — "insight"/"news digest"/"ai picks"

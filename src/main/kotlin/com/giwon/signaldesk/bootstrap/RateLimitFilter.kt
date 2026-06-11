@@ -79,6 +79,8 @@ class RateLimitFilter : OncePerRequestFilter() {
         path.startsWith("/api/v1/market/") -> MARKET_RULE
         // 백테스트 — 비인증 공개 + 캐시 미스마다 야후 장기 일봉 fetch. 티커 바꿔가며 때리는 봇 방어.
         path.startsWith("/api/v1/backtest/") -> BACKTEST_RULE
+        // AI 비서 — 질문당 Gemini 호출 1회. 무료 쿼터(브리프 생성과 공유) 보호.
+        path.startsWith("/api/v1/assistant/") -> ASSISTANT_RULE
         else -> null
     }
 
@@ -92,5 +94,6 @@ class RateLimitFilter : OncePerRequestFilter() {
         private val AUTH_RULE = Rule(name = "auth", capacity = 5, refillPerMinute = 5)
         private val MARKET_RULE = Rule(name = "market", capacity = 60, refillPerMinute = 60)
         private val BACKTEST_RULE = Rule(name = "backtest", capacity = 20, refillPerMinute = 20)
+        private val ASSISTANT_RULE = Rule(name = "assistant", capacity = 8, refillPerMinute = 8)
     }
 }
