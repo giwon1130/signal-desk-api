@@ -76,17 +76,6 @@ class TradeController(
         return ApiResponse(true, list.map(TradeResponse::from))
     }
 
-    /** 내 거래 (visibility 무관, 항상 본인). */
-    @GetMapping("/me")
-    fun listMine(
-        @RequestHeader("Authorization", required = false) auth: String?,
-        @PathVariable leagueId: String,
-    ): ApiResponse<List<TradeResponse>> {
-        val userId = requireUserId(auth)
-        val list = tradeService.listMyTrades(UUID.fromString(leagueId), userId)
-        return ApiResponse(true, list.map(TradeResponse::from))
-    }
-
     /** 내 현재 보유 (positions — derived). */
     @GetMapping("/positions")
     fun positions(

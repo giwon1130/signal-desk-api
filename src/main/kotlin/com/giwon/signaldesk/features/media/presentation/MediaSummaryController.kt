@@ -2,7 +2,6 @@ package com.giwon.signaldesk.features.media.presentation
 
 import com.giwon.signaldesk.features.market.presentation.ApiResponse
 import com.giwon.signaldesk.features.media.application.IntradayBriefService
-import com.giwon.signaldesk.features.media.application.MediaSource
 import com.giwon.signaldesk.features.media.application.MediaSummaryRepository
 import com.giwon.signaldesk.features.media.application.MorningBriefService
 import com.giwon.signaldesk.features.media.application.NewsDigestService
@@ -29,26 +28,11 @@ class MediaSummaryController(
     private val intradayBriefService: IntradayBriefService,
 ) {
 
-    @GetMapping("/summaries/latest")
-    fun getLatest(): ApiResponse<MediaSummaryResponse?> {
-        val latest = repository.findRecent(1).firstOrNull()?.let(MediaSummaryResponse::from)
-        return ApiResponse(true, latest)
-    }
-
     /** 최근 미디어 요약 N건 — 오늘 탭 브리프 카드 회전용 (모닝/이브닝 브리프·뉴스 종합 등 다양하게). */
     @GetMapping("/summaries/recent")
     fun getRecent(@RequestParam(defaultValue = "6") limit: Int): ApiResponse<List<MediaSummaryResponse>> {
         val items = repository.findRecent(limit.coerceIn(1, 20)).map(MediaSummaryResponse::from)
         return ApiResponse(true, items)
-    }
-
-    /** 오늘의 모닝 브리프 (없으면 null). */
-    @GetMapping("/morning-brief")
-    fun getMorningBrief(): ApiResponse<MediaSummaryResponse?> {
-        val latest = repository.findRecent(20)
-            .firstOrNull { it.source == MediaSource.MORNING_BRIEF }
-            ?.let(MediaSummaryResponse::from)
-        return ApiResponse(true, latest)
     }
 
     /** 모닝 브리프 수동 트리거 — 운영용. force=true 면 기존 brief 재생성. */

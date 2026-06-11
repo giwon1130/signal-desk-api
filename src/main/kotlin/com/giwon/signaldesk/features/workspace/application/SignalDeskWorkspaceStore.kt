@@ -58,35 +58,11 @@ class SignalDeskWorkspaceStore(
 
     override fun loadAiPicks(userId: UUID?): List<WorkspaceAiPick> = synchronized(lock) { read().aiPicks }
 
-    override fun saveAiPick(userId: UUID?, pick: WorkspaceAiPick): WorkspaceAiPick = synchronized(lock) {
-        val next = pick.copy(id = pick.id.ifBlank { UUID.randomUUID().toString() })
-        write(read().copy(aiPicks = read().aiPicks.filterNot { it.id == next.id }.plus(next).sortedByDescending { it.confidence }))
-        next
-    }
-
     override fun deleteAiPick(userId: UUID?, id: String) = synchronized(lock) {
         write(read().copy(aiPicks = read().aiPicks.filterNot { it.id == id }))
     }
 
     override fun loadAiTrackRecords(userId: UUID?): List<WorkspaceAiTrackRecord> = synchronized(lock) { read().aiTrackRecords }
-
-    override fun saveAiTrackRecord(userId: UUID?, record: WorkspaceAiTrackRecord): WorkspaceAiTrackRecord = synchronized(lock) {
-        val next = record.copy(id = record.id.ifBlank { UUID.randomUUID().toString() })
-        write(read().copy(aiTrackRecords = read().aiTrackRecords.filterNot { it.id == next.id }.plus(next).sortedByDescending { it.recommendedDate }))
-        next
-    }
-
-    override fun deleteAiTrackRecord(userId: UUID?, id: String) = synchronized(lock) {
-        write(read().copy(aiTrackRecords = read().aiTrackRecords.filterNot { it.id == id }))
-    }
-
-    override fun loadAllUserAiTrackRecords(): List<WorkspaceAiTrackRecord> = synchronized(lock) { read().aiTrackRecords }
-
-    override fun updateAiTrackRecordPrice(id: String, latestPrice: Int, realizedReturnRate: Double, success: Boolean) = synchronized(lock) {
-        write(read().copy(aiTrackRecords = read().aiTrackRecords.map {
-            if (it.id == id) it.copy(latestPrice = latestPrice, realizedReturnRate = realizedReturnRate, success = success) else it
-        }))
-    }
 
     private fun read(): StoreFile =
         if (!Files.exists(resolvedPath)) StoreFile()

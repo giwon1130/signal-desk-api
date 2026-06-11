@@ -12,13 +12,7 @@ interface SignalDeskWorkspaceRepository {
     fun deletePortfolioPosition(userId: UUID?, id: String)
 
     fun loadAiPicks(userId: UUID?): List<WorkspaceAiPick>
-    fun saveAiPick(userId: UUID?, pick: WorkspaceAiPick): WorkspaceAiPick
     fun deleteAiPick(userId: UUID?, id: String)
 
     fun loadAiTrackRecords(userId: UUID?): List<WorkspaceAiTrackRecord>
-    fun saveAiTrackRecord(userId: UUID?, record: WorkspaceAiTrackRecord): WorkspaceAiTrackRecord
-    fun deleteAiTrackRecord(userId: UUID?, id: String)
-
-    fun loadAllUserAiTrackRecords(): List<WorkspaceAiTrackRecord>
-    fun updateAiTrackRecordPrice(id: String, latestPrice: Int, realizedReturnRate: Double, success: Boolean)
 }

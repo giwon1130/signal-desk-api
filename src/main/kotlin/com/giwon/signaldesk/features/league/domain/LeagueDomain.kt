@@ -78,10 +78,3 @@ data class Position(
     val totalBuyNotional: Long,
     val totalSellNotional: Long,
 )
-
-data class Reaction(
-    val tradeId: UUID,
-    val userId: UUID,
-    val emoji: String,
-    val createdAt: Instant,
-)

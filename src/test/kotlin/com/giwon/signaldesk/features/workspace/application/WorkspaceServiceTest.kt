@@ -67,11 +67,6 @@ private class PassThroughWorkspaceRepository : SignalDeskWorkspaceRepository {
     override fun savePortfolioPosition(userId: UUID?, position: WorkspaceHoldingPosition) = position
     override fun deletePortfolioPosition(userId: UUID?, id: String) = Unit
     override fun loadAiPicks(userId: UUID?) = emptyList<WorkspaceAiPick>()
-    override fun saveAiPick(userId: UUID?, pick: WorkspaceAiPick) = pick
     override fun deleteAiPick(userId: UUID?, id: String) = Unit
     override fun loadAiTrackRecords(userId: UUID?) = emptyList<WorkspaceAiTrackRecord>()
-    override fun saveAiTrackRecord(userId: UUID?, record: WorkspaceAiTrackRecord) = record
-    override fun deleteAiTrackRecord(userId: UUID?, id: String) = Unit
-    override fun loadAllUserAiTrackRecords() = emptyList<WorkspaceAiTrackRecord>()
-    override fun updateAiTrackRecordPrice(id: String, latestPrice: Int, realizedReturnRate: Double, success: Boolean) = Unit
 }

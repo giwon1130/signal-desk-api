@@ -63,8 +63,6 @@ signal-desk:
     google-news:
       enabled: true
       base-url: https://news.google.com/rss/search
-    venue-signals:
-      enabled: false
     gemini:
       # Google AI Studio 에서 발급. 비어있으면 미디어 요약 기능 비활성.
       api-key: ${GEMINI_API_KEY:}

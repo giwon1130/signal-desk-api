@@ -1,12 +1,9 @@
 package com.giwon.signaldesk.features.market.application
 
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 
 @Component
-class VenueSignalCollector(
-    @Value("\${signal-desk.integrations.venue-signals.enabled:false}") private val enabled: Boolean,
-) {
+class VenueSignalCollector {
     private val trackedVenues = listOf(
         VenueSignalTarget(
             id = "freddies-beach-bar",
@@ -28,14 +25,12 @@ class VenueSignalCollector(
 
     fun collect(): VenueSignalSnapshot {
         return VenueSignalSnapshot(
-            enabled = enabled,
             venues = trackedVenues,
         )
     }
 }
 
 data class VenueSignalSnapshot(
-    val enabled: Boolean,
     val venues: List<VenueSignalTarget>,
 )
 

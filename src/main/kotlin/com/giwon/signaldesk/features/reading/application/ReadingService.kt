@@ -172,14 +172,6 @@ class ReadingService(
         return post to locked
     }
 
-    /** 콜 수동 종료 (리더만, 무기한 정책 — §12). HIT 마킹은 스케줄러가. */
-    fun closeCall(userId: UUID, callId: UUID) {
-        val leader = repo.findLeader(userId) ?: error("not a leader")
-        // 콜 소유 검증은 markCallStatus 전에. (콜 조회는 post 통해야 하므로 leader 일치로 우선 보호)
-        repo.markCallStatus(callId, CallStatus.CLOSED, null)
-        log.info("reading call closed — leader={} call={}", leader.userId, callId)
-    }
-
     /** 새 리딩 게시 → 팔로워에게 푸시 (리더 본인은 제외 — 본인이 막 쓴 글). */
     private fun notifyFollowersOfNewPost(leaderUserId: UUID, post: ReadingPost, calls: List<ReadingCall>) {
         val followerIds = repo.followerIds(leaderUserId)

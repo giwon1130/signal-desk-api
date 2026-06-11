@@ -125,26 +125,6 @@ class JdbcSignalDeskWorkspaceRepository(
             aiPickRowMapper, *userArgs(userId),
         )
 
-    override fun saveAiPick(userId: UUID?, pick: WorkspaceAiPick): WorkspaceAiPick {
-        val nextPick = pick.copy(id = pick.id.ifBlank { UUID.randomUUID().toString() })
-        jdbcTemplate.update(
-            """
-            insert into signal_desk_ai_picks (id, market, ticker, name, basis, confidence, note, expected_return_rate, user_id)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
-            on conflict (id) do update set
-                market = excluded.market,
-                ticker = excluded.ticker,
-                name = excluded.name,
-                basis = excluded.basis,
-                confidence = excluded.confidence,
-                note = excluded.note,
-                expected_return_rate = excluded.expected_return_rate
-            """.trimIndent(),
-            nextPick.id, nextPick.market, nextPick.ticker, nextPick.name, nextPick.basis, nextPick.confidence, nextPick.note, nextPick.expectedReturnRate, userId?.toString(),
-        )
-        return nextPick
-    }
-
     override fun deleteAiPick(userId: UUID?, id: String) {
         jdbcTemplate.update("delete from signal_desk_ai_picks where id = ? and ${whereUser()}", id, *userArgs(userId))
     }
@@ -157,43 +137,6 @@ class JdbcSignalDeskWorkspaceRepository(
             aiTrackRecordRowMapper, *userArgs(userId),
         )
 
-    override fun saveAiTrackRecord(userId: UUID?, record: WorkspaceAiTrackRecord): WorkspaceAiTrackRecord {
-        val nextRecord = record.copy(id = record.id.ifBlank { UUID.randomUUID().toString() })
-        jdbcTemplate.update(
-            """
-            insert into signal_desk_ai_track_records (id, recommended_date, market, ticker, name, entry_price, latest_price, realized_return_rate, success, user_id)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid)
-            on conflict (id) do update set
-                recommended_date = excluded.recommended_date,
-                market = excluded.market,
-                ticker = excluded.ticker,
-                name = excluded.name,
-                entry_price = excluded.entry_price,
-                latest_price = excluded.latest_price,
-                realized_return_rate = excluded.realized_return_rate,
-                success = excluded.success
-            """.trimIndent(),
-            nextRecord.id, nextRecord.recommendedDate, nextRecord.market, nextRecord.ticker, nextRecord.name, nextRecord.entryPrice, nextRecord.latestPrice, nextRecord.realizedReturnRate, nextRecord.success, userId?.toString(),
-        )
-        return nextRecord
-    }
-
-    override fun deleteAiTrackRecord(userId: UUID?, id: String) {
-        jdbcTemplate.update("delete from signal_desk_ai_track_records where id = ? and ${whereUser()}", id, *userArgs(userId))
-    }
-
-    override fun loadAllUserAiTrackRecords(): List<WorkspaceAiTrackRecord> =
-        jdbcTemplate.query(
-            "select id, recommended_date, market, ticker, name, entry_price, latest_price, realized_return_rate, success from signal_desk_ai_track_records where user_id is not null order by recommended_date desc, name",
-            aiTrackRecordRowMapper,
-        )
-
-    override fun updateAiTrackRecordPrice(id: String, latestPrice: Int, realizedReturnRate: Double, success: Boolean) {
-        jdbcTemplate.update(
-            "update signal_desk_ai_track_records set latest_price = ?, realized_return_rate = ?, success = ? where id = ?",
-            latestPrice, realizedReturnRate, success, id,
-        )
-    }
 }
 
 private val watchlistRowMapper = RowMapper { rs: ResultSet, _: Int ->

@@ -16,7 +16,4 @@ class MarketEventController(private val service: MarketEventService) {
     fun upcoming(
         @RequestParam(defaultValue = "14") days: Int,
     ): ApiResponse<List<MarketEvent>> = ApiResponse(true, service.upcoming(days))
-
-    @GetMapping("/today")
-    fun today(): ApiResponse<List<MarketEvent>> = ApiResponse(true, service.today())
 }

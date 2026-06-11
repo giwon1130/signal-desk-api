@@ -3,8 +3,6 @@ package com.giwon.signaldesk.features.workspace.presentation
 import com.giwon.signaldesk.features.auth.application.AuthContext
 import com.giwon.signaldesk.features.market.presentation.ApiResponse
 import com.giwon.signaldesk.features.workspace.application.SignalDeskWorkspaceRepository
-import com.giwon.signaldesk.features.workspace.application.WorkspaceAiPick
-import com.giwon.signaldesk.features.workspace.application.WorkspaceAiTrackRecord
 import com.giwon.signaldesk.features.workspace.application.WorkspaceHoldingPosition
 import com.giwon.signaldesk.features.workspace.application.WorkspaceService
 import com.giwon.signaldesk.features.workspace.application.WorkspaceWatchItem
@@ -94,14 +92,5 @@ class WorkspaceController(
         return ApiResponse(true, true)
     }
 
-    // AI picks/track-records: 시스템이 내부에서 생성하고 사용자는 읽기만 한다.
-    // 외부 노출하는 GET endpoint는 /api/v1/market/ai-recommendations (MarketOverviewController)로 통합 — 여기는 보존만.
-
-    @GetMapping("/ai/picks")
-    fun getAiPicks(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<List<WorkspaceAiPick>> =
-        ApiResponse(true, workspaceStore.loadAiPicks(userId(auth)))
-
-    @GetMapping("/ai/track-records")
-    fun getAiTrackRecords(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<List<WorkspaceAiTrackRecord>> =
-        ApiResponse(true, workspaceStore.loadAiTrackRecords(userId(auth)))
+    // AI picks/track-records 의 외부 GET 은 /api/v1/market/ai-recommendations (MarketOverviewController)로 통합됨.
 }

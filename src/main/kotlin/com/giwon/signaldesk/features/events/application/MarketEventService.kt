@@ -65,12 +65,6 @@ class MarketEventService(
             }
     }
 
-    /** 오늘 발생하는 이벤트만. */
-    fun today(): List<MarketEvent> {
-        val today = LocalDate.now(ZoneId.of("Asia/Seoul")).toString()
-        return upcoming(1).filter { it.date == today }
-    }
-
     private fun generateHolidays(from: LocalDate, until: LocalDate): List<MarketEvent> {
         val out = mutableListOf<MarketEvent>()
         var d = from

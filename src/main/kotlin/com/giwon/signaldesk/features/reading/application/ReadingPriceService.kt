@@ -37,17 +37,6 @@ class ReadingPriceService(
         else -> error("unknown market: $market")
     }
 
-    /** 성과 추적용 현재가 — 없으면 null (UI/스케줄러는 null 안전). */
-    fun currentPrice(market: String, ticker: String): BigDecimal? = runCatching {
-        when (market) {
-            "KR" -> krQuotes.fetchKoreanQuotes(listOf(ticker))[ticker]?.exactPrice
-                ?.takeIf { it > 0 }?.let { BigDecimal.valueOf(it) }
-            "US" -> usQuotes.fetchUsQuotes(listOf(ticker))[ticker]?.exactPrice
-                ?.takeIf { it > 0 }?.let { BigDecimal.valueOf(it) }
-            else -> null
-        }
-    }.getOrNull()
-
     /** 여러 종목 현재가 일괄 — 스케줄러/피드 성과계산용 (시장별 배치). */
     fun currentPrices(keys: Collection<Pair<String, String>>): Map<Pair<String, String>, BigDecimal> {
         if (keys.isEmpty()) return emptyMap()
