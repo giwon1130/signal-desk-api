@@ -74,8 +74,7 @@ class PriceTickerHandler(
      *  - 6자리 숫자 → 한국 (NaverFinanceQuoteClient, polling 엔드포인트로 벌크 조회)
      *  - 그 외 (알파벳/숫자 조합) → 미국 (NaverGlobalQuoteClient, 종목별 병렬 호출)
      *
-     * US 가격은 원래 Double 인데 StockQuote.currentPrice 가 Int 라서 1원 단위로 반올림돼서
-     * 나간다 (예: AAPL 204.15 → 204). 도메인이 대부분 KR 이므로 MVP 수준에서 수용 가능.
+     * US 가격은 exactPrice(Double) 로 센트까지 그대로 내보낸다 (예: AAPL 204.15).
      */
     @Scheduled(fixedDelay = 5_000L, initialDelay = 5_000L)
     fun broadcastPrices() {
@@ -116,7 +115,7 @@ class PriceTickerHandler(
                     mapOf(
                         "type" to "price",
                         "ticker" to q.ticker,
-                        "price" to q.currentPrice,
+                        "price" to q.exactPrice,
                         "changeRate" to q.changeRate,
                         "ts" to now,
                     )

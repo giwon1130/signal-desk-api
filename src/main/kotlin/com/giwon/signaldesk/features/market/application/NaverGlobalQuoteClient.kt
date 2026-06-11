@@ -73,11 +73,13 @@ class NaverGlobalQuoteClient(
         val close = root["closePrice"]?.asText()?.replace(",", "")?.toDoubleOrNull() ?: return null
         val rate = root["fluctuationsRatio"]?.asText()?.replace(",", "")?.toDoubleOrNull() ?: 0.0
 
-        // Int 변환 시 소수점 손실을 피하려면 Naver KR 과 일관되게 Int 로 반올림.
+        // currentPrice(Int)는 표시/Int 도메인용 반올림 값 — toInt() 절단이 아니라 반올림.
+        // 체결가·수익률 계산은 exactPrice 로 센트를 보존한다.
         return StockQuote(
             ticker = ticker,
-            currentPrice = close.toInt(),
+            currentPrice = Math.round(close).toInt(),
             changeRate = rate,
+            exactPrice = close,
         )
     }
 }

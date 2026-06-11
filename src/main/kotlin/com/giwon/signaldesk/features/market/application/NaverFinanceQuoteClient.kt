@@ -84,6 +84,9 @@ class NaverFinanceQuoteClient(
 
 data class StockQuote(
     val ticker: String,
+    /** 표시/Int 도메인용 가격 — KR은 원 단위 그대로, US는 달러 반올림. */
     val currentPrice: Int,
     val changeRate: Double,
+    /** 정밀 계산용(체결가·수익률·평가액) — US 센트 보존. KR은 currentPrice 와 동일. */
+    val exactPrice: Double = currentPrice.toDouble(),
 )

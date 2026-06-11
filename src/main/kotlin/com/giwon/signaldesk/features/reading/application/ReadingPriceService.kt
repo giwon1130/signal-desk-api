@@ -25,14 +25,14 @@ class ReadingPriceService(
         "KR" -> {
             val q = krQuotes.fetchKoreanQuotes(listOf(ticker))[ticker]
                 ?: error("price not available for KR:$ticker")
-            require(q.currentPrice > 0) { "invalid price for KR:$ticker" }
-            LockedQuote(BigDecimal(q.currentPrice), CallCurrency.KRW)
+            require(q.exactPrice > 0) { "invalid price for KR:$ticker" }
+            LockedQuote(BigDecimal.valueOf(q.exactPrice), CallCurrency.KRW)
         }
         "US" -> {
             val q = usQuotes.fetchUsQuotes(listOf(ticker))[ticker]
                 ?: error("price not available for US:$ticker")
-            require(q.currentPrice > 0) { "invalid price for US:$ticker" }
-            LockedQuote(BigDecimal(q.currentPrice), CallCurrency.USD)
+            require(q.exactPrice > 0) { "invalid price for US:$ticker" }
+            LockedQuote(BigDecimal.valueOf(q.exactPrice), CallCurrency.USD)
         }
         else -> error("unknown market: $market")
     }
@@ -40,10 +40,10 @@ class ReadingPriceService(
     /** 성과 추적용 현재가 — 없으면 null (UI/스케줄러는 null 안전). */
     fun currentPrice(market: String, ticker: String): BigDecimal? = runCatching {
         when (market) {
-            "KR" -> krQuotes.fetchKoreanQuotes(listOf(ticker))[ticker]?.currentPrice
-                ?.takeIf { it > 0 }?.let { BigDecimal(it) }
-            "US" -> usQuotes.fetchUsQuotes(listOf(ticker))[ticker]?.currentPrice
-                ?.takeIf { it > 0 }?.let { BigDecimal(it) }
+            "KR" -> krQuotes.fetchKoreanQuotes(listOf(ticker))[ticker]?.exactPrice
+                ?.takeIf { it > 0 }?.let { BigDecimal.valueOf(it) }
+            "US" -> usQuotes.fetchUsQuotes(listOf(ticker))[ticker]?.exactPrice
+                ?.takeIf { it > 0 }?.let { BigDecimal.valueOf(it) }
             else -> null
         }
     }.getOrNull()
@@ -56,12 +56,12 @@ class ReadingPriceService(
         val usTickers = keys.filter { it.first == "US" }.map { it.second }.distinct()
         if (krTickers.isNotEmpty()) runCatching {
             krQuotes.fetchKoreanQuotes(krTickers).forEach { (t, q) ->
-                if (q.currentPrice > 0) out["KR" to t] = BigDecimal(q.currentPrice)
+                if (q.exactPrice > 0) out["KR" to t] = BigDecimal.valueOf(q.exactPrice)
             }
         }
         if (usTickers.isNotEmpty()) runCatching {
             usQuotes.fetchUsQuotes(usTickers).forEach { (t, q) ->
-                if (q.currentPrice > 0) out["US" to t] = BigDecimal(q.currentPrice)
+                if (q.exactPrice > 0) out["US" to t] = BigDecimal.valueOf(q.exactPrice)
             }
         }
         return out

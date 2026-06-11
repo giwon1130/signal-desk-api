@@ -104,7 +104,7 @@ class LeaderboardService(
             originalCurrency == LeagueCurrency.KRW && league.currency == LeagueCurrency.USD -> 1.0 / usdKrwRate
             else -> 1.0
         }
-        val priceInLeagueCcy = BigDecimal(q.currentPrice).multiply(BigDecimal(ex))
+        val priceInLeagueCcy = BigDecimal.valueOf(q.exactPrice).multiply(BigDecimal(ex))
             .setScale(4, RoundingMode.HALF_UP)
         return priceInLeagueCcy.multiply(BigDecimal(p.quantity))
             .setScale(0, RoundingMode.HALF_UP).toLong()

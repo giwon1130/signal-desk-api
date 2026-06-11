@@ -157,14 +157,14 @@ class TradeService(
             "KR" -> {
                 val q = krQuotes.fetchKoreanQuotes(listOf(ticker))[ticker]
                     ?: error("price not available for KR:$ticker")
-                require(q.currentPrice > 0) { "invalid price for KR:$ticker" }
-                Triple(BigDecimal(q.currentPrice), LeagueCurrency.KRW, ticker)
+                require(q.exactPrice > 0) { "invalid price for KR:$ticker" }
+                Triple(BigDecimal.valueOf(q.exactPrice), LeagueCurrency.KRW, ticker)
             }
             "US" -> {
                 val q = usQuotes.fetchUsQuotes(listOf(ticker))[ticker]
                     ?: error("price not available for US:$ticker")
-                require(q.currentPrice > 0) { "invalid price for US:$ticker" }
-                Triple(BigDecimal(q.currentPrice), LeagueCurrency.USD, ticker)
+                require(q.exactPrice > 0) { "invalid price for US:$ticker" }
+                Triple(BigDecimal.valueOf(q.exactPrice), LeagueCurrency.USD, ticker)
             }
             else -> error("unknown market: $market")
         }

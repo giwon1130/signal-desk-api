@@ -63,7 +63,7 @@ class PositionService(
 
         return positions.map { p ->
             val q = (if (p.market == "KR") krPrices else usPrices)[p.ticker]
-            if (q == null || q.currentPrice <= 0) return@map PositionView(p, null, null)
+            if (q == null || q.exactPrice <= 0) return@map PositionView(p, null, null)
             val originalCcy = if (p.market == "KR") LeagueCurrency.KRW else LeagueCurrency.USD
             val ex = when {
                 originalCcy == league.currency -> 1.0
@@ -71,7 +71,7 @@ class PositionService(
                 originalCcy == LeagueCurrency.KRW && league.currency == LeagueCurrency.USD -> 1.0 / usdKrw
                 else -> 1.0
             }
-            val priceLeagueCcy = BigDecimal(q.currentPrice).multiply(BigDecimal(ex)).setScale(4, RoundingMode.HALF_UP)
+            val priceLeagueCcy = BigDecimal.valueOf(q.exactPrice).multiply(BigDecimal(ex)).setScale(4, RoundingMode.HALF_UP)
             val avg = p.averageCost
             val ret = if (avg > BigDecimal.ZERO)
                 priceLeagueCcy.subtract(avg).divide(avg, 6, RoundingMode.HALF_UP).multiply(BigDecimal(100)).toDouble()
