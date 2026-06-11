@@ -19,6 +19,7 @@ class KrxOfficialClient(
     @Value("\${signal-desk.integrations.krx.enabled:true}") private val enabled: Boolean,
     @Value("\${signal-desk.integrations.krx.base-url:https://data.krx.co.kr}") private val baseUrl: String,
 ) {
+    private val log = org.slf4j.LoggerFactory.getLogger(javaClass)
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(3))
         .build()
@@ -26,7 +27,16 @@ class KrxOfficialClient(
     @org.springframework.cache.annotation.Cacheable(cacheNames = ["krx-official"], unless = "#result == null")
     fun loadKoreaMarketSection(): MarketSection? {
         if (!enabled) return null
+        // KRX(data.krx.co.kr)는 해외 IP(Railway)를 간헐 차단한다 — 실패 시 조용히 빈 섹션이
+        // 되면서 앱 하단 지수 펄스·KR Heat 가 통째로 사라졌었다. 실패를 로그로 남기고
+        // Naver 지수 차트로 폴백해 최소한 지수(코스피/코스닥)는 항상 살린다.
+        val viaKrx = runCatching { loadViaKrx() }
+            .onFailure { log.warn("KRX market section load failed — falling back to Naver: {}", it.message) }
+            .getOrNull()
+        return viaKrx ?: naverFallbackSection()
+    }
 
+    private fun loadViaKrx(): MarketSection? {
         return runCatching {
             val indices = fetchJson(
                 "/comm/bldAttendant/getJsonData.cmd",
@@ -98,6 +108,46 @@ class KrxOfficialClient(
                 leadingStocks = emptyList(),
             )
         }.getOrNull()
+    }
+
+    /**
+     * KRX 실패 시 폴백 — Naver 지수 차트(일봉)로 코스피/코스닥 지수·등락률만 구성.
+     * 수급/심리는 KRX 전용 데이터라 비워두되, 지수 표시(앱 하단 펄스·차트)는 유지된다.
+     */
+    private fun naverFallbackSection(): MarketSection? {
+        val indices = listOf("KOSPI", "KOSDAQ").mapNotNull { code ->
+            val daily = naverIndexChartClient.fetchOhlc(code, NaverIndexChartClient.PeriodType.DAILY, 90)
+            if (daily.size < 2) return@mapNotNull null
+            val latest = daily.last().close
+            val prev = daily[daily.size - 2].close
+            if (prev <= 0 || latest <= 0) return@mapNotNull null
+            val changeRate = Math.round((latest / prev - 1) * 10000) / 100.0
+            IndexMetric(
+                label = code,
+                value = latest,
+                changeRate = changeRate,
+                periods = buildIndexChartPeriodsFromOhlc(
+                    latest = latest,
+                    changeRate = changeRate,
+                    dailyCandles = daily,
+                    weeklyCandles = naverIndexChartClient.fetchOhlc(code, NaverIndexChartClient.PeriodType.WEEKLY, 52),
+                    monthlyCandles = naverIndexChartClient.fetchOhlc(code, NaverIndexChartClient.PeriodType.MONTHLY, 36),
+                ),
+            )
+        }
+        if (indices.isEmpty()) {
+            log.warn("Naver index fallback also failed — KR section will be empty")
+            return null
+        }
+        log.info("KR market section served via Naver fallback (KRX unavailable). indices={}", indices.size)
+        return MarketSection(
+            market = "KR",
+            title = "한국 시장",
+            indices = indices,
+            sentiment = emptyList(),
+            investorFlows = emptyList(),
+            leadingStocks = emptyList(),
+        )
     }
 
     private fun fetchChart(indTpCd: String, idxIndCd: String): List<Double> {
