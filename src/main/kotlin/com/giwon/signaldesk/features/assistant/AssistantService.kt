@@ -25,6 +25,7 @@ import java.util.UUID
 @Service
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class AssistantService(
+    private val objectMapper: com.fasterxml.jackson.databind.ObjectMapper,
     private val geminiClient: GeminiClient,
     private val marketOverviewService: MarketOverviewService,
     private val workspaceRepository: SignalDeskWorkspaceRepository,
@@ -43,9 +44,29 @@ class AssistantService(
         if (!geminiClient.isEnabled()) return null
 
         val prompt = buildPrompt(userId, q)
-        val answer = geminiClient.generateText(prompt, timeoutSeconds = 30)
+        val answer = geminiClient.generateText(prompt, timeoutSeconds = 30)?.let(::unwrapPlainText)
         log.info("assistant ask — user={} qLen={} answered={}", userId.toString().take(8), q.length, answer != null)
         return answer
+    }
+
+    /**
+     * 모델이 지시를 무시하고 {"response": "..."} 같은 JSON 이나 코드블록으로 감싸는 경우 방어 —
+     * 단일 문자열 필드 JSON 이면 내용물만 꺼낸다.
+     */
+    private fun unwrapPlainText(raw: String): String {
+        var t = raw.trim()
+        if (t.startsWith("```")) {
+            t = t.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        }
+        if (t.startsWith("{")) {
+            runCatching {
+                val node = objectMapper.readTree(t)
+                if (node.isObject && node.size() == 1 && node.first().isTextual) {
+                    return node.first().asText().trim()
+                }
+            }
+        }
+        return t
     }
 
     private fun buildPrompt(userId: UUID, question: String): String {
@@ -71,6 +92,7 @@ class AssistantService(
             appendLine("- 아래 [데이터] 섹션의 내용만 근거로 답합니다. 데이터에 없는 것은 \"제 데이터에는 없어서 알 수 없어요\"라고 말합니다.")
             appendLine("- 종목을 사라/팔아라 같은 단정적 투자 지시는 하지 않습니다. 데이터 기반 참고 정보와 확인할 체크포인트만 제시합니다.")
             appendLine("- 한국어, 친근한 존댓말로 간결하게(3~6문장). 숫자는 데이터 그대로 인용합니다.")
+            appendLine("- 출력은 평문 문장만. JSON·마크다운·코드블록·헤더를 쓰지 마세요.")
             appendLine("- 마지막에 면책 문구를 덧붙이지 마세요 (앱이 별도 표시).")
             appendLine()
             appendLine("오늘: $today (KST)")
