@@ -21,6 +21,7 @@ class AuthException(message: String) : RuntimeException(message)
 class AuthService(
     private val userRepo: UserRepository,
     private val jwt: JwtProvider,
+    private val adminGuard: com.giwon.signaldesk.features.admin.AdminGuard,
     @Value("\${signal-desk.auth.google.allowed-audiences:}") private val rawGoogleAllowedAudiences: String,
 ) {
     private val encoder = BCryptPasswordEncoder()
@@ -49,7 +50,12 @@ class AuthService(
         }
     }
 
-    data class AuthResult(val token: String, val userId: String, val email: String, val nickname: String)
+    data class AuthResult(
+        val token: String, val userId: String, val email: String, val nickname: String,
+        val plan: String = "FREE",
+        /** 운영자 여부 — 웹 운영자 콘솔 노출용. */
+        val admin: Boolean = false,
+    )
 
     // ── 이메일/비밀번호 ────────────────────────────────────────────────────────
 
@@ -176,6 +182,6 @@ class AuthService(
 
     private fun SignalUser.toResult(existingToken: String? = null): AuthResult {
         val token = existingToken ?: jwt.generate(id, email)
-        return AuthResult(token, id.toString(), email, nickname)
+        return AuthResult(token, id.toString(), email, nickname, plan = plan, admin = adminGuard.isAdminEmail(email))
     }
 }

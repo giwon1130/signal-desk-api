@@ -29,6 +29,8 @@ data class AuthResponse(
     val userId: String,
     val email: String,
     val nickname: String,
+    val plan: String = "FREE",
+    val admin: Boolean = false,
 )
 
 @RestController
@@ -71,7 +73,7 @@ class AuthController(
     }
 
     private fun AuthService.AuthResult.toResponse() =
-        AuthResponse(token, userId, email, nickname)
+        AuthResponse(token, userId, email, nickname, plan, admin)
 }
 
 @RestControllerAdvice

@@ -97,6 +97,9 @@ signal-desk:
   reading:
     # 리딩 리더 자동승인 + 승인 권한을 가진 운영자 이메일 (콤마 구분). 기본 운영자 1명 고정.
     admin-emails: ${SIGNAL_DESK_READING_ADMIN_EMAILS:gwim113000@gmail.com}
+  admin:
+    # 운영자 콘솔(/api/v1/admin) 접근 + 인증 응답 admin 플래그. 콤마 구분.
+    emails: ${SIGNAL_DESK_ADMIN_EMAILS:gwim113000@gmail.com}
   assistant:
     # AI 비서 일일 질문 한도 — Gemini 무료 쿼터 보호 + 요금제 차등. 운영자는 무제한.
     free-daily-limit: ${SIGNAL_DESK_ASSISTANT_FREE_DAILY_LIMIT:10}

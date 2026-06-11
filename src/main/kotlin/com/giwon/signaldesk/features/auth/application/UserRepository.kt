@@ -20,6 +20,7 @@ class UserRepository(private val jdbc: JdbcTemplate) {
             googleId     = rs.getString("google_id"),
             kakaoId      = rs.getString("kakao_id"),
             createdAt    = rs.getTimestamp("created_at").toInstant(),
+            plan         = rs.getString("plan") ?: "FREE",
         )
     }
 
