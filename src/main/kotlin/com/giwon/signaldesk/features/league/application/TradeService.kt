@@ -16,6 +16,7 @@ import com.giwon.signaldesk.features.market.application.NaverGlobalQuoteClient
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionTemplate
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
@@ -48,6 +49,7 @@ class TradeService(
     private val usQuotes: NaverGlobalQuoteClient,
     private val fred: FredIndexClient,
     private val marketSession: MarketSessionService,
+    private val tx: TransactionTemplate,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -79,7 +81,7 @@ class TradeService(
             MarketScope.BOTH -> true
         }) { "market $market not allowed in ${league.marketScope} league" }
 
-        val participant = participants.find(leagueId, userId) ?: error("not a participant")
+        participants.find(leagueId, userId) ?: error("not a participant")
 
         // 시장 시간 검증 (MARKET_HOURS_ONLY).
         if (league.tradingHours == TradingHours.MARKET_HOURS_ONLY) {
@@ -98,48 +100,52 @@ class TradeService(
         val notional = pricePerShare.multiply(BigDecimal(quantity)).setScale(0, RoundingMode.HALF_UP).toLong()
         val fee = BigDecimal(notional).multiply(league.fee).setScale(0, RoundingMode.HALF_UP).toLong()
 
-        // 검증
-        if (side == TradeSide.BUY) {
-            val totalCost = notional + fee
-            require(participant.cashBalance >= totalCost) {
-                "insufficient cash: need=$totalCost have=${participant.cashBalance}"
+        // 검증~잔고 갱신은 참가자 행 잠금 아래 한 트랜잭션 — 동시 거래(더블탭/창 2개)가
+        // 같은 잔고·보유수량을 읽고 둘 다 통과하는 race 차단. 시세/환율 HTTP fetch 는
+        // 커넥션 점유를 피하려고 트랜잭션 밖(위)에서 끝낸다.
+        return tx.execute {
+            val participant = participants.findForUpdate(leagueId, userId) ?: error("not a participant")
+            if (side == TradeSide.BUY) {
+                val totalCost = notional + fee
+                require(participant.cashBalance >= totalCost) {
+                    "insufficient cash: need=$totalCost have=${participant.cashBalance}"
+                }
+            } else {
+                // SELL — 보유 수량 검증.
+                val pos = positions.positionsForUser(leagueId, userId)
+                    .firstOrNull { it.market == market && it.ticker == ticker }
+                    ?: error("no holding to sell")
+                require(pos.quantity >= quantity) {
+                    "insufficient quantity: have=${pos.quantity} sell=$quantity"
+                }
             }
-        } else {
-            // SELL — 보유 수량 검증.
-            val pos = positions.positionsForUser(leagueId, userId)
-                .firstOrNull { it.market == market && it.ticker == ticker }
-                ?: error("no holding to sell")
-            require(pos.quantity >= quantity) {
-                "insufficient quantity: have=${pos.quantity} sell=$quantity"
+
+            val now = Instant.now()
+            val trade = Trade(
+                id = UUID.randomUUID(),
+                leagueId = leagueId, userId = userId,
+                market = market, ticker = ticker, name = resolvedName,
+                side = side, quantity = quantity,
+                originalPrice = originalPrice, originalCurrency = originalCurrency,
+                price = pricePerShare, exchangeRate = exchangeRate,
+                priceLockedAt = now,
+                feeAmount = fee,
+                notionalAmount = notional,
+                executedAt = now,
+            )
+            trades.insert(trade)
+
+            val newBalance = when (side) {
+                TradeSide.BUY -> participant.cashBalance - notional - fee
+                TradeSide.SELL -> participant.cashBalance + notional - fee
             }
-        }
+            participants.updateCashBalance(leagueId, userId, newBalance)
 
-        val now = Instant.now()
-        val trade = Trade(
-            id = UUID.randomUUID(),
-            leagueId = leagueId, userId = userId,
-            market = market, ticker = ticker, name = resolvedName,
-            side = side, quantity = quantity,
-            originalPrice = originalPrice, originalCurrency = originalCurrency,
-            price = pricePerShare, exchangeRate = exchangeRate,
-            priceLockedAt = now,
-            feeAmount = fee,
-            notionalAmount = notional,
-            executedAt = now,
-        )
-        trades.insert(trade)
-
-        // cashBalance 업데이트.
-        val newBalance = when (side) {
-            TradeSide.BUY -> participant.cashBalance - notional - fee
-            TradeSide.SELL -> participant.cashBalance + notional - fee
-        }
-        participants.updateCashBalance(leagueId, userId, newBalance)
-
-        log.info("trade — league={} user={} {} {} {}x{}@{} fee={} balance: {}→{}",
-            leagueId, userId, side, market, ticker, quantity, pricePerShare, fee,
-            participant.cashBalance, newBalance)
-        return trade
+            log.info("trade — league={} user={} {} {} {}x{}@{} fee={} balance: {}→{}",
+                leagueId, userId, side, market, ticker, quantity, pricePerShare, fee,
+                participant.cashBalance, newBalance)
+            trade
+        }!!
     }
 
     /**

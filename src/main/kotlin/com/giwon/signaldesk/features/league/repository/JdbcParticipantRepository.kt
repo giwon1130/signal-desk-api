@@ -58,6 +58,12 @@ class JdbcParticipantRepository(
             mapper, leagueId.toString(), userId.toString(),
         ).firstOrNull()
 
+    override fun findForUpdate(leagueId: UUID, userId: UUID): Participant? =
+        jdbc.query(
+            "select * from signal_desk_mock_participant where league_id = ?::uuid and user_id = ?::uuid for update",
+            mapper, leagueId.toString(), userId.toString(),
+        ).firstOrNull()
+
     override fun updateCashBalance(leagueId: UUID, userId: UUID, newBalance: Long) {
         jdbc.update(
             """
