@@ -28,6 +28,7 @@ class AdminController(
     private val jdbc: JdbcTemplate,
     private val adminGuard: AdminGuard,
     private val authContext: AuthContext,
+    private val planRequestService: com.giwon.signaldesk.features.plan.PlanRequestService,
 ) {
     data class Overview(
         val totalUsers: Int,
@@ -92,6 +93,33 @@ class AdminController(
             }, today,
         )
         return ApiResponse(true, rows)
+    }
+
+    /** PRO 신청 대기 목록. */
+    @GetMapping("/plan-requests")
+    fun planRequests(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<List<com.giwon.signaldesk.features.plan.PlanRequestService.PendingRequest>> {
+        adminGuard.requireAdmin(authContext.requireUserId(auth))
+        return ApiResponse(true, planRequestService.pending())
+    }
+
+    /** 신청 승인 — plan=PRO + 사용자에게 완료 푸시. */
+    @org.springframework.web.bind.annotation.PostMapping("/plan-requests/{userId}/approve")
+    fun approvePlanRequest(
+        @RequestHeader("Authorization", required = false) auth: String?,
+        @PathVariable userId: String,
+    ): ApiResponse<Boolean> {
+        adminGuard.requireAdmin(authContext.requireUserId(auth))
+        return ApiResponse(true, planRequestService.approve(UUID.fromString(userId)))
+    }
+
+    /** 신청 보류 — 목록에서 제거 (사용자는 재신청 가능). */
+    @org.springframework.web.bind.annotation.PostMapping("/plan-requests/{userId}/dismiss")
+    fun dismissPlanRequest(
+        @RequestHeader("Authorization", required = false) auth: String?,
+        @PathVariable userId: String,
+    ): ApiResponse<Boolean> {
+        adminGuard.requireAdmin(authContext.requireUserId(auth))
+        return ApiResponse(true, planRequestService.dismiss(UUID.fromString(userId)))
     }
 
     @PatchMapping("/users/{id}/plan")
