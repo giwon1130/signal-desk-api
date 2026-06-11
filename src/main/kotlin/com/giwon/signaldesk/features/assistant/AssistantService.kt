@@ -50,7 +50,10 @@ class AssistantService(
         val dailyLimit: Int?,
     )
 
-    fun ask(userId: UUID, question: String): AskResult {
+    /** 직전 대화 한 턴 — role: "user" | "assistant". */
+    data class HistoryTurn(val role: String = "user", val text: String = "")
+
+    fun ask(userId: UUID, question: String, history: List<HistoryTurn> = emptyList()): AskResult {
         val q = question.trim()
         require(q.isNotBlank()) { "질문을 입력해 주세요." }
         require(q.length <= MAX_QUESTION_LENGTH) { "질문은 ${MAX_QUESTION_LENGTH}자 이내로 입력해 주세요." }
@@ -65,7 +68,7 @@ class AssistantService(
         }
         if (limit == null) recordUnlimitedUsage(userId, today)
 
-        val prompt = buildPrompt(userId, q)
+        val prompt = buildPrompt(userId, q, history)
         val answer = geminiClient.generateText(prompt, timeoutSeconds = 30)?.let(::unwrapPlainText)
         if (answer == null && limit != null) refund(userId, today) // Gemini 실패는 한도에서 환불
         val used = usedToday(userId, today)
@@ -153,7 +156,7 @@ class AssistantService(
         return t
     }
 
-    private fun buildPrompt(userId: UUID, question: String): String {
+    private fun buildPrompt(userId: UUID, question: String, history: List<HistoryTurn> = emptyList()): String {
         val today = LocalDate.now(KST)
         val summary = runCatching { marketOverviewService.getSummary(userId) }.getOrNull()
         val portfolio = runCatching { workspaceRepository.loadPortfolioPositions(userId) }.getOrDefault(emptyList())
@@ -227,6 +230,17 @@ class AssistantService(
                 }
             }
 
+            // 직전 대화 — 후속 질문("그럼 언제가 좋아?")의 맥락. 토큰 상한을 위해 최근 턴만, 길이 제한.
+            val recent = history.takeLast(MAX_HISTORY_TURNS).filter { it.text.isNotBlank() }
+            if (recent.isNotEmpty()) {
+                appendLine()
+                appendLine("[직전 대화]")
+                recent.forEach { t ->
+                    val who = if (t.role == "assistant") "비서" else "사용자"
+                    appendLine("$who: ${t.text.take(MAX_HISTORY_TURN_LENGTH)}")
+                }
+            }
+
             appendLine()
             appendLine("[질문]")
             appendLine(question)
@@ -235,5 +249,7 @@ class AssistantService(
 
     companion object {
         const val MAX_QUESTION_LENGTH = 500
+        const val MAX_HISTORY_TURNS = 6
+        const val MAX_HISTORY_TURN_LENGTH = 600
     }
 }

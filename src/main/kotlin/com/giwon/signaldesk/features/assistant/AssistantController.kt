@@ -18,7 +18,11 @@ class AssistantController(
     @Autowired(required = false) private val assistantService: AssistantService? = null,
     @Autowired(required = false) private val authContext: AuthContext? = null,
 ) {
-    data class AskRequest(val question: String = "")
+    data class AskRequest(
+        val question: String = "",
+        /** 직전 대화(선택) — 클라이언트가 최근 턴을 보내 후속 질문 맥락을 잇는다. */
+        val history: List<AssistantService.HistoryTurn> = emptyList(),
+    )
     data class AskResponse(
         val success: Boolean,
         val answer: String?,
@@ -36,7 +40,7 @@ class AssistantController(
         val svc = assistantService ?: return AskResponse(false, null, "어시스턴트가 준비되지 않았어요.")
         val userId = authContext?.requireUserId(auth)
             ?: return AskResponse(false, null, "로그인이 필요합니다.")
-        val result = svc.ask(userId, req.question)
+        val result = svc.ask(userId, req.question, req.history)
         if (result.limitExceeded) {
             return AskResponse(false, null,
                 "오늘 질문 한도(${result.dailyLimit}회)를 모두 사용했어요. 내일 다시 만나요!",
