@@ -39,9 +39,20 @@ class ValidationExceptionHandler {
     private fun body(message: String?) = mapOf("error" to (message ?: "요청을 처리하지 못했습니다."))
 
     // ─── 인증/권한 ───────────────────────────────────────────────────────────
-    @ExceptionHandler(UnauthorizedException::class, JwtException::class, MissingRequestHeaderException::class)
+    // AuthException 도 여기서 401 — AuthController 의 로컬 advice 와 별개로, 다른 컨트롤러가
+    // requireUserId 를 쓸 때 advice 순서에 따라 catch-all 500 으로 떨어지던 것 방지.
+    @ExceptionHandler(
+        UnauthorizedException::class,
+        com.giwon.signaldesk.features.auth.application.AuthException::class,
+        JwtException::class,
+        MissingRequestHeaderException::class,
+    )
     fun unauthorized(e: Exception): ResponseEntity<Map<String, String>> {
-        val msg = if (e is UnauthorizedException) e.message else "로그인이 필요합니다."
+        val msg = when (e) {
+            is UnauthorizedException -> e.message
+            is com.giwon.signaldesk.features.auth.application.AuthException -> e.message
+            else -> "로그인이 필요합니다."
+        }
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body(msg))
     }
 
