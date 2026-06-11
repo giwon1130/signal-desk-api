@@ -11,6 +11,8 @@ import java.time.Month
 import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 @Service
@@ -32,6 +34,19 @@ class MarketOverviewService(
     private val enrichmentService: WorkspaceEnrichmentService,
 ) {
     private val logger = LoggerFactory.getLogger(MarketOverviewService::class.java)
+
+    // 코어 빌드용 전용 풀 — 공용 ForkJoinPool 을 쓰면 한 소스가 멈췄을 때 다른 기능까지 굶는다.
+    private val coreFetchPool = Executors.newFixedThreadPool(8) { r ->
+        Thread(r, "market-core-fetch").apply { isDaemon = true }
+    }
+
+    /**
+     * future.join() 무한 대기 방어 — 한 외부 소스가 멈춰도 [seconds] 후 예외로 끊어
+     * 호출부 runCatching 이 fallback 하게 한다. 멈춘 소스 하나가 전체 코어 빌드(+synchronized
+     * 락에 물린 모든 summary 요청)를 영원히 막던 것 차단.
+     */
+    private fun <T> CompletableFuture<T>.joinTimeout(seconds: Long = FETCH_TIMEOUT_SEC): T =
+        get(seconds, TimeUnit.SECONDS)
 
     @Volatile private var cachedCore: CachedMarketCore? = null
     @Volatile private var cachedNews: CachedNewsSection? = null
@@ -156,37 +171,37 @@ class MarketOverviewService(
             if (rechecked != null && Duration.between(rechecked.createdAt, Instant.now()) < effectiveTtl) return@synchronized rechecked
 
             val generatedAt = LocalDateTime.now(KST)
-            val koreaMarketFuture = CompletableFuture.supplyAsync { krxOfficialClient.loadKoreaMarketSection() ?: emptyKoreaMarket() }
-            val vixFuture = CompletableFuture.supplyAsync { cboeVixClient.fetchVix() }
-            val koreanQuotesFuture = CompletableFuture.supplyAsync { enrichmentService.loadKoreanQuotes() }
-            val usIndicesFuture = CompletableFuture.supplyAsync { usIndexService.fetchUsIndices() }
+            val koreaMarketFuture = CompletableFuture.supplyAsync({ krxOfficialClient.loadKoreaMarketSection() ?: emptyKoreaMarket() }, coreFetchPool)
+            val vixFuture = CompletableFuture.supplyAsync({ cboeVixClient.fetchVix() }, coreFetchPool)
+            val koreanQuotesFuture = CompletableFuture.supplyAsync({ enrichmentService.loadKoreanQuotes() }, coreFetchPool)
+            val usIndicesFuture = CompletableFuture.supplyAsync({ usIndexService.fetchUsIndices() }, coreFetchPool)
             // 위험도용 거시 시세 — 원/달러 환율 + 미 10년물(야후 라이브)
-            val macroQuotesFuture = CompletableFuture.supplyAsync { usIndexService.fetchMacroQuotes() }
+            val macroQuotesFuture = CompletableFuture.supplyAsync({ usIndexService.fetchMacroQuotes() }, coreFetchPool)
             // 빅테크 6종 (NVDA/MSFT/AAPL/AMZN/TSLA/META) — 빅테크 sentiment 산출 baseline
-            val usBigtechQuotesFuture = CompletableFuture.supplyAsync { naverGlobalQuoteClient.fetchUsQuotes(US_BIGTECH_TICKERS) }
+            val usBigtechQuotesFuture = CompletableFuture.supplyAsync({ naverGlobalQuoteClient.fetchUsQuotes(US_BIGTECH_TICKERS) }, coreFetchPool)
             // 미국 거래량 상위 — leadingStocks 동적화용
-            val usMostActivesFuture = CompletableFuture.supplyAsync { yahooFinanceScreenerClient.fetchMostActives(8) }
+            val usMostActivesFuture = CompletableFuture.supplyAsync({ yahooFinanceScreenerClient.fetchMostActives(8) }, coreFetchPool)
 
             // 외부 API 장애 시 fallback으로 처리 — join() 예외가 전체 엔드포인트를 crash시키지 않도록
-            val koreaMarketBase = runCatching { koreaMarketFuture.join() }
+            val koreaMarketBase = runCatching { koreaMarketFuture.joinTimeout() }
                 .onFailure { logger.warn("KRX market fetch failed → fallback to default. msg={}", it.message) }
                 .getOrElse { emptyKoreaMarket() }
-            val vixSnapshot = runCatching { vixFuture.join() }
+            val vixSnapshot = runCatching { vixFuture.joinTimeout() }
                 .onFailure { logger.warn("VIX fetch failed. msg={}", it.message) }
                 .getOrNull()
-            val koreanQuotes = runCatching { koreanQuotesFuture.join() }
+            val koreanQuotes = runCatching { koreanQuotesFuture.joinTimeout() }
                 .onFailure { logger.warn("Naver KR quotes fetch failed. msg={}", it.message) }
                 .getOrDefault(emptyMap())
-            val usIndicesSnapshot = runCatching { usIndicesFuture.join() }
+            val usIndicesSnapshot = runCatching { usIndicesFuture.joinTimeout() }
                 .onFailure { logger.warn("US indices (FRED) fetch failed. msg={}", it.message) }
                 .getOrNull()
-            val macroQuotes = runCatching { macroQuotesFuture.join() }
+            val macroQuotes = runCatching { macroQuotesFuture.joinTimeout() }
                 .onFailure { logger.warn("Macro quotes (FX/UST) fetch failed. msg={}", it.message) }
                 .getOrNull()
-            val usBigtechQuotes = runCatching { usBigtechQuotesFuture.join() }
+            val usBigtechQuotes = runCatching { usBigtechQuotesFuture.joinTimeout() }
                 .onFailure { logger.warn("US bigtech quotes (Naver global) fetch failed. msg={}", it.message) }
                 .getOrDefault(emptyMap())
-            val usMostActives = runCatching { usMostActivesFuture.join() }
+            val usMostActives = runCatching { usMostActivesFuture.joinTimeout() }
                 .onFailure { logger.warn("US most_actives (Yahoo screener) fetch failed. msg={}", it.message) }
                 .getOrDefault(emptyList())
 
@@ -373,6 +388,10 @@ class MarketOverviewService(
     private data class UsBigtech(val ticker: String, val name: String, val sector: String)
 
     companion object {
+        // 코어 빌드 외부 소스 1개당 join 상한 — 개별 HTTP 타임아웃(3~8s) 합보다 넉넉히 잡아
+        // 정상 지연은 통과시키되, 무한 hang(타임아웃이 안 걸리는 소켓 상태 등)은 끊는다.
+        private const val FETCH_TIMEOUT_SEC = 12L
+
         private val US_BIGTECH_CATALOG = listOf(
             UsBigtech("NVDA", "NVIDIA", "AI 반도체"),
             UsBigtech("MSFT", "Microsoft", "플랫폼"),

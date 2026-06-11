@@ -136,7 +136,8 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
      */
     fun loadVolumeAlertEnabledUsers(userIds: Set<UUID>): Set<UUID> {
         if (userIds.isEmpty()) return emptySet()
-        val placeholders = userIds.joinToString(",") { "?" }
+        // u.id 는 uuid — String 바인딩 그대로면 'uuid = character varying' 에러. ::uuid 캐스팅 필수.
+        val placeholders = userIds.joinToString(",") { "?::uuid" }
         val sql = """
             select u.id from signal_desk_users u
             left join signal_desk_alert_preferences p on p.user_id = u.id
@@ -152,7 +153,7 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
      */
     fun loadQuietHoursFor(userIds: Set<UUID>): Map<UUID, Pair<Int, Int>> {
         if (userIds.isEmpty()) return emptyMap()
-        val placeholders = userIds.joinToString(",") { "?" }
+        val placeholders = userIds.joinToString(",") { "?::uuid" }
         val sql = """
             select user_id, quiet_start_hour, quiet_end_hour
             from signal_desk_alert_preferences
