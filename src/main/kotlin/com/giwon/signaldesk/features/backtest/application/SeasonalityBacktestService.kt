@@ -20,8 +20,9 @@ import kotlin.math.abs
 class SeasonalityBacktestService(
     private val yahooQuoteClient: YahooQuoteClient,
 ) {
-    // cost 가 키에 빠지면 다른 costPct 요청에 첫 캐시가 그대로 반환된다. sync=true 로 동시 미스 single-flight.
-    @Cacheable(cacheNames = ["seasonality"], key = "#market + ':' + #ticker + ':' + #years + ':' + #costPct", unless = "#result == null", sync = true)
+    // cost 가 키에 빠지면 다른 costPct 요청에 첫 캐시가 그대로 반환된다.
+    // sync=true 는 unless 와 병행 불가(Spring 제약) — 실패(null) 비캐시가 우선이라 unless 유지.
+    @Cacheable(cacheNames = ["seasonality"], key = "#market + ':' + #ticker + ':' + #years + ':' + #costPct", unless = "#result == null")
     fun report(market: String, ticker: String, name: String, years: Int, costPct: Double): SeasonalityReport? {
         val span = years.coerceIn(3, 20)
         val bars = loadBars(market, ticker, "${span}y")

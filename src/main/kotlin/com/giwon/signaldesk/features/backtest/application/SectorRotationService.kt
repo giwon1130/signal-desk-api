@@ -18,8 +18,9 @@ import java.util.concurrent.CompletableFuture
 class SectorRotationService(
     private val seasonality: SeasonalityBacktestService,
 ) {
-    // sync=true: 캐시 미스 시 ETF 11개 × 15y fetch(수 초~수십 초) — 동시 요청이 중복 계산하지 않게 single-flight.
-    @Cacheable(cacheNames = ["seasonality"], key = "'sector:' + #market.toUpperCase()", unless = "#result == null", sync = true)
+    // 주의: @Cacheable 의 sync=true 는 unless 와 병행 불가(Spring 제약) — 실패(null)를 24h 캐시하지
+    // 않는 것이 더 중요해 unless 를 유지한다. 동시 미스 중복 계산은 ETF별 yahoo-history 캐시가 완충.
+    @Cacheable(cacheNames = ["seasonality"], key = "'sector:' + #market.toUpperCase()", unless = "#result == null")
     fun report(market: String): SectorRotationReport? {
         val sectors = sectorsFor(market)
         if (sectors.isEmpty()) return null
