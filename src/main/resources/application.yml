@@ -72,6 +72,8 @@ signal-desk:
       base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
       # 정식 GA 모델 권장. 실험(-exp)은 분당 한도·과부하에 취약.
       model: ${GEMINI_MODEL:gemini-2.0-flash}
+      # PRO 플랜 전용 상위 모델 — AI 비서/심층 리포트에서 더 강한 추론. 비어있으면 기본 model 사용.
+      pro-model: ${GEMINI_PRO_MODEL:gemini-2.5-pro}
     finnhub:
       # finnhub.io 무료 가입 후 발급. 비어있으면 earnings 캘린더 비활성.
       enabled: true
@@ -105,5 +107,14 @@ signal-desk:
     free-daily-limit: ${SIGNAL_DESK_ASSISTANT_FREE_DAILY_LIMIT:10}
     pro-daily-limit: ${SIGNAL_DESK_ASSISTANT_PRO_DAILY_LIMIT:100}
     admin-emails: ${SIGNAL_DESK_ASSISTANT_ADMIN_EMAILS:gwim113000@gmail.com}
+    # PRO 전용 AI 종목 심층 리포트 일일 한도 (비싼 호출이라 별도 캡).
+    deep-report-daily-limit: ${SIGNAL_DESK_DEEP_REPORT_DAILY_LIMIT:5}
+  plan:
+    # FREE 플랜 자원 상한 — PRO 는 무제한. 기존 사용자 grandfather(추가만 차단, 삭제 없음).
+    free:
+      watchlist: ${SIGNAL_DESK_FREE_WATCHLIST_LIMIT:20}
+      holdings: ${SIGNAL_DESK_FREE_HOLDINGS_LIMIT:10}
+      leader-subscriptions: ${SIGNAL_DESK_FREE_LEADER_SUB_LIMIT:3}
+      leagues: ${SIGNAL_DESK_FREE_LEAGUE_LIMIT:1}
   cors:
     allowed-origin-patterns: ${SIGNAL_DESK_CORS_ALLOWED_ORIGINS:}

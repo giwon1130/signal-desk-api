@@ -26,6 +26,7 @@ class WorkspaceController(
     private val workspaceStore: SignalDeskWorkspaceRepository,
     private val workspaceService: WorkspaceService,
     @Autowired(required = false) private val authContext: AuthContext? = null,
+    @Autowired(required = false) private val planService: com.giwon.signaldesk.features.plan.PlanService? = null,
 ) {
 
     private val logger = LoggerFactory.getLogger(WorkspaceController::class.java)
@@ -45,12 +46,28 @@ class WorkspaceController(
         @RequestHeader("Authorization", required = false) auth: String?,
         @Valid @RequestBody request: SaveWatchlistItemRequest,
     ): ApiResponse<WorkspaceWatchItem> {
-        val saved = workspaceStore.saveWatchItem(userId(auth),
+        val uid = userId(auth)
+        if (planService != null && uid != null) {
+            val existing = workspaceStore.loadWatchlist(uid)
+            // 신규 추가 판정: id 로(또는 dedupe 키 market+ticker 로) 기존 항목이 없으면 새 추가.
+            val prior = if (request.id.isNotBlank()) existing.find { it.id == request.id }
+                        else existing.find { it.market == request.market && it.ticker == request.ticker }
+            if (prior == null) planService.assertCanAdd(uid, com.giwon.signaldesk.features.plan.PlanService.Resource.WATCHLIST, existing.size)
+            // 목표가 알림(상한/하한)은 PRO 전용 — FREE 는 새로 켜는 것만 차단(기존 값 유지 = grandfather).
+            if (!planService.isPro(uid)) {
+                val addingBelow = request.alertBelow != null && prior?.alertBelow == null
+                val addingAbove = request.alertAbove != null && prior?.alertAbove == null
+                require(!addingBelow && !addingAbove) {
+                    "목표가 알림(상한/하한)은 PRO 플랜 전용이에요. PRO 로 업그레이드하면 켤 수 있어요. 💎"
+                }
+            }
+        }
+        val saved = workspaceStore.saveWatchItem(uid,
             WorkspaceWatchItem(id = request.id, market = request.market, ticker = request.ticker,
                 name = request.name, price = request.price, changeRate = request.changeRate,
                 sector = request.sector, stance = request.stance, note = request.note,
                 alertBelow = request.alertBelow, alertAbove = request.alertAbove, volumeAlert = request.volumeAlert))
-        logger.info("watchlist save user={} market={} ticker={} new={}", userTag(auth), request.market, request.ticker, request.id == null)
+        logger.info("watchlist save user={} market={} ticker={} new={}", userTag(auth), request.market, request.ticker, request.id.isBlank())
         return ApiResponse(true, saved)
     }
 
@@ -73,7 +90,13 @@ class WorkspaceController(
         @RequestHeader("Authorization", required = false) auth: String?,
         @Valid @RequestBody request: SavePortfolioPositionRequest,
     ): ApiResponse<WorkspaceHoldingPosition> {
-        val saved = workspaceService.savePortfolioPosition(userId(auth),
+        val uid = userId(auth)
+        // 신규 추가(id 공백)만 상한 적용 — 기존 보유 수정은 카운트 제외(grandfather).
+        if (planService != null && uid != null && request.id.isBlank()) {
+            val count = workspaceStore.loadPortfolioPositions(uid).size
+            planService.assertCanAdd(uid, com.giwon.signaldesk.features.plan.PlanService.Resource.HOLDINGS, count)
+        }
+        val saved = workspaceService.savePortfolioPosition(uid,
             id = request.id, market = request.market, ticker = request.ticker, name = request.name,
             buyPrice = request.buyPrice, currentPrice = request.currentPrice, quantity = request.quantity,
             targetPrice = request.targetPrice, stopLossPrice = request.stopLossPrice)

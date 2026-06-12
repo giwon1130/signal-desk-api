@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController
 class AssistantController(
     @Autowired(required = false) private val assistantService: AssistantService? = null,
     @Autowired(required = false) private val authContext: AuthContext? = null,
+    @Autowired(required = false) private val deepReportService: DeepReportService? = null,
 ) {
     data class AskRequest(
         val question: String = "",
@@ -50,5 +51,40 @@ class AssistantController(
             ?: return AskResponse(false, null, "지금은 답변을 만들 수 없어요. 잠시 후 다시 시도해 주세요.",
                 remaining = result.remaining, dailyLimit = result.dailyLimit)
         return AskResponse(true, answer, remaining = result.remaining, dailyLimit = result.dailyLimit)
+    }
+
+    data class DeepReportRequest(val market: String = "", val ticker: String = "")
+    data class DeepReportResponse(
+        val success: Boolean,
+        val report: String? = null,
+        val error: String? = null,
+        /** PRO 가 아니라 잠김 — 앱에서 업그레이드 CTA 노출용. */
+        val locked: Boolean = false,
+        val remaining: Int? = null,
+        val dailyLimit: Int? = null,
+    )
+
+    /** PRO 전용 — 한 종목 AI 심층 리포트. */
+    @PostMapping("/deep-report")
+    fun deepReport(
+        @RequestHeader("Authorization", required = false) auth: String?,
+        @RequestBody req: DeepReportRequest,
+    ): DeepReportResponse {
+        val svc = deepReportService ?: return DeepReportResponse(false, error = "심층 리포트가 준비되지 않았어요.")
+        val userId = authContext?.requireUserId(auth)
+            ?: return DeepReportResponse(false, error = "로그인이 필요합니다.")
+        val result = svc.deepReport(userId, req.market, req.ticker)
+        if (result.locked) {
+            return DeepReportResponse(false, error = "AI 종목 심층 리포트는 PRO 플랜 전용이에요. 💎", locked = true)
+        }
+        if (result.limitExceeded) {
+            return DeepReportResponse(false,
+                error = "오늘 심층 리포트 한도(${result.dailyLimit}회)를 모두 사용했어요. 내일 다시 만나요!",
+                remaining = 0, dailyLimit = result.dailyLimit)
+        }
+        val report = result.report
+            ?: return DeepReportResponse(false, error = "지금은 리포트를 만들 수 없어요. 잠시 후 다시 시도해 주세요.",
+                remaining = result.remaining, dailyLimit = result.dailyLimit)
+        return DeepReportResponse(true, report = report, remaining = result.remaining, dailyLimit = result.dailyLimit)
     }
 }

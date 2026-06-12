@@ -35,9 +35,11 @@ class AssistantService(
     private val seasonalityRuleService: SeasonalityRuleService,
     private val krQuotes: NaverFinanceQuoteClient,
     private val usQuotes: NaverGlobalQuoteClient,
+    private val planService: com.giwon.signaldesk.features.plan.PlanService,
     @org.springframework.beans.factory.annotation.Value("\${signal-desk.assistant.free-daily-limit:10}") private val freeDailyLimit: Int,
     @org.springframework.beans.factory.annotation.Value("\${signal-desk.assistant.pro-daily-limit:100}") private val proDailyLimit: Int,
     @org.springframework.beans.factory.annotation.Value("\${signal-desk.assistant.admin-emails:}") adminEmailsRaw: String,
+    @org.springframework.beans.factory.annotation.Value("\${signal-desk.integrations.gemini.pro-model:}") private val proModel: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val adminEmails = adminEmailsRaw.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
@@ -69,7 +71,15 @@ class AssistantService(
         if (limit == null) recordUnlimitedUsage(userId, today)
 
         val prompt = buildPrompt(userId, q, history)
-        val answer = geminiClient.generateText(prompt, timeoutSeconds = 30)?.let(::unwrapPlainText)
+        // PRO 는 상위 모델 + 긴 답변(thinking 허용). FREE 는 기존 기본 모델·2048토큰.
+        val pro = runCatching { planService.isPro(userId) }.getOrDefault(false)
+        val answer = geminiClient.generateText(
+            prompt,
+            timeoutSeconds = if (pro) 45 else 30,
+            model = if (pro) proModel.ifBlank { null } else null,
+            maxOutputTokens = if (pro) 4096 else 2048,
+            disableThinking = !pro,
+        )?.let(::unwrapPlainText)
         if (answer == null && limit != null) refund(userId, today) // Gemini 실패는 한도에서 환불
         val used = usedToday(userId, today)
         log.info("assistant ask — user={} qLen={} answered={} used={}/{}", userId.toString().take(8), q.length, answer != null, used, limit ?: -1)

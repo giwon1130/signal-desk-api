@@ -28,6 +28,7 @@ import kotlin.random.Random
 class LeagueService(
     private val leagues: LeagueRepository,
     private val participants: ParticipantRepository,
+    private val planService: com.giwon.signaldesk.features.plan.PlanService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -52,6 +53,9 @@ class LeagueService(
         require(endsAt.toEpochMilli() - startedAt.toEpochMilli() >= 3600_000) {
             "league duration must be >= 1 hour"
         }
+        // FREE 상한 — 진행 중(FINISHED 아님) 리그만 카운트. 끝난 리그는 제외.
+        val ongoing = leagues.findByHost(hostUserId).count { it.status != LeagueStatus.FINISHED }
+        planService.assertCanAdd(hostUserId, com.giwon.signaldesk.features.plan.PlanService.Resource.LEAGUES, ongoing)
         val league = League(
             id = UUID.randomUUID(),
             name = name.trim(),

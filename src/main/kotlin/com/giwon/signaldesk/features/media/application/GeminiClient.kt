@@ -194,9 +194,29 @@ class GeminiClient(
         }
     }
 
-    /** 어시스턴트 등 자유 질문용 — 프롬프트 → 평문 응답 텍스트 (실패 시 null). */
-    fun generateText(prompt: String, timeoutSeconds: Long = 30): String? {
-        val body = call(prompt, timeoutSeconds, label = "assistant") ?: return null
+    /**
+     * 어시스턴트 등 자유 질문용 — 프롬프트 → 평문 응답 텍스트 (실패 시 null).
+     *
+     * PRO 경로는 [model] 로 상위 모델(gemini-2.5-pro)을 체인 맨 앞에 두고, [maxOutputTokens] 를
+     * 키워 긴 답변을 받는다. 상위 모델은 thinking 비활성화를 거부하므로 [disableThinking]=false 로
+     * 두되 plainText 파서가 thought 파트를 걸러낸다. [plainTextOutput]=true 면 JSON 강제 대신
+     * 평문 mime — 줄바꿈 있는 섹션 리포트용.
+     */
+    fun generateText(
+        prompt: String,
+        timeoutSeconds: Long = 30,
+        model: String? = null,
+        maxOutputTokens: Int = 2048,
+        disableThinking: Boolean = true,
+        plainTextOutput: Boolean = false,
+    ): String? {
+        if (!isEnabled()) {
+            log.warn("GeminiClient disabled (assistant) — GEMINI_API_KEY 미설정")
+            return null
+        }
+        val chain = if (model.isNullOrBlank()) modelChain else (listOf(model) + modelChain).distinct()
+        val content = buildPayload(prompt, maxOutputTokens, jsonOutput = !plainTextOutput, disableThinking = disableThinking)
+        val body = postWithRetry(content, timeoutSeconds, chain) ?: return null
         return runCatching { GeminiResponseParsing.plainText(body, objectMapper) }.getOrElse {
             log.warn("Gemini plain text parse failed", it)
             null
@@ -227,7 +247,7 @@ class GeminiClient(
             log.warn("GeminiClient disabled ($label) — GEMINI_API_KEY 미설정")
             return null
         }
-        return postWithRetry(prompt, timeoutSeconds)
+        return postWithRetry(buildPayload(prompt), timeoutSeconds, modelChain)
     }
 
     /**
@@ -241,10 +261,9 @@ class GeminiClient(
      *
      * 한 번 성공하면 lastFailureAt reset (자가 회복 시그널).
      */
-    private fun postWithRetry(prompt: String, timeoutSeconds: Long): String? {
-        val content = buildPayload(prompt)
+    private fun postWithRetry(content: String, timeoutSeconds: Long, chain: List<String>): String? {
         for ((keyIndex, key) in apiKeys.withIndex()) {
-            val outcome = tryAllModels(content, timeoutSeconds, key)
+            val outcome = tryAllModels(content, timeoutSeconds, key, chain)
             outcome.body?.let { body ->
                 if (lastFailureAt != null) {
                     log.info("Gemini recovered via key={} (key idx={})", mask(key), keyIndex)
@@ -268,15 +287,15 @@ class GeminiClient(
     }
 
     /** 키 1개로 모델 체인 전부 시도. 성공 body 또는 (실패 시) quota 소진 여부. */
-    private fun tryAllModels(content: String, timeoutSeconds: Long, apiKey: String): KeyOutcome {
+    private fun tryAllModels(content: String, timeoutSeconds: Long, apiKey: String, chain: List<String>): KeyOutcome {
         var sawQuota = false
-        for ((modelIndex, m) in modelChain.withIndex()) {
+        for ((modelIndex, m) in chain.withIndex()) {
             when (val r = postToModel(content, timeoutSeconds, m, apiKey)) {
                 is ModelResult.Ok -> return KeyOutcome(body = r.body, quotaExhausted = sawQuota)
                 ModelResult.Quota -> sawQuota = true
                 ModelResult.Failed -> Unit
             }
-            if (modelIndex < modelChain.size - 1) {
+            if (modelIndex < chain.size - 1) {
                 log.warn("Gemini key={} model={} exhausted — trying next model", mask(apiKey), m)
             }
         }
@@ -340,7 +359,12 @@ class GeminiClient(
         return status in RETRYABLE_STATUSES
     }
 
-    private fun buildPayload(prompt: String): String {
+    private fun buildPayload(
+        prompt: String,
+        maxOutputTokens: Int = 2048,
+        jsonOutput: Boolean = true,
+        disableThinking: Boolean = true,
+    ): String {
         val root = objectMapper.createObjectNode()
         val contents = root.putArray("contents")
         val msg = contents.addObject()
@@ -349,11 +373,14 @@ class GeminiClient(
 
         val gen = root.putObject("generationConfig")
         gen.put("temperature", 0.3)
-        gen.put("responseMimeType", "application/json")
-        gen.put("maxOutputTokens", 2048)
+        // 평문 섹션 리포트(PRO 심층 리포트)는 JSON 강제 대신 평문 — 줄바꿈 보존.
+        if (jsonOutput) gen.put("responseMimeType", "application/json")
+        gen.put("maxOutputTokens", maxOutputTokens)
         // Gemini 2.5 flash 는 기본 thinking 모드라 응답 parts 가 thought + answer 로 쪼개진다.
-        // thinkingBudget=0 으로 thinking 을 끄면 항상 단일 JSON parts 가 와서 파싱이 단순해진다.
-        gen.putObject("thinkingConfig").put("thinkingBudget", 0)
+        // thinkingBudget=0 으로 thinking 을 끄면 항상 단일 parts 가 와서 파싱이 단순해진다.
+        // 단 상위 모델(2.5-pro)은 thinking 비활성화를 거부 → disableThinking=false 로 두고
+        // plainText 파서가 thought 파트를 걸러낸다.
+        if (disableThinking) gen.putObject("thinkingConfig").put("thinkingBudget", 0)
 
         return objectMapper.writeValueAsString(root)
     }

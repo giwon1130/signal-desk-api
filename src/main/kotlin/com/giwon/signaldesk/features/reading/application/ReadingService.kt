@@ -36,6 +36,7 @@ class ReadingService(
     private val users: UserRepository,
     private val pushRepository: PushRepository,
     private val expoPushClient: ExpoPushClient,
+    private val planService: com.giwon.signaldesk.features.plan.PlanService,
     @Value("\${signal-desk.reading.admin-emails:gwim113000@gmail.com}") private val adminEmailsProp: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -96,6 +97,7 @@ class ReadingService(
             ?: error("invite code not found")
         require(leader.status == LeaderStatus.APPROVED) { "leader not available" }
         require(leader.userId != followerUserId) { "cannot follow yourself" }
+        assertSubscribeAllowed(followerUserId, leader.userId)
         repo.follow(Follow(leader.userId, followerUserId, Instant.now()))
         log.info("reading subscribe — follower={} leader={}", followerUserId, leader.userId)
         return leader
@@ -106,9 +108,17 @@ class ReadingService(
         val leader = repo.findLeader(leaderUserId) ?: error("leader not found")
         require(leader.status == LeaderStatus.APPROVED) { "leader not available" }
         require(leader.userId != followerUserId) { "cannot follow yourself" }
+        assertSubscribeAllowed(followerUserId, leader.userId)
         repo.follow(Follow(leader.userId, followerUserId, Instant.now()))
         log.info("reading subscribe(byId) — follower={} leader={}", followerUserId, leader.userId)
         return leader
+    }
+
+    /** FREE 구독 상한 — 이미 팔로우 중인 리더 재구독은 카운트 제외(grandfather). */
+    private fun assertSubscribeAllowed(followerUserId: UUID, leaderUserId: UUID) {
+        val following = repo.followingLeaderIds(followerUserId)
+        if (leaderUserId in following) return
+        planService.assertCanAdd(followerUserId, com.giwon.signaldesk.features.plan.PlanService.Resource.LEADER_SUBSCRIPTIONS, following.size)
     }
 
     fun unsubscribe(followerUserId: UUID, leaderUserId: UUID) =

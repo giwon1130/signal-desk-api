@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController
 class AlertPreferenceController(
     private val service: AlertPreferenceService,
     private val authContext: AuthContext,
+    private val planService: com.giwon.signaldesk.features.plan.PlanService,
 ) {
     @GetMapping
     fun get(@RequestHeader("Authorization") auth: String): AlertPreferences =
@@ -26,6 +27,17 @@ class AlertPreferenceController(
     fun update(
         @RequestHeader("Authorization") auth: String,
         @RequestBody body: AlertPreferences,
-    ): AlertPreferences =
-        service.update(authContext.requireUserId(auth), body)
+    ): AlertPreferences {
+        val userId = authContext.requireUserId(auth)
+        // 장중·미국장 브리프는 PRO 전용 — FREE 는 새로 켜는 것만 차단(이미 켜둠은 유지 = grandfather).
+        if (!planService.isPro(userId)) {
+            val current = service.get(userId)
+            val turningOnMidday = body.middayBriefEnabled && !current.middayBriefEnabled
+            val turningOnEvening = body.eveningBriefEnabled && !current.eveningBriefEnabled
+            require(!turningOnMidday && !turningOnEvening) {
+                "장중·미국장 마감 브리프는 PRO 플랜 전용이에요. PRO 로 업그레이드하면 켤 수 있어요. 💎"
+            }
+        }
+        return service.update(userId, body)
+    }
 }
