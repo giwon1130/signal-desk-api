@@ -39,6 +39,7 @@ class LeaderboardService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["league-leaderboard"], key = "#leagueId.toString()", unless = "#result.isEmpty()")
     fun entries(leagueId: UUID): List<LeaderboardEntry> {
         val league = leagues.findById(leagueId) ?: return emptyList()
         val parts = participants.findByLeague(leagueId)

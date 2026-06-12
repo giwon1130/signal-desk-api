@@ -37,6 +37,9 @@ class CacheConfig {
         // 야후 장기 일봉(15y≈3800봉) — 가설 빌더가 클릭마다 풀 fetch 하던 것 방지.
         // 엔트리가 커서(수백 KB) 개수 상한을 작게 — 60개 ≈ 섹터 ETF 18종 + 개별 종목 여유분.
         manager.registerCustomCache("yahoo-history", build(Duration.ofHours(6), 60))
+        // 리그 리더보드 — 참가자 전원 시세 라이브 조회라 무겁다. 폴링(10s)·다중 시청자가
+        // 공유하도록 12s 캐시. 거래 직후 최대 12s 반영 지연은 게임 특성상 수용.
+        manager.registerCustomCache("league-leaderboard", build(Duration.ofSeconds(12), 100))
         return manager
     }
 
