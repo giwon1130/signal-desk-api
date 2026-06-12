@@ -97,4 +97,34 @@ class ReadingFeedService(
     fun getLeader(leaderUserId: UUID): Leader? = repo.findLeader(leaderUserId)
 
     fun followerCount(leaderUserId: UUID): Int = repo.followerCount(leaderUserId)
+
+    data class LeaderCard(
+        val userId: UUID,
+        val displayName: String,
+        val bio: String,
+        val followerCount: Int,
+        val totalCalls: Int,
+        val hitRate: Double,
+        val avgReturnPct: Double?,
+        val following: Boolean,
+    )
+
+    /**
+     * 리딩 둘러보기 — 승인된 리더 + 통계. 적중률·구독자 순으로 정렬해 발견성 제공.
+     * 본인/이미 구독 중인 리더는 following=true 로 표시(중복 구독 방지 UX).
+     */
+    fun discoverLeaders(viewerUserId: UUID?): List<LeaderCard> {
+        val leaders = repo.listApprovedLeaders()
+        if (leaders.isEmpty()) return emptyList()
+        val followingIds = viewerUserId?.let { repo.followingLeaderIds(it).toSet() } ?: emptySet()
+        return leaders.map { l ->
+            val stats = leaderStats(l.userId)
+            LeaderCard(
+                userId = l.userId, displayName = l.displayName, bio = l.bio,
+                followerCount = repo.followerCount(l.userId),
+                totalCalls = stats.totalCalls, hitRate = stats.hitRate, avgReturnPct = stats.avgReturnPct,
+                following = l.userId == viewerUserId || l.userId in followingIds,
+            )
+        }.sortedWith(compareByDescending<LeaderCard> { it.hitRate }.thenByDescending { it.followerCount })
+    }
 }

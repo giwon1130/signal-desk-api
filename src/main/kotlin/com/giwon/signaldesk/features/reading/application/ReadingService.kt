@@ -101,6 +101,16 @@ class ReadingService(
         return leader
     }
 
+    /** 둘러보기에서 코드 없이 userId 로 직접 구독 (공개 리더만). */
+    fun subscribeByLeaderId(followerUserId: UUID, leaderUserId: UUID): Leader {
+        val leader = repo.findLeader(leaderUserId) ?: error("leader not found")
+        require(leader.status == LeaderStatus.APPROVED) { "leader not available" }
+        require(leader.userId != followerUserId) { "cannot follow yourself" }
+        repo.follow(Follow(leader.userId, followerUserId, Instant.now()))
+        log.info("reading subscribe(byId) — follower={} leader={}", followerUserId, leader.userId)
+        return leader
+    }
+
     fun unsubscribe(followerUserId: UUID, leaderUserId: UUID) =
         repo.unfollow(leaderUserId, followerUserId)
 

@@ -20,6 +20,8 @@ interface ReadingRepository {
     /** 일괄 조회 — 피드 렌더에서 리더별 단건 조회 N+1 방지. */
     fun findLeaders(userIds: Collection<UUID>): Map<UUID, Leader>
     fun findLeaderByInviteCode(code: String): Leader?
+    /** 승인된 리더 전체 — 리딩 둘러보기(리더 발견)용. */
+    fun listApprovedLeaders(): List<Leader>
     fun updateLeaderStatus(userId: UUID, status: LeaderStatus)
 
     // Follow

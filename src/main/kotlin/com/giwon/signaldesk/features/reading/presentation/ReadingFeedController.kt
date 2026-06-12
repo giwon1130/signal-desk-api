@@ -38,6 +38,15 @@ class ReadingFeedController(
         return ApiResponse(true, feed.feed(userId, limit).map(::toPostResponse))
     }
 
+    /** 리딩 둘러보기 — 승인된 리더 목록(통계·구독여부). 신규 사용자 발견성. */
+    @GetMapping("/leaders")
+    fun discover(
+        @RequestHeader("Authorization", required = false) auth: String?,
+    ): ApiResponse<List<LeaderCardResponse>> {
+        val viewerId = authContext.optionalUserId(auth)
+        return ApiResponse(true, feed.discoverLeaders(viewerId).map(LeaderCardResponse::from))
+    }
+
     /** 리더 프로필 — 통계 + 글 목록. */
     @GetMapping("/leader/{leaderUserId}/profile")
     fun profile(
@@ -77,3 +86,21 @@ data class LeaderProfileResponse(
     val stats: LeaderStatsResponse,
     val posts: List<PostResponse>,
 )
+
+data class LeaderCardResponse(
+    val userId: String,
+    val displayName: String,
+    val bio: String,
+    val followerCount: Int,
+    val totalCalls: Int,
+    val hitRate: Double,
+    val avgReturnPct: Double?,
+    val following: Boolean,
+) {
+    companion object {
+        fun from(c: ReadingFeedService.LeaderCard) = LeaderCardResponse(
+            c.userId.toString(), c.displayName, c.bio, c.followerCount,
+            c.totalCalls, c.hitRate, c.avgReturnPct, c.following,
+        )
+    }
+}

@@ -90,6 +90,9 @@ class JdbcReadingRepository(
         ).associateBy { it.userId }
     }
 
+    override fun listApprovedLeaders(): List<Leader> =
+        jdbc.query("select * from signal_desk_reading_leader where status = 'APPROVED' order by created_at desc", leaderMapper)
+
     override fun findLeaderByInviteCode(code: String): Leader? =
         jdbc.query("select * from signal_desk_reading_leader where invite_code = ?", leaderMapper, code)
             .firstOrNull()

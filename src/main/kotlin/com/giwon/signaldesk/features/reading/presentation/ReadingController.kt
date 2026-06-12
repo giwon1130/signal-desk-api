@@ -91,6 +91,17 @@ class ReadingController(
         return ApiResponse(true, LeaderResponse.from(leader, service.followerCount(leader.userId), includeCode = false))
     }
 
+    /** 둘러보기에서 코드 없이 userId 로 구독. */
+    @PostMapping("/subscribe/{leaderUserId}")
+    fun subscribeByLeaderId(
+        @RequestHeader("Authorization", required = false) auth: String?,
+        @PathVariable leaderUserId: String,
+    ): ApiResponse<LeaderResponse> {
+        val userId = requireUserId(auth)
+        val leader = service.subscribeByLeaderId(userId, UUID.fromString(leaderUserId))
+        return ApiResponse(true, LeaderResponse.from(leader, service.followerCount(leader.userId), includeCode = false))
+    }
+
     @DeleteMapping("/subscribe/{leaderUserId}")
     fun unsubscribe(
         @RequestHeader("Authorization", required = false) auth: String?,
