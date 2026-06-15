@@ -191,6 +191,61 @@ $globalBlock$koreaBlock$moversBlock$macroBlock$flowBlock$eventsBlock
 
     private data class Quad(val a: String, val b: String, val c: String, val d: String)
 
+    /**
+     * AI 시황 흐름 리딩 — 섹터 모멘텀·수급·순환매를 읽어 "흐름"을 내러티브로.
+     * slot="PREOPEN"(장전) | "CLOSE"(마감). 브리프(무슨 일 있었나)와 달리 주도/순환매/전망에 집중.
+     */
+    fun flowReading(
+        slot: String,
+        vix: VixSnapshot?,
+        indices: UsIndicesSnapshot?,
+        krMarket: MarketSection?,
+        krGainers: List<TopMover>,
+        krLosers: List<TopMover>,
+        investorFlow: InvestorFlowSnapshot?,
+        headlines: List<MarketNews>,
+    ): String {
+        val capped = headlines.take(18)
+        val headlineLines = if (capped.isEmpty()) "(뉴스 데이터 없음)"
+            else capped.joinToString("\n") { n -> "- [${n.source}] ${n.title}" }
+        val koreaBlock = koreaIndexBlock(krMarket)
+        val moversBlock = krMoversBlock(krGainers, krLosers)
+        val flowBlock = investorFlowBlock(investorFlow)
+
+        val situation = if (slot == "PREOPEN")
+            "지금은 한국 장 시작 전(아침)입니다. 간밤 미국장과 전일 수급·섹터 흐름을 토대로 '오늘 어느 섹터가 주도하고 어디로 순환매가 돌지' 흐름을 읽어주세요."
+        else
+            "지금은 한국 장 마감 직후입니다. 오늘 섹터 승자·수급(외국인·기관 순매수)을 토대로 '지금 돈이 어디로 흐르고, 다음 순환매는 어디일지' 흐름을 읽어주세요."
+
+        return """
+            당신은 한국 주식 시장의 '흐름'을 읽는 전문 분석가입니다.
+            $situation
+            개별 종목 매수/매도 지시는 하지 마세요. 섹터·수급·지수의 '흐름'과 그 근거, 순환매 시나리오, 체크포인트만 제시합니다.
+            아래 [데이터]에 있는 사실만 근거로 쓰고, 없는 수치는 지어내지 마세요. 모든 문장은 한국어 하십시오체.
+
+            === 글로벌 매크로 ===
+            ${vixLine(vix)}
+            ${nasdaqLine(indices)}
+            ${sp500Line(indices)}
+$koreaBlock$moversBlock$flowBlock
+            === 시장 뉴스 헤드라인 (${capped.size}건) ===
+            $headlineLines
+
+            아래 JSON 스키마로 한국어 답변:
+            {
+              "headline": "지금 시장 흐름을 한 줄로 (24자 이내, 주도 섹터/방향 키워드 포함)",
+              "summary": "3~4문장 흐름 내러티브. 주도 섹터(왜 강한지: 수급/뉴스 근거) → 지수 영향 → 순환매 시나리오(쉬는 섹터가 다음에 받을 수 있는지) 순으로 연결",
+              "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나",
+              "keyPoints": [
+                "주도: <섹터> — <근거 한 줄>",
+                "순환매 대기: <섹터> — <근거 한 줄>",
+                "지수 전망: <방향과 근거 한 줄>",
+                "체크포인트: <흐름이 깨질 리스크 한 줄>"
+              ]
+            }
+        """.trimIndent()
+    }
+
     fun eveningBrief(
         vix: VixSnapshot?,
         indices: UsIndicesSnapshot?,

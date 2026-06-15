@@ -11,7 +11,7 @@ enum class MediaSentiment { BULLISH, BEARISH, NEUTRAL }
  * CLOSE_BRIEF: KR 장 마감 후 15:40 KST 정리 (마감 흐름 + 수급 + 내일 관전)
  * EVENING_BRIEF: 미국 장 마감 직후 06:30 KST 종합 (NASDAQ/S&P + 주도주 + 실적 + 뉴스)
  */
-enum class MediaSource { YOUTUBE, NEWS_DIGEST, MORNING_BRIEF, MIDDAY_BRIEF, CLOSE_BRIEF, EVENING_BRIEF }
+enum class MediaSource { YOUTUBE, NEWS_DIGEST, MORNING_BRIEF, MIDDAY_BRIEF, CLOSE_BRIEF, EVENING_BRIEF, FLOW_READING }
 
 /** AI 분석 결과만 담는 순수 값 객체. 영상 메타데이터와 분리해서 합성. */
 data class MediaSummaryAnalysis(

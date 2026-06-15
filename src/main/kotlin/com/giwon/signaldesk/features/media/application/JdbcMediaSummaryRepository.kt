@@ -19,6 +19,12 @@ class JdbcMediaSummaryRepository(
             rowMapper, limit,
         )
 
+    override fun findRecentBySource(source: MediaSource, limit: Int): List<MediaSummary> =
+        jdbcTemplate.query(
+            "select * from signal_desk_media_summaries where source = ? order by published_at desc limit ?",
+            rowMapper, source.name, limit,
+        )
+
     override fun findById(id: String): MediaSummary? =
         jdbcTemplate.query(
             "select * from signal_desk_media_summaries where id = ?",

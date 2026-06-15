@@ -115,6 +115,20 @@ class GeminiClient(
         ),
     )
 
+    /** AI 시황 흐름 리딩 — slot="PREOPEN"|"CLOSE". 섹터·수급·순환매 흐름을 내러티브로. */
+    fun summarizeFlowReading(
+        slot: String,
+        vix: VixSnapshot?,
+        indices: UsIndicesSnapshot?,
+        krMarket: MarketSection? = null,
+        krGainers: List<TopMover> = emptyList(),
+        krLosers: List<TopMover> = emptyList(),
+        investorFlow: InvestorFlowSnapshot? = null,
+        headlines: List<MarketNews> = emptyList(),
+    ): MarketInsightAnalysis? = callInsight(
+        GeminiPrompts.flowReading(slot, vix, indices, krMarket, krGainers, krLosers, investorFlow, headlines),
+    )
+
     /** KR 장중/마감 브리프 — slot="MIDDAY"|"CLOSE". 모닝 브리프와 같은 입력을 KR 관점으로. */
     fun summarizeIntradayBrief(
         slot: String,

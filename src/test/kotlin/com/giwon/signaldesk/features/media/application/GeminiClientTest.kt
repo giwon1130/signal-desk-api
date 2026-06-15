@@ -150,4 +150,15 @@ class GeminiClientTest {
 
         assertThat(result?.headline).isEqualTo("단일 키")
     }
+
+    @Test
+    fun `흐름 리딩 분석을 insight 스키마로 파싱한다`() {
+        byKey["k"] = 200 to insightOk("반도체 주도 코스피 상방")
+
+        val result = client("k", baseUrl = baseUrl())
+            .summarizeFlowReading(slot = "CLOSE", vix = null, indices = null)
+
+        assertThat(result).isNotNull
+        assertThat(result!!.headline).isEqualTo("반도체 주도 코스피 상방")
+    }
 }
