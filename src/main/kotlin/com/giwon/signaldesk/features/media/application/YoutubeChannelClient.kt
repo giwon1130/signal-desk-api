@@ -25,11 +25,8 @@ class YoutubeChannelClient {
     private val titleRe = Regex("<title>([^<]*)</title>")
     private val publishedRe = Regex("<published>([^<]+)</published>")
 
-    /**
-     * 최신 영상. titleContains 가 있으면 그 단어 포함 최신 영상을, 없으면 그냥 최신을 반환.
-     * (RSS 는 최신순. Shorts 구분은 RSS 로 불가 — 제목 필터로 본방송을 노린다.)
-     */
-    fun latestVideo(channelId: String, titleContains: String? = null): YtVideo? {
+    /** 최신 영상 목록(최신순). titleContains 매칭 영상을 앞으로 정렬(없으면 원순서). */
+    fun recentVideos(channelId: String, titleContains: String? = null): List<YtVideo> {
         val xml = runCatching {
             val req = HttpRequest.newBuilder()
                 .uri(URI.create("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId"))
@@ -39,7 +36,7 @@ class YoutubeChannelClient {
             val res = http.send(req, HttpResponse.BodyHandlers.ofString())
             if (res.statusCode() != 200) { log.warn("YouTube RSS HTTP {} for {}", res.statusCode(), channelId); null }
             else res.body()
-        }.getOrNull() ?: return null
+        }.getOrNull() ?: return emptyList()
 
         val videos = entryRe.findAll(xml).mapNotNull { m ->
             val e = m.groupValues[1]
@@ -49,9 +46,13 @@ class YoutubeChannelClient {
             YtVideo(id, title, "https://www.youtube.com/watch?v=$id", published)
         }.toList()
 
-        val filtered = if (!titleContains.isNullOrBlank()) videos.filter { it.title.contains(titleContains) } else videos
-        return filtered.firstOrNull() ?: videos.firstOrNull()
+        return if (titleContains.isNullOrBlank()) videos
+        else videos.sortedByDescending { it.title.contains(titleContains) }  // 매칭 우선, 동순위는 최신순 유지
     }
+
+    /** 단건 편의 — recentVideos 의 첫 영상. */
+    fun latestVideo(channelId: String, titleContains: String? = null): YtVideo? =
+        recentVideos(channelId, titleContains).firstOrNull()
 
     private fun unescape(s: String): String =
         s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'")
