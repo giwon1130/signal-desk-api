@@ -19,6 +19,7 @@ import java.time.ZoneId
 class FlowReadingService(
     private val pipeline: BriefPipeline,
     private val geminiClient: GeminiClient,
+    private val readingService: com.giwon.signaldesk.features.reading.application.ReadingService,
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul")),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -56,8 +57,23 @@ class FlowReadingService(
             },
             transcriptLength = { _, d -> d.headlines.size },
             keyTickers = { tickers },
-            dispatchPush = { _, _ -> },  // v1: 피드만, 푸시 없음
-        )
+            dispatchPush = { _, _ -> },  // 푸시는 리더 글 발행 단계에서 처리
+        )?.also { publishAsLeaderPost(it) }
+    }
+
+    /** 새 시황이 생성되면 '🤖 시데 AI 시황' 리더의 글로 발행 → 구독자 피드에 노출(적중률 인프라 재사용). */
+    private fun publishAsLeaderPost(m: MediaSummary) {
+        val title = m.summary.substringBefore("\n\n").trim().ifBlank { m.videoTitle }
+        val narrative = m.summary.substringAfter("\n\n", "").trim()
+        val body = listOf(narrative, m.flowAnalysis).filter { it.isNotBlank() }.joinToString("\n\n")
+        runCatching {
+            readingService.publishPost(
+                com.giwon.signaldesk.features.reading.domain.AiLeaders.FLOW,
+                title = title, body = body,
+                visibility = com.giwon.signaldesk.features.reading.domain.PostVisibility.FOLLOWERS,
+                confirmedCalls = emptyList(),
+            )
+        }.onFailure { log.warn("FlowReading publishPost failed", it) }
     }
 
     /** 흐름 핵심 종목 — 급등 상위 + 외국인·기관 순매수 상위(실데이터, 환각 없음). 표시용 이름. */

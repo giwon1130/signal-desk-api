@@ -97,7 +97,7 @@ class ReadingService(
             ?: error("invite code not found")
         require(leader.status == LeaderStatus.APPROVED) { "leader not available" }
         require(leader.userId != followerUserId) { "cannot follow yourself" }
-        assertSubscribeAllowed(followerUserId, leader.userId)
+        assertSubscribeAllowed(followerUserId, leader)
         repo.follow(Follow(leader.userId, followerUserId, Instant.now()))
         log.info("reading subscribe — follower={} leader={}", followerUserId, leader.userId)
         return leader
@@ -108,16 +108,27 @@ class ReadingService(
         val leader = repo.findLeader(leaderUserId) ?: error("leader not found")
         require(leader.status == LeaderStatus.APPROVED) { "leader not available" }
         require(leader.userId != followerUserId) { "cannot follow yourself" }
-        assertSubscribeAllowed(followerUserId, leader.userId)
+        assertSubscribeAllowed(followerUserId, leader)
         repo.follow(Follow(leader.userId, followerUserId, Instant.now()))
         log.info("reading subscribe(byId) — follower={} leader={}", followerUserId, leader.userId)
         return leader
     }
 
-    /** FREE 구독 상한 — 이미 팔로우 중인 리더 재구독은 카운트 제외(grandfather). */
-    private fun assertSubscribeAllowed(followerUserId: UUID, leaderUserId: UUID) {
+    /**
+     * 구독 게이트.
+     *  - 재구독(이미 팔로우)은 통과.
+     *  - AI 리더는 PRO 전용(상한 미적용 — PRO 무제한).
+     *  - 사람 리더는 FREE 상한 적용.
+     */
+    private fun assertSubscribeAllowed(followerUserId: UUID, leader: Leader) {
         val following = repo.followingLeaderIds(followerUserId)
-        if (leaderUserId in following) return
+        if (leader.userId in following) return
+        if (leader.isAi) {
+            require(planService.isPro(followerUserId)) {
+                "AI 리더 구독은 PRO 플랜 전용이에요. PRO 로 업그레이드하면 구독할 수 있어요. 💎"
+            }
+            return
+        }
         planService.assertCanAdd(followerUserId, com.giwon.signaldesk.features.plan.PlanService.Resource.LEADER_SUBSCRIPTIONS, following.size)
     }
 

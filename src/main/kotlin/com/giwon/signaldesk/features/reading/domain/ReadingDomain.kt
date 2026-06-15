@@ -21,7 +21,15 @@ data class Leader(
     val inviteCode: String,
     val status: LeaderStatus,
     val createdAt: Instant,
+    /** AI 리더 여부 — 구독 PRO 전용, 둘러보기에서 배지 구분. */
+    val isAi: Boolean = false,
 )
+
+/** AI 리더 고정 계정 — V32 시드와 동일 UUID. */
+object AiLeaders {
+    val FLOW: UUID = UUID.fromString("a1f10000-0000-4000-8000-000000000001")   // 🤖 시데 AI 시황
+    val YOUTUBE: UUID = UUID.fromString("a1f20000-0000-4000-8000-000000000002") // 📺 삼프로 AI요약
+}
 
 data class Follow(
     val leaderUserId: UUID,

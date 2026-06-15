@@ -31,6 +31,7 @@ class JdbcReadingRepository(
             inviteCode = rs.getString("invite_code"),
             status = LeaderStatus.valueOf(rs.getString("status")),
             createdAt = rs.getTimestamp("created_at").toInstant(),
+            isAi = runCatching { rs.getBoolean("is_ai") }.getOrDefault(false),
         )
     }
 

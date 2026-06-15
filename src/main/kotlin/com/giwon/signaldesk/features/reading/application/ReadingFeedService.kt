@@ -107,6 +107,7 @@ class ReadingFeedService(
         val hitRate: Double,
         val avgReturnPct: Double?,
         val following: Boolean,
+        val isAi: Boolean,
     )
 
     /**
@@ -124,7 +125,13 @@ class ReadingFeedService(
                 followerCount = repo.followerCount(l.userId),
                 totalCalls = stats.totalCalls, hitRate = stats.hitRate, avgReturnPct = stats.avgReturnPct,
                 following = l.userId == viewerUserId || l.userId in followingIds,
+                isAi = l.isAi,
             )
-        }.sortedWith(compareByDescending<LeaderCard> { it.hitRate }.thenByDescending { it.followerCount })
+        }.sortedWith(
+            // AI 리더를 맨 위로, 그다음 적중률·구독자 순.
+            compareByDescending<LeaderCard> { it.isAi }
+                .thenByDescending { it.hitRate }
+                .thenByDescending { it.followerCount },
+        )
     }
 }

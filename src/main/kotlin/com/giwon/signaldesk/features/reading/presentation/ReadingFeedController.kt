@@ -96,11 +96,12 @@ data class LeaderCardResponse(
     val hitRate: Double,
     val avgReturnPct: Double?,
     val following: Boolean,
+    val isAi: Boolean,
 ) {
     companion object {
         fun from(c: ReadingFeedService.LeaderCard) = LeaderCardResponse(
             c.userId.toString(), c.displayName, c.bio, c.followerCount,
-            c.totalCalls, c.hitRate, c.avgReturnPct, c.following,
+            c.totalCalls, c.hitRate, c.avgReturnPct, c.following, c.isAi,
         )
     }
 }

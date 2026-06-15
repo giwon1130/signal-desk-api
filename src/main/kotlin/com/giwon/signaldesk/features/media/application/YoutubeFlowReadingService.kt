@@ -20,6 +20,7 @@ class YoutubeFlowReadingService(
     private val transcriptClient: SupadataTranscriptClient,
     private val geminiClient: GeminiClient,
     private val repository: MediaSummaryRepository,
+    private val readingService: com.giwon.signaldesk.features.reading.application.ReadingService,
     @Value("\${signal-desk.integrations.youtube.flow-channels:}") private val channelsRaw: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -85,6 +86,21 @@ class YoutubeFlowReadingService(
                 ),
             )
             log.info("YoutubeFlow({}) saved {} — {}", cfg.label, video.videoId, analysis.headline)
+
+            // '📺 삼프로 AI요약' 리더 글로 발행(원문 링크 포함) → 구독자 피드에 노출.
+            val body = listOf(
+                analysis.summary,
+                analysis.keyPoints.joinToString("\n") { "• $it" },
+                "원문: ${video.url}",
+            ).filter { it.isNotBlank() }.joinToString("\n\n")
+            runCatching {
+                readingService.publishPost(
+                    com.giwon.signaldesk.features.reading.domain.AiLeaders.YOUTUBE,
+                    title = analysis.headline.ifBlank { video.title.take(60) }, body = body,
+                    visibility = com.giwon.signaldesk.features.reading.domain.PostVisibility.FOLLOWERS,
+                    confirmedCalls = emptyList(),
+                )
+            }.onFailure { log.warn("YoutubeFlow publishPost failed", it) }
             return saved
         }
         log.info("YoutubeFlow({}) no transcript-able video among recent (attempts={})", cfg.label, attempts)
