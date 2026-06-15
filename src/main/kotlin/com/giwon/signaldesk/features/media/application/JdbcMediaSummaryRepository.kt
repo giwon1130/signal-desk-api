@@ -15,7 +15,8 @@ class JdbcMediaSummaryRepository(
 
     override fun findRecent(limit: Int): List<MediaSummary> =
         jdbcTemplate.query(
-            "select * from signal_desk_media_summaries order by published_at desc limit ?",
+            // FLOW_READING 은 AI 리더용 내부 원장(중복방지)일 뿐 — 오늘탭 브리프/어시스턴트 컨텍스트에서 제외.
+            "select * from signal_desk_media_summaries where source <> 'FLOW_READING' order by published_at desc limit ?",
             rowMapper, limit,
         )
 
