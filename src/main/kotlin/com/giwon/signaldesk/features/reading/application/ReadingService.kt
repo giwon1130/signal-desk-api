@@ -151,6 +151,7 @@ class ReadingService(
     /**
      * 리딩 글 게시 + 확정 콜들의 가격 박제. 트랜잭션 1건처럼 묶되, 시세 실패한 콜은 전체 거부.
      */
+    @org.springframework.transaction.annotation.Transactional
     fun publishPost(
         userId: UUID,
         title: String,

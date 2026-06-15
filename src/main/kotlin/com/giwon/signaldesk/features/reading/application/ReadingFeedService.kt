@@ -44,9 +44,17 @@ class ReadingFeedService(
         return buildPostViews(posts)
     }
 
-    /** 특정 리더의 글 목록 (프로필 화면). */
-    fun leaderPosts(leaderUserId: UUID, limit: Int = 50): List<PostWithCalls> =
-        buildPostViews(repo.postsByLeader(leaderUserId, limit))
+    /**
+     * 특정 리더의 글 목록 (프로필 화면).
+     * FOLLOWERS 공개 글은 구독자/본인에게만 — 비구독자는 PUBLIC 글만 본다(AI 리더 PRO 게이트 + 비공개글 누수 방지).
+     */
+    fun leaderPosts(leaderUserId: UUID, viewerUserId: UUID?, limit: Int = 50): List<PostWithCalls> {
+        val canSeeFollowers = viewerUserId != null &&
+            (viewerUserId == leaderUserId || viewerUserId in repo.followerIds(leaderUserId))
+        val posts = repo.postsByLeader(leaderUserId, limit)
+            .filter { canSeeFollowers || it.visibility == com.giwon.signaldesk.features.reading.domain.PostVisibility.PUBLIC }
+        return buildPostViews(posts)
+    }
 
     /** 리더 통계 — 콜 성과 집계. */
     fun leaderStats(leaderUserId: UUID): LeaderStats {

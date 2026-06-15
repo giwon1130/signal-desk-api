@@ -11,8 +11,9 @@ import java.time.ZoneId
  * AI 시황 흐름 리딩 — 섹터 모멘텀·수급·순환매를 AI가 읽어 narrative로 만드는 "AI 리딩방(흐름형)".
  *
  * 소스는 유튜브가 아니라 시데가 이미 수집 중인 시장 데이터(섹터·수급·급등락·지수·뉴스)다.
- * 브리프와 동일한 [BriefPipeline] 골격을 재사용하고, 분석만 [GeminiClient.summarizeFlowReading]로,
- * 저장은 media_summaries(source=FLOW_READING)에 한다. v1은 피드만(푸시 없음).
+ * 브리프와 동일한 [BriefPipeline] 골격을 재사용하고, 분석만 [GeminiClient.summarizeFlowReading]로.
+ * media_summaries(FLOW_READING)는 중복방지 원장, 실제 노출은 '🤖 시데 AI 시황' 리더의 글로 발행
+ * (구독자 피드 + 푸시). 구독은 PRO 전용.
  */
 @Service
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")

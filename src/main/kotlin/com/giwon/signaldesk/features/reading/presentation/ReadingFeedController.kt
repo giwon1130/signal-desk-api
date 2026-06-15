@@ -53,11 +53,11 @@ class ReadingFeedController(
         @RequestHeader("Authorization", required = false) auth: String?,
         @PathVariable leaderUserId: String,
     ): ApiResponse<LeaderProfileResponse?> {
-        requireUserId(auth)
+        val viewerId = requireUserId(auth)
         val id = UUID.fromString(leaderUserId)
         val leader = feed.getLeader(id) ?: return ApiResponse(true, null)
         val stats = feed.leaderStats(id)
-        val posts = feed.leaderPosts(id).map(::toPostResponse)
+        val posts = feed.leaderPosts(id, viewerId).map(::toPostResponse)
         return ApiResponse(
             true,
             LeaderProfileResponse(
