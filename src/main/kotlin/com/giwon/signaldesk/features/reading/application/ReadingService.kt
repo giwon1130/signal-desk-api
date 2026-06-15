@@ -37,6 +37,7 @@ class ReadingService(
     private val pushRepository: PushRepository,
     private val expoPushClient: ExpoPushClient,
     private val planService: com.giwon.signaldesk.features.plan.PlanService,
+    private val alertPreferences: com.giwon.signaldesk.features.push.application.AlertPreferenceService,
     @Value("\${signal-desk.reading.admin-emails:gwim113000@gmail.com}") private val adminEmailsProp: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -208,15 +209,18 @@ class ReadingService(
     private fun notifyFollowersOfNewPost(leaderUserId: UUID, post: ReadingPost, calls: List<ReadingCall>) {
         val followerIds = repo.followerIds(leaderUserId)
         if (followerIds.isEmpty()) return
+        // 리딩 새 글 알림을 켠 구독자만(음소거 토글). quiet-hours 는 send() 가 userId 기준으로 추가 적용.
+        val notifyUsers = alertPreferences.loadReadingPostEnabledUsers(followerIds.toSet())
+        if (notifyUsers.isEmpty()) return
         val devicesByUser = pushRepository.listAllDevicesGroupedByUser()
-        val targets = devicesByUser.filterKeys { it in followerIds }
+        val targets = devicesByUser.filterKeys { it in notifyUsers }
         if (targets.isEmpty()) return
 
         val leaderName = repo.findLeader(leaderUserId)?.displayName ?: "리더"
         val title = "📣 ${leaderName}님의 새 리딩"
         val callsHint = if (calls.isNotEmpty()) " · ${calls.size}개 종목 콜" else ""
         val body = "${post.title}$callsHint"
-        val messages = targets.flatMap { (_, devices) ->
+        val messages = targets.flatMap { (uid, devices) ->
             devices.map { d ->
                 ExpoPushClient.Message(
                     to = d.expoToken,
@@ -227,6 +231,7 @@ class ReadingService(
                         "postId" to post.id.toString(),
                         "leaderUserId" to leaderUserId.toString(),
                     ),
+                    userId = uid,  // quiet-hours 적용 대상 지정
                 )
             }
         }

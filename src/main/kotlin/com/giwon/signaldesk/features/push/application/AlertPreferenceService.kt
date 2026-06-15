@@ -27,6 +27,8 @@ data class AlertPreferences(
     val quietHoursEnabled: Boolean = false,
     val quietStartHour: Int = 22,
     val quietEndHour: Int = 7,
+    // 리딩 새 글 알림 — 구독 리더(사람·AI)의 새 글 푸시. 디폴트 ON.
+    val readingPostEnabled: Boolean = true,
 )
 
 @Service
@@ -37,7 +39,7 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
 
     fun get(userId: UUID): AlertPreferences {
         val row = jdbc.query(
-            "select kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference, evening_brief_enabled, midday_brief_enabled, close_brief_enabled, volume_alert_enabled, quiet_hours_enabled, quiet_start_hour, quiet_end_hour from signal_desk_alert_preferences where user_id = ?::uuid",
+            "select kr_enabled, us_enabled, premarket_enabled, composite_risk_enabled, market_preference, evening_brief_enabled, midday_brief_enabled, close_brief_enabled, volume_alert_enabled, quiet_hours_enabled, quiet_start_hour, quiet_end_hour, reading_post_enabled from signal_desk_alert_preferences where user_id = ?::uuid",
             { rs, _ ->
                 AlertPreferences(
                     krEnabled = rs.getBoolean("kr_enabled"),
@@ -52,6 +54,7 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
                     quietHoursEnabled = rs.getBoolean("quiet_hours_enabled"),
                     quietStartHour = rs.getInt("quiet_start_hour"),
                     quietEndHour = rs.getInt("quiet_end_hour"),
+                    readingPostEnabled = rs.getBoolean("reading_post_enabled"),
                 )
             },
             userId.toString(),
@@ -78,6 +81,7 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
             request.eveningBriefEnabled, request.middayBriefEnabled, request.closeBriefEnabled,
             request.volumeAlertEnabled, request.quietHoursEnabled,
             request.quietStartHour.coerceIn(0, 23), request.quietEndHour.coerceIn(0, 23),
+            request.readingPostEnabled,
         )
         return request
     }
@@ -147,6 +151,19 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
         return jdbc.query(sql, userIdMapper, *params).toSet()
     }
 
+    /** 주어진 사용자들 중 리딩 새 글 알림(reading_post_enabled) ON. 미등록은 DEFAULT(true). */
+    fun loadReadingPostEnabledUsers(userIds: Set<UUID>): Set<UUID> {
+        if (userIds.isEmpty()) return emptySet()
+        val placeholders = userIds.joinToString(",") { "?::uuid" }
+        val sql = """
+            select u.id from signal_desk_users u
+            left join signal_desk_alert_preferences p on p.user_id = u.id
+            where u.id in ($placeholders) and coalesce(p.reading_post_enabled, ?) = true
+        """.trimIndent()
+        val params = (userIds.map { it.toString() } + DEFAULT.readingPostEnabled).toTypedArray()
+        return jdbc.query(sql, userIdMapper, *params).toSet()
+    }
+
     /**
      * 방해금지 ON 사용자의 시간창(quiet_start_hour, quiet_end_hour). OFF/미등록은 맵에 없음(=보류 안 함).
      * 푸시 게이트에서 현재 KST 시각이 이 창 안이면 메시지 보류.
@@ -173,6 +190,7 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
             "kr_enabled", "us_enabled", "premarket_enabled", "composite_risk_enabled", "market_preference",
             "evening_brief_enabled", "midday_brief_enabled", "close_brief_enabled",
             "volume_alert_enabled", "quiet_hours_enabled", "quiet_start_hour", "quiet_end_hour",
+            "reading_post_enabled",
         )
 
         val DEFAULT = AlertPreferences(
@@ -180,6 +198,7 @@ class AlertPreferenceService(private val jdbc: JdbcTemplate) {
             marketPreference = "BOTH", eveningBriefEnabled = false,
             middayBriefEnabled = false, closeBriefEnabled = true,
             volumeAlertEnabled = true, quietHoursEnabled = false, quietStartHour = 22, quietEndHour = 7,
+            readingPostEnabled = true,
         )
 
         /** 현재 시각(hour, 0-23)이 [start, end) 방해금지 창 안인가. start>end 면 자정 넘김(예: 22~7). */
