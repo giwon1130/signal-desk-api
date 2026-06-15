@@ -246,6 +246,28 @@ $koreaBlock$moversBlock$flowBlock
         """.trimIndent()
     }
 
+    /** 유튜브 방송 자막을 시청자 대신 요약 — 방송이 본 시장 흐름·테마·종목 코멘트. */
+    fun youtubeFlowSummary(channelLabel: String, videoTitle: String, transcript: String): String {
+        return """
+            당신은 한국 주식 방송을 시청자 대신 요약하는 애널리스트입니다.
+            아래는 '$channelLabel' 방송 '$videoTitle'의 자막입니다(자동 생성이라 오탈자 가능).
+            이 방송에서 다룬 시장 흐름·주요 테마·섹터/종목 코멘트를 핵심만 요약하세요.
+            규칙: 자막에 실제로 나온 내용만 요약하고 없는 수치·종목은 지어내지 마세요.
+            매수/매도 단정은 금지 — 방송의 '시각(뷰)'을 전달하되 참고용임을 전제합니다. 한국어 하십시오체.
+
+            === 방송 자막 ===
+            $transcript
+
+            아래 JSON 스키마로 한국어 답변:
+            {
+              "headline": "방송 핵심을 한 줄로 (24자 이내)",
+              "summary": "3~4문장. 방송이 본 시장 흐름·주요 테마·시각을 요약",
+              "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나 (방송의 전반적 톤)",
+              "keyPoints": ["방송에서 강조한 포인트 3~5개. 각 30자 이내. 언급된 섹터/종목/이벤트 위주"]
+            }
+        """.trimIndent()
+    }
+
     fun eveningBrief(
         vix: VixSnapshot?,
         indices: UsIndicesSnapshot?,

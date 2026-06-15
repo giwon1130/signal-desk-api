@@ -129,6 +129,10 @@ class GeminiClient(
         GeminiPrompts.flowReading(slot, vix, indices, krMarket, krGainers, krLosers, investorFlow, headlines),
     )
 
+    /** 유튜브 방송 자막 요약 — 방송이 본 시장 흐름/테마. insight 스키마 재사용. */
+    fun summarizeYoutubeFlow(channelLabel: String, videoTitle: String, transcript: String): MarketInsightAnalysis? =
+        callInsight(GeminiPrompts.youtubeFlowSummary(channelLabel, videoTitle, transcript))
+
     /** KR 장중/마감 브리프 — slot="MIDDAY"|"CLOSE". 모닝 브리프와 같은 입력을 KR 관점으로. */
     fun summarizeIntradayBrief(
         slot: String,

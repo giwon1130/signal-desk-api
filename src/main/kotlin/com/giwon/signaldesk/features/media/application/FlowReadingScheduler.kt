@@ -17,6 +17,7 @@ import java.time.ZoneId
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class FlowReadingScheduler(
     private val service: FlowReadingService,
+    private val youtubeService: YoutubeFlowReadingService,
     private val marketSessionService: MarketSessionService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -34,5 +35,21 @@ class FlowReadingScheduler(
         if (!isKrTradingDay()) return
         runCatching { service.runFlow(FlowReadingService.Slot.CLOSE) }
             .onFailure { log.error("Flow reading(CLOSE) scheduler failed", it) }
+    }
+
+    /**
+     * 유튜브 방송 요약 — 라이브 종료 후 자막 생성에 시차가 있어 오후에 2회 시도.
+     * 이미 요약한 영상은 videoId 가드로 스킵되므로 중복 없음. Supadata 키 없으면 no-op.
+     */
+    @Scheduled(cron = "0 0 13 * * MON-FRI", zone = "Asia/Seoul")
+    fun runYoutubeMidday() {
+        if (!isKrTradingDay()) return
+        runCatching { youtubeService.runAll() }.onFailure { log.error("Youtube flow(13h) failed", it) }
+    }
+
+    @Scheduled(cron = "0 0 17 * * MON-FRI", zone = "Asia/Seoul")
+    fun runYoutubeEvening() {
+        if (!isKrTradingDay()) return
+        runCatching { youtubeService.runAll() }.onFailure { log.error("Youtube flow(17h) failed", it) }
     }
 }

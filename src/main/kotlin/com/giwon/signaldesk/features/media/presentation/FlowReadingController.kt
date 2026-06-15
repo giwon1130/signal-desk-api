@@ -5,6 +5,7 @@ import com.giwon.signaldesk.features.media.application.FlowReadingService
 import com.giwon.signaldesk.features.media.application.MediaSource
 import com.giwon.signaldesk.features.media.application.MediaSummary
 import com.giwon.signaldesk.features.media.application.MediaSummaryRepository
+import com.giwon.signaldesk.features.media.application.YoutubeFlowReadingService
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
@@ -23,15 +24,18 @@ import org.springframework.web.bind.annotation.RestController
 class FlowReadingController(
     private val repository: MediaSummaryRepository,
     private val service: FlowReadingService,
+    private val youtubeService: YoutubeFlowReadingService,
 ) {
     data class FlowReadingResponse(
         val id: String,
-        val title: String,          // "6월 15일 마감 시황 흐름"
+        val title: String,          // "6월 15일 마감 시황 흐름" 또는 영상 제목
         val headline: String,       // AI 한 줄 요약
         val narrative: String,      // 본문 내러티브
         val flowPoints: List<String>, // 주도/순환매/전망/체크포인트 불릿
         val sentiment: String,
         val keyTickers: List<String>,
+        val sourceLabel: String,    // "시데 AI 시황" 또는 "삼프로TV"
+        val sourceUrl: String,      // 유튜브 원문 링크(데이터 기반은 빈 문자열)
         val generatedAt: String,
     ) {
         companion object {
@@ -51,6 +55,8 @@ class FlowReadingController(
                     flowPoints = points,
                     sentiment = m.sentiment.name,
                     keyTickers = m.keyTickers,
+                    sourceLabel = m.channelTitle,
+                    sourceUrl = m.videoUrl,
                     generatedAt = m.publishedAt.toString(),
                 )
             }
@@ -74,4 +80,9 @@ class FlowReadingController(
             .getOrDefault(FlowReadingService.Slot.CLOSE)
         return ApiResponse(true, service.runFlow(parsed, force) != null)
     }
+
+    /** 유튜브 방송 요약 수동 트리거 — 운영/테스트용(Supadata 키 필요). 처리 건수 반환. */
+    @PostMapping("/refresh-youtube")
+    fun refreshYoutube(@RequestParam(defaultValue = "true") force: Boolean): ApiResponse<Int> =
+        ApiResponse(true, youtubeService.runAll(force))
 }
