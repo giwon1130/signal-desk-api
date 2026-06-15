@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController
 class FlowReadingController(
     private val service: FlowReadingService,
     private val youtubeService: YoutubeFlowReadingService,
+    private val reportCallService: com.giwon.signaldesk.features.reading.application.ReportCallService,
     private val authContext: AuthContext,
     private val adminGuard: AdminGuard,
 ) {
@@ -46,5 +47,15 @@ class FlowReadingController(
     ): ApiResponse<Int> {
         adminGuard.requireAdmin(authContext.requireUserId(auth))
         return ApiResponse(true, youtubeService.runAll(force))
+    }
+
+    /** 📈 AI 리포트 콜 수동 생성 — 운영자 전용. 발행 건수 반환. */
+    @PostMapping("/refresh-report")
+    fun refreshReport(
+        @RequestHeader("Authorization", required = false) auth: String?,
+        @RequestParam(defaultValue = "true") force: Boolean,
+    ): ApiResponse<Int> {
+        adminGuard.requireAdmin(authContext.requireUserId(auth))
+        return ApiResponse(true, reportCallService.run(force))
     }
 }

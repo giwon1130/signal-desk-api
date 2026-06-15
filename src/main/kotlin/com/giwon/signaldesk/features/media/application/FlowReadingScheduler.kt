@@ -18,6 +18,7 @@ import java.time.ZoneId
 class FlowReadingScheduler(
     private val service: FlowReadingService,
     private val youtubeService: YoutubeFlowReadingService,
+    private val reportCallService: com.giwon.signaldesk.features.reading.application.ReportCallService,
     private val marketSessionService: MarketSessionService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -51,5 +52,12 @@ class FlowReadingScheduler(
     fun runYoutubeEvening() {
         if (!isKrTradingDay()) return
         runCatching { youtubeService.runAll() }.onFailure { log.error("Youtube flow(17h) failed", it) }
+    }
+
+    /** 📈 AI 리포트 콜 — 장 마감 후 16:30, 그날 신규 증권사 목표주가 리포트를 콜로 발행. */
+    @Scheduled(cron = "0 30 16 * * MON-FRI", zone = "Asia/Seoul")
+    fun runReportCalls() {
+        if (!isKrTradingDay()) return
+        runCatching { reportCallService.run() }.onFailure { log.error("Report calls(16:30) failed", it) }
     }
 }
