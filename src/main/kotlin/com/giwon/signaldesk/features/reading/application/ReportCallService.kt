@@ -1,7 +1,7 @@
 package com.giwon.signaldesk.features.reading.application
 
 import com.giwon.signaldesk.features.market.application.NaverFinanceQuoteClient
-import com.giwon.signaldesk.features.market.application.YahooQuoteClient
+import com.giwon.signaldesk.features.market.application.NaverStockChartClient
 import com.giwon.signaldesk.features.reading.domain.AiLeaders
 import com.giwon.signaldesk.features.reading.domain.PostVisibility
 import org.slf4j.LoggerFactory
@@ -11,7 +11,6 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
 import java.math.RoundingMode
-import kotlin.math.sqrt
 
 /**
  * 📈 AI 리포트 콜 — 한경 컨센서스(공개 증권사 리포트)의 목표주가를 AI 리더 콜로 발행.
@@ -26,7 +25,7 @@ class ReportCallService(
     private val consensus: HankyungConsensusClient,
     private val reading: ReadingService,
     private val krQuotes: NaverFinanceQuoteClient,
-    private val yahoo: YahooQuoteClient,
+    private val chart: NaverStockChartClient,
     private val jdbc: JdbcTemplate,
     @Value("\${signal-desk.report-call.daily-limit:5}") private val dailyLimit: Int,
     @Value("\${signal-desk.report-call.stop-loss-pct:8}") private val stopLossPct: Int,
@@ -78,26 +77,25 @@ class ReportCallService(
     }
 
     /**
-     * AI 제안 손절가 — 20일 종가 전저점과 변동성(2σ) 손절 중 더 타이트한 쪽, 진입가 -3%~-15%로 클램프.
-     * 일봉(adjClose)만 있어 고가/저가 ATR 대신 종가 기반(전저점·일간수익률 표준편차)으로 근사.
-     * 데이터 부족 시 기본 -N% 폴백. (KS 우선, 부실하면 KQ)
+     * AI 제안 손절가 — 진짜 ATR(14, 고가/저가 기반) 손절과 20일 전저점 중 더 타이트한 쪽, 진입가 -3%~-15% 클램프.
+     * 네이버 일봉 OHLC 사용. TR=max(고-저, |고-전일종가|, |저-전일종가|), ATR=최근14 TR 평균, ATR손절=진입가-2*ATR.
+     * 데이터 부족 시 기본 -N% 폴백.
      */
     private fun suggestStop(code: String, entry: Double): Pair<Int, String> {
         val fallback = Math.round(entry * (100 - stopLossPct) / 100).toInt() to "진입가 -${stopLossPct}%"
-        val bars = runCatching {
-            yahoo.fetchDailyHistory("$code.KS", "3mo").ifEmpty { yahoo.fetchDailyHistory("$code.KQ", "3mo") }
-        }.getOrNull().orEmpty()
-        val closes = bars.takeLast(20).map { it.adjClose }.filter { it > 0 }
-        if (closes.size < 10) return fallback
+        val bars = runCatching { chart.fetchDailyOhlc(code, 30) }.getOrNull().orEmpty()
+        if (bars.size < 15) return fallback
 
-        val recentLow = closes.min()
-        val rets = closes.zipWithNext { a, b -> (b - a) / a }
-        val mean = rets.average()
-        val sd = sqrt(rets.map { (it - mean) * (it - mean) }.average())
-        val volStop = entry * (1 - 2 * sd)                 // 2σ 하락 밴드
-        val raw = maxOf(recentLow, volStop)                // 더 타이트(진입가에 가까운) 쪽 = 리스크 제한
-        val stop = raw.coerceIn(entry * 0.85, entry * 0.97) // -3% ~ -15%
-        return Math.round(stop).toInt() to "20일 전저점·변동성"
+        // ATR(14) — TR 의 최근 14개 평균.
+        val trs = bars.zipWithNext { prev, cur ->
+            maxOf(cur.high - cur.low, kotlin.math.abs(cur.high - prev.close), kotlin.math.abs(cur.low - prev.close))
+        }
+        val atr = trs.takeLast(14).average()
+        val atrStop = entry - 2 * atr                          // 2 ATR 하락
+        val recentLow = bars.takeLast(20).minOf { it.low }     // 실제 저가 전저점
+        val raw = maxOf(recentLow, atrStop)                    // 더 타이트(진입가에 가까운) 쪽 = 리스크 제한
+        val stop = raw.coerceIn(entry * 0.85, entry * 0.97)    // -3% ~ -15%
+        return Math.round(stop).toInt() to "ATR(14)·전저점"
     }
 
     private fun isBuy(opinion: String): Boolean {

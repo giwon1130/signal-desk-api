@@ -12,6 +12,9 @@ import java.time.Duration
 
 data class DailyBar(val date: String, val close: Int, val volume: Long)
 
+/** ATR/전저점 등 기술적 계산용 일봉 OHLC (오름차순). */
+data class OhlcBar(val date: String, val open: Double, val high: Double, val low: Double, val close: Double)
+
 /**
  * 개별 KR 종목의 일봉 OHLCV를 Naver Stock API에서 가져온다.
  *
@@ -59,6 +62,37 @@ class NaverStockChartClient(
                 }.getOrNull()
             }
         }.onFailure { log.warn("NaverStockChartClient failed ticker={} reason={}", ticker, it.message) }
+            .getOrDefault(emptyList())
+    }
+
+    @org.springframework.cache.annotation.Cacheable(cacheNames = ["chart-mid"], key = "'ohlc:' + #ticker + ':' + #count", unless = "#result.isEmpty()")
+    fun fetchDailyOhlc(ticker: String, count: Int = 30): List<OhlcBar> {
+        if (!enabled) return emptyList()
+        return runCatching {
+            val url = "https://api.stock.naver.com/chart/domestic/item/$ticker?periodType=dayCandle&count=$count"
+            val req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(5))
+                .header("User-Agent", "Mozilla/5.0")
+                .GET().build()
+            val res = httpClient.send(req, HttpResponse.BodyHandlers.ofString())
+            if (res.statusCode() != 200) {
+                log.warn("NaverStockChartClient(ohlc) {} returned {}", ticker, res.statusCode())
+                return emptyList()
+            }
+            val priceInfos = objectMapper.readTree(res.body())["priceInfos"] ?: return emptyList()
+            priceInfos.mapNotNull { item ->
+                runCatching {
+                    OhlcBar(
+                        date = item["localDate"].asText(),
+                        open = item["openPrice"].asDouble(),
+                        high = item["highPrice"].asDouble(),
+                        low = item["lowPrice"].asDouble(),
+                        close = item["closePrice"].asDouble(),
+                    )
+                }.getOrNull()
+            }.filter { it.high > 0 && it.low > 0 }
+        }.onFailure { log.warn("NaverStockChartClient(ohlc) failed ticker={} reason={}", ticker, it.message) }
             .getOrDefault(emptyList())
     }
 }
