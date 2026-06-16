@@ -72,9 +72,10 @@ class ReadingFeedService(
         if (calls.isEmpty()) return LeaderStats(0, 0, 0.0, null)
         val hit = calls.count { it.status == CallStatus.HIT }
         // 적중률·평균수익 모두 '결착(HIT+CLOSED)' 콜만 모집단으로 — 진행 중(ACTIVE)의 시세 변동이
-        // 지표를 흔들지 않게 일치시킴(이전엔 avgReturn 이 ACTIVE 라이브 수익까지 섞었음).
+        // 지표를 흔들지 않게 일치시킴. 결착 콜은 hitPrice(박제)로 수익률 계산 → 라이브 시세 fetch 불필요
+        // (discoverLeaders 가 리더마다 leaderStats 를 부르는데 동기 HTTP 가 N회 나가던 문제 제거).
         val resolvedCalls = calls.filter { it.status == CallStatus.HIT || it.status == CallStatus.CLOSED }
-        val perfs = withPerformance(resolvedCalls).mapNotNull { it.returnPct }
+        val perfs = resolvedCalls.mapNotNull { frozenReturnPct(it) }
         val avg = if (perfs.isEmpty()) null else perfs.average()
         return LeaderStats(
             totalCalls = calls.size,
@@ -100,9 +101,13 @@ class ReadingFeedService(
         }
     }
 
-    private fun withPerformance(calls: List<ReadingCall>): List<CallPerformance> {
-        val priceMap = priceService.currentPrices(calls.map { it.market to it.ticker })
-        return calls.map { toPerformance(it, priceMap[it.market to it.ticker]) }
+    /** 결착(HIT/CLOSED) 콜의 박제 수익률 — hitPrice 기반, HTTP 불필요. 레거시(hitPrice null) 행은 null. */
+    private fun frozenReturnPct(call: ReadingCall): Double? {
+        val price = call.hitPrice ?: return null
+        return price.subtract(call.entryPrice)
+            .divide(call.entryPrice, 6, RoundingMode.HALF_UP)
+            .multiply(BigDecimal(100))
+            .toDouble()
     }
 
     private fun toPerformance(call: ReadingCall, currentPrice: BigDecimal?): CallPerformance {

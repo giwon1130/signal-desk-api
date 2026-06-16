@@ -20,10 +20,6 @@ import org.springframework.transaction.support.TransactionTemplate
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalTime
-import java.time.ZoneId
-import java.time.ZonedDateTime
 import java.util.UUID
 
 /**
@@ -206,23 +202,10 @@ class TradeService(
         }
     }
 
-    private fun isMarketOpen(market: String): Boolean {
-        return when (market) {
-            "KR" -> {
-                val now = ZonedDateTime.now(ZoneId.of("Asia/Seoul"))
-                if (!marketSession.isKrTradingDay(now.toLocalDate())) return false
-                val t = now.toLocalTime()
-                t >= LocalTime.of(9, 0) && t < LocalTime.of(15, 31)
-            }
-            "US" -> {
-                val nowUs = ZonedDateTime.now(ZoneId.of("America/New_York"))
-                if (!marketSession.isUsTradingDay(nowUs.toLocalDate())) return false
-                val t = nowUs.toLocalTime()
-                t >= LocalTime.of(9, 30) && t < LocalTime.of(16, 0)
-            }
-            else -> false
-        }
-    }
+    // 거래 시간 판정은 MarketSessionService 의 세션 상태를 그대로 사용 — 조기폐장(추수감사절 다음날 등),
+    // 공휴일, 정확한 정규장 마감(KR 15:30, US 16:00/조기 13:00)을 화면 표시와 동일하게 적용.
+    private fun isMarketOpen(market: String): Boolean =
+        marketSession.buildMarketSessions().firstOrNull { it.market == market }?.isOpen == true
 
     fun listLeagueTrades(leagueId: UUID, limit: Int = 100) = trades.findByLeague(leagueId, limit)
     fun listMyTrades(leagueId: UUID, userId: UUID) = trades.findByUserInLeague(leagueId, userId)

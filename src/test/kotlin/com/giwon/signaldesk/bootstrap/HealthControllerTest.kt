@@ -8,7 +8,8 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 
-@SpringBootTest
+// store.mode=file 고정 — CI 환경에 DATABASE_URL 이 있어도 StoreModeGuard 가 컨텍스트를 막지 않게(테스트 격리).
+@SpringBootTest(properties = ["signal-desk.store.mode=file"])
 @AutoConfigureMockMvc
 class HealthControllerTest(
     @Autowired private val mockMvc: MockMvc,

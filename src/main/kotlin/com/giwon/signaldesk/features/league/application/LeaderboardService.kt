@@ -46,15 +46,22 @@ class LeaderboardService(
         if (parts.isEmpty()) return emptyList()
 
         // FINISHED 면 final 값 그대로 사용.
+        // 총자산은 finalReturnRate 로부터 역산 — 정산 시 포지션을 현금으로 청산(SELL)하지 않으므로
+        // cashBalance 는 잔여 현금일 뿐. cashBalance 를 총자산으로 쓰면 "총자산=현금" 인데 수익률은 +18%"
+        // 같은 모순이 생긴다. total = startingCapital*(1+rate), 평가액 = total - 현금(=청산 시점 주식가치).
         if (league.status == LeagueStatus.FINISHED) {
             return parts
                 .sortedBy { it.finalRank ?: Int.MAX_VALUE }
                 .map { p ->
+                    val rate = p.finalReturnRate?.toDouble() ?: 0.0
+                    val total = if (league.startingCapital > 0)
+                        Math.round(league.startingCapital * (1 + rate)) else p.cashBalance
                     LeaderboardEntry(
                         userId = p.userId, nickname = p.nickname, avatarEmoji = p.avatarEmoji,
-                        cashBalance = p.cashBalance, evaluatedAssets = p.cashBalance,
-                        totalAssets = p.cashBalance,
-                        returnRate = p.finalReturnRate?.toDouble() ?: 0.0,
+                        cashBalance = p.cashBalance,
+                        evaluatedAssets = (total - p.cashBalance).coerceAtLeast(0),
+                        totalAssets = total,
+                        returnRate = rate,
                         rank = p.finalRank ?: 0, positionCount = 0,
                     )
                 }
@@ -118,7 +125,10 @@ class LeaderboardService(
             .setScale(0, RoundingMode.HALF_UP).toLong()
     }
 
-    /** 정산 — endsAt 도달 시 호출 (LeagueSchedulerService 에서). */
+    /** 정산 — endsAt 도달 시 호출 (LeagueSchedulerService 에서).
+     *  정산 직후 캐시된 RUNNING 보드(라이브 시세·실시간 랭크)가 12초 더 노출되던 문제 →
+     *  @CacheEvict 로 즉시 비워 다음 조회가 FINISHED(박제) 보드를 그리게 한다. */
+    @org.springframework.cache.annotation.CacheEvict(cacheNames = ["league-leaderboard"], key = "#leagueId.toString()")
     @org.springframework.transaction.annotation.Transactional
     fun finalize(leagueId: UUID) {
         val league = leagues.findById(leagueId) ?: error("league not found")

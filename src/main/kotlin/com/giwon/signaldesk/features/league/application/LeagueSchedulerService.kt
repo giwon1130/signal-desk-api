@@ -84,7 +84,8 @@ class LeagueSchedulerService(
         val all = participants.findByLeague(league.id)
         val winner = all.firstOrNull { it.finalRank == 1 }
         val winnerLabel = winner?.let {
-            "🏆 ${it.nickname} +${"%.2f".format((it.finalReturnRate?.toDouble() ?: 0.0) * 100)}%"
+            // %+.2f 로 부호 처리 — 전원 손실 리그면 우승자 수익률이 음수라 "+-5.20%" 가 되던 버그 방지.
+            "🏆 ${it.nickname} ${"%+.2f".format((it.finalReturnRate?.toDouble() ?: 0.0) * 100)}%"
         } ?: "🏆 정산 완료"
         val msgs = tokens.map { (uid, token) ->
             ExpoPushClient.Message(

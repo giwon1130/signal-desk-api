@@ -25,6 +25,7 @@ import org.springframework.test.web.servlet.get
         "signal-desk.integrations.yahoo-screener.enabled=false",
         "signal-desk.integrations.yahoo-quote.enabled=false",
         "signal-desk.integrations.sec-edgar.enabled=false",
+        "signal-desk.store.mode=file",
     ]
 )
 @AutoConfigureMockMvc
