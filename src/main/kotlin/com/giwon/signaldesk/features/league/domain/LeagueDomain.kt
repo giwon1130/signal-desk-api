@@ -23,7 +23,8 @@ data class League(
     val joinCode: String,
     val marketScope: MarketScope,
     val currency: LeagueCurrency,
-    val startingCapital: Long,        // league 통화 정수 (KRW=원, USD=cents)
+    val startingCapital: Long,        // league 통화 정수 (KRW=원, USD=달러). 앱 프리셋·체결가·표시 모두 달러 기준.
+                                      // ※ USD는 정수 달러 단위라 1달러 미만(센트)은 체결 시 반올림됨(저가주에서 오차 ↑). 알려진 한계.
     val startedAt: Instant,
     val endsAt: Instant,
     val status: LeagueStatus,

@@ -108,17 +108,22 @@ class PushAlertHistoryController(
 @RestController
 @RequestMapping("/api/v1/push/stats")
 class PushStatsController(
+    private val adminGuard: com.giwon.signaldesk.features.admin.AdminGuard,
     @Autowired(required = false) private val pushRepository: PushRepository? = null,
+    @Autowired(required = false) private val authContext: AuthContext? = null,
 ) {
     /**
-     * 최근 N일(기본 7) 알림 발송 통계. 인증 없이 운영용으로 노출.
+     * 최근 N일(기본 7) 알림 발송 통계 — 운영자 전용(사용자 규모·행동 지표 노출 방지).
      * 응답: 총 발송 / 고유 사용자 / 고유 종목 / 일별·마켓별·방향별 분포 + top 종목.
      */
     @GetMapping
     fun stats(
+        @RequestHeader("Authorization", required = false) auth: String?,
         @RequestParam(required = false, defaultValue = "7") days: Int,
     ): ApiResponse<AlertStats?> {
         val repo = pushRepository ?: return ApiResponse(false, null)
+        val ctx = authContext ?: return ApiResponse(false, null)
+        adminGuard.requireAdmin(ctx.requireUserId(auth))
         return ApiResponse(true, repo.alertStats(days.coerceIn(1, 90)))
     }
 }

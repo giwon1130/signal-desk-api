@@ -66,6 +66,7 @@ class JdbcSignalDeskWorkspaceRepository(
                 alert_below = excluded.alert_below,
                 alert_above = excluded.alert_above,
                 volume_alert = excluded.volume_alert
+            where signal_desk_watchlist.user_id is not distinct from excluded.user_id
             """.trimIndent(),
             nextItem.id, nextItem.market, nextItem.ticker, nextItem.name, nextItem.price, nextItem.changeRate,
             nextItem.sector, nextItem.stance, nextItem.note,
@@ -104,6 +105,7 @@ class JdbcSignalDeskWorkspaceRepository(
                 profit_rate = excluded.profit_rate,
                 target_price = excluded.target_price,
                 stop_loss_price = excluded.stop_loss_price
+            where signal_desk_portfolio_positions.user_id is not distinct from excluded.user_id
             """.trimIndent(),
             nextPosition.id, nextPosition.market, nextPosition.ticker, nextPosition.name,
             nextPosition.buyPrice, nextPosition.currentPrice, nextPosition.quantity,

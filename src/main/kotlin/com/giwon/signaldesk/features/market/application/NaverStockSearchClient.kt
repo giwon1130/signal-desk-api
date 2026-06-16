@@ -1,6 +1,7 @@
 package com.giwon.signaldesk.features.market.application
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.benmanes.caffeine.cache.Caffeine
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.net.URI
@@ -10,7 +11,6 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 네이버 종목 자동완성 검색.
@@ -37,22 +37,22 @@ class NaverStockSearchClient(private val mapper: ObjectMapper) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()
 
-    private data class CacheEntry(val results: List<StockSearchResult>, val expiresAt: Long)
-    private val cache = ConcurrentHashMap<String, CacheEntry>()
-    private val ttlMs = 10 * 60 * 1000L
+    // 사용자 입력(query)이 키라 무제한 증가 위험 → Caffeine 으로 maximumSize + TTL 바운드(OOM 방지).
+    private val cache = Caffeine.newBuilder()
+        .expireAfterWrite(Duration.ofMinutes(10))
+        .maximumSize(2_000)
+        .build<String, List<StockSearchResult>>()
 
     fun search(query: String, limit: Int = 20): List<StockSearchResult> {
         val key = query.trim().lowercase()
         if (key.isBlank()) return emptyList()
 
-        val now = System.currentTimeMillis()
-        cache[key]?.let { if (it.expiresAt > now) return it.results.take(limit) }
-
-        val results = runCatching { fetchRemote(key) }.getOrElse {
-            log.warn("Naver stock search failed for '{}': {}", key, it.message)
-            emptyList()
+        val results = cache.get(key) {
+            runCatching { fetchRemote(it) }.getOrElse { e ->
+                log.warn("Naver stock search failed for '{}': {}", key, e.message)
+                emptyList()
+            }
         }
-        cache[key] = CacheEntry(results, now + ttlMs)
         return results.take(limit)
     }
 

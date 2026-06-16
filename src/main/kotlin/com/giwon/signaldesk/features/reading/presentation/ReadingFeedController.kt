@@ -23,7 +23,7 @@ class ReadingFeedController(
     private val authContext: AuthContext,
 ) {
     private fun requireUserId(auth: String?): UUID =
-        authContext.optionalUserId(auth) ?: error("auth required")
+        authContext.optionalUserId(auth) ?: throw com.giwon.signaldesk.features.auth.application.AuthException("로그인이 필요해요.")
 
     private fun toPostResponse(v: ReadingFeedService.PostWithCalls) =
         PostResponse.from(v.post, v.leaderName, v.calls.map { CallResponse.from(it) })

@@ -57,13 +57,14 @@ class DartDisclosureService(
         val newItems = newRceptNos.mapNotNull { byRceptNo[it] }
         log.info("dart scan — new disclosures count={}", newItems.size)
 
+        // seen 먼저 기록 후 푸시 — 푸시/크래시가 다음 스캔에서 같은 공시를 중복 발송하지 않게(at-most-once).
+        seenRepo.markSeen(newItems.map { it.toDisclosure() })
+
         // 상장사 + 사용자 보유/관심 종목 매칭만 푸시
         val listed = newItems.filter { it.stockCode.isKrStockCode() }
         if (listed.isNotEmpty()) {
             dispatchPushes(listed)
         }
-
-        seenRepo.markSeen(newItems.map { it.toDisclosure() })
         return newItems.size
     }
 

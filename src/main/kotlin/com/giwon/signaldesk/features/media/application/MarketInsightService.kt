@@ -30,7 +30,8 @@ class MarketInsightService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    @Cacheable("market-insight")
+    // unless: null(=Gemini 일시 실패/미설정)은 캐시하지 않음 — 단발 실패가 30분간 'no insight'로 굳지 않게.
+    @Cacheable("market-insight", unless = "#result == null")
     fun getTodayInsight(): MarketInsightAnalysis? {
         if (!geminiClient.isEnabled()) {
             log.info("MarketInsightService skipped — Gemini 미설정")

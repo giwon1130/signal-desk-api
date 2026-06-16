@@ -24,7 +24,7 @@ class LeaderboardController(
         @RequestHeader("Authorization", required = false) auth: String?,
         @PathVariable leagueId: String,
     ): ApiResponse<List<LeaderboardEntryResponse>> {
-        authContext.optionalUserId(auth) ?: error("auth required")
+        authContext.optionalUserId(auth) ?: throw com.giwon.signaldesk.features.auth.application.AuthException("로그인이 필요해요.")
         val list = leaderboard.entries(UUID.fromString(leagueId))
         return ApiResponse(true, list.map(LeaderboardEntryResponse::from))
     }

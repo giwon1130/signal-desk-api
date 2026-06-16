@@ -56,10 +56,7 @@ class SecEdgarDisclosureService(
             item to ticker
         }
 
-        if (freshWithTicker.isNotEmpty()) {
-            dispatchPushes(freshWithTicker)
-        }
-
+        // seen 먼저 기록 후 푸시 — 푸시/크래시가 다음 스캔에서 같은 공시를 중복 발송하지 않게(at-most-once).
         // Mark all fresh as seen (including unmatched).
         jdbc.batchUpdate(
             """
@@ -78,6 +75,10 @@ class SecEdgarDisclosureService(
                 )
             },
         )
+
+        if (freshWithTicker.isNotEmpty()) {
+            dispatchPushes(freshWithTicker)
+        }
 
         log.info("SEC EDGAR scan — new={}, ticker_matched={}", fresh.size, freshWithTicker.size)
         return fresh.size

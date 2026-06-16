@@ -95,6 +95,7 @@ class PositionService(
             val first = list.first()
             var buyQty = 0L
             var buyNotional = 0L
+            var buyFeeTotal = 0L
             var sellQty = 0L
             var sellNotional = 0L
             var realizedPnl = 0L
@@ -105,11 +106,14 @@ class PositionService(
                     TradeSide.BUY -> {
                         buyQty += t.quantity
                         buyNotional += t.notionalAmount
+                        buyFeeTotal += t.feeAmount
                     }
                     TradeSide.SELL -> {
-                        // 이 시점의 averageCost = 지금까지의 buyNotional / buyQty
+                        // 이 시점의 averageCost = 지금까지의 buyNotional / buyQty.
+                        // 매수 수수료도 비례분만큼 원가에 포함 — 실현손익이 매수측 수수료를 빠뜨려 과대계상되던 문제 보정.
                         val avgAtSell = if (buyQty > 0) buyNotional.toDouble() / buyQty else 0.0
-                        val costForSellQty = (avgAtSell * t.quantity).toLong()
+                        val avgBuyFee = if (buyQty > 0) buyFeeTotal.toDouble() / buyQty else 0.0
+                        val costForSellQty = ((avgAtSell + avgBuyFee) * t.quantity).toLong()
                         realizedPnl += t.notionalAmount - costForSellQty - t.feeAmount
                         sellQty += t.quantity
                         sellNotional += t.notionalAmount

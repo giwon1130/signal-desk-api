@@ -59,6 +59,8 @@ class AssistantService(
         val q = question.trim()
         require(q.isNotBlank()) { "질문을 입력해 주세요." }
         require(q.length <= MAX_QUESTION_LENGTH) { "질문은 ${MAX_QUESTION_LENGTH}자 이내로 입력해 주세요." }
+        // history 를 진입 시점에 바운드(턴 수·텍스트 길이) — 거대한 history 본문이 프롬프트/메모리를 부풀리지 않게.
+        val safeHistory = history.takeLast(MAX_HISTORY_TURNS).map { it.copy(text = it.text.take(MAX_HISTORY_TURN_LENGTH)) }
         if (!geminiClient.isEnabled()) return AskResult(null, limitExceeded = false, remaining = null, dailyLimit = null)
 
         val today = LocalDate.now(KST)
@@ -70,7 +72,7 @@ class AssistantService(
         }
         if (limit == null) recordUnlimitedUsage(userId, today)
 
-        val prompt = buildPrompt(userId, q, history)
+        val prompt = buildPrompt(userId, q, safeHistory)
         // PRO 는 상위 모델 + 긴 답변(thinking 허용). FREE 는 기존 기본 모델·2048토큰.
         val pro = runCatching { planService.isPro(userId) }.getOrDefault(false)
         val answer = geminiClient.generateText(

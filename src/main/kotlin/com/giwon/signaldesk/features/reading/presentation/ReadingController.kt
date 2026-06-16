@@ -35,7 +35,7 @@ class ReadingController(
     private val log = LoggerFactory.getLogger(javaClass)
 
     private fun requireUserId(auth: String?): UUID =
-        authContext.optionalUserId(auth) ?: error("auth required")
+        authContext.optionalUserId(auth) ?: throw com.giwon.signaldesk.features.auth.application.AuthException("로그인이 필요해요.")
 
     // ─── 리더 ────────────────────────────────────────────────────────────────
     /** 리더 신청 (운영자는 즉시 승인). */

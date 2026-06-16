@@ -85,8 +85,14 @@ class LeaderboardService(
                 positionCount = pos.size,
             )
         }
-        return unsorted.sortedByDescending { it.totalAssets }
-            .mapIndexed { i, e -> e.copy(rank = i + 1) }
+        // 동점 결정적 처리 — totalAssets 같으면 먼저 참가한 사람이 상위, 그래도 같으면 userId 로 완전 결정.
+        // (이전엔 동점 시 DB row 순서에 따라 순위가 비결정적이라 finalRank 가 흔들렸음.)
+        val joinedAt = parts.associate { it.userId to it.joinedAt }
+        return unsorted.sortedWith(
+            compareByDescending<LeaderboardEntry> { it.totalAssets }
+                .thenBy { joinedAt[it.userId] }
+                .thenBy { it.userId },
+        ).mapIndexed { i, e -> e.copy(rank = i + 1) }
     }
 
     /** league 통화 기준 평가금 (position 한 종목). */

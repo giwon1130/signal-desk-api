@@ -29,7 +29,7 @@ class LeagueController(
     private val log = LoggerFactory.getLogger(javaClass)
 
     private fun requireUserId(auth: String?): UUID =
-        authContext.optionalUserId(auth) ?: error("auth required")
+        authContext.optionalUserId(auth) ?: throw com.giwon.signaldesk.features.auth.application.AuthException("로그인이 필요해요.")
 
     /** 새 league 생성 (DRAFT). 호스트는 자동 첫 참가자. */
     @PostMapping

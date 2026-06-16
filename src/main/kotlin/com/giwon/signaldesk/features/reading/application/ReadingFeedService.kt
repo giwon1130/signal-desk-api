@@ -71,14 +71,15 @@ class ReadingFeedService(
         val calls = repo.callsByLeader(leaderUserId)
         if (calls.isEmpty()) return LeaderStats(0, 0, 0.0, null)
         val hit = calls.count { it.status == CallStatus.HIT }
-        // 적중률 = 적중 / 결착(HIT+CLOSED). 미결착(ACTIVE)은 분모에서 제외 — 진행 중 콜이 적중률을 끌어내리지 않게.
-        val resolved = calls.count { it.status == CallStatus.HIT || it.status == CallStatus.CLOSED }
-        val perfs = withPerformance(calls).mapNotNull { it.returnPct }
+        // 적중률·평균수익 모두 '결착(HIT+CLOSED)' 콜만 모집단으로 — 진행 중(ACTIVE)의 시세 변동이
+        // 지표를 흔들지 않게 일치시킴(이전엔 avgReturn 이 ACTIVE 라이브 수익까지 섞었음).
+        val resolvedCalls = calls.filter { it.status == CallStatus.HIT || it.status == CallStatus.CLOSED }
+        val perfs = withPerformance(resolvedCalls).mapNotNull { it.returnPct }
         val avg = if (perfs.isEmpty()) null else perfs.average()
         return LeaderStats(
             totalCalls = calls.size,
             hitCount = hit,
-            hitRate = if (resolved > 0) hit.toDouble() / resolved else 0.0,
+            hitRate = if (resolvedCalls.isNotEmpty()) hit.toDouble() / resolvedCalls.size else 0.0,
             avgReturnPct = avg,
         )
     }
