@@ -50,6 +50,7 @@ class YahooQuoteClientTest {
             objectMapper = objectMapper,
             enabled = true,
             baseUrl = "http://127.0.0.1:${server.address.port}",
+            httpFetchExecutor = java.util.concurrent.Executors.newFixedThreadPool(2),
         )
     }
 

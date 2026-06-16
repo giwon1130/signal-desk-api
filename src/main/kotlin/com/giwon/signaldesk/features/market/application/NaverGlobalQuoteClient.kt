@@ -10,6 +10,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
 
 /**
  * Naver 금융 "해외주식" 조회 API 로 미국 주식 단일 티커 현재가를 가져온다.
@@ -29,6 +30,7 @@ class NaverGlobalQuoteClient(
     private val objectMapper: ObjectMapper,
     @Value("\${signal-desk.integrations.naver-global.enabled:true}") private val enabled: Boolean,
     @Value("\${signal-desk.integrations.naver-global.base-url:https://api.stock.naver.com}") private val baseUrl: String,
+    @org.springframework.beans.factory.annotation.Qualifier("httpFetchExecutor") private val httpFetchExecutor: ExecutorService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val httpClient = HttpClient.newBuilder()
@@ -40,11 +42,11 @@ class NaverGlobalQuoteClient(
         if (!enabled || tickers.isEmpty()) return emptyMap()
 
         val futures = tickers.distinct().map { ticker ->
-            CompletableFuture.supplyAsync {
+            CompletableFuture.supplyAsync({
                 runCatching { fetchOne(ticker) }
                     .onFailure { log.debug("Naver global quote failed. ticker={}, err={}", ticker, it.message) }
                     .getOrNull()
-            }
+            }, httpFetchExecutor)
         }
         return futures
             .mapNotNull { it.join() }

@@ -1,8 +1,10 @@
 package com.giwon.signaldesk.features.market.application
 
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
 import kotlin.math.roundToInt
 
 /**
@@ -13,24 +15,25 @@ import kotlin.math.roundToInt
 class TopMoversService(
     private val topMoversClient: TopMoversClient,
     private val yahooFinanceScreenerClient: YahooFinanceScreenerClient,
+    @Qualifier("httpFetchExecutor") private val httpFetchExecutor: ExecutorService,
 ) {
     fun fetchTopMovers(limit: Int = 10): TopMoversResponse {
         // KR — Naver 시세 페이지 scraping
-        val kospiGainers = CompletableFuture.supplyAsync {
+        val kospiGainers = CompletableFuture.supplyAsync({
             topMoversClient.fetchTopMovers(TopMoversClient.KoreanMarket.KOSPI, TopMoversClient.Direction.GAINERS, limit)
-        }
-        val kospiLosers = CompletableFuture.supplyAsync {
+        }, httpFetchExecutor)
+        val kospiLosers = CompletableFuture.supplyAsync({
             topMoversClient.fetchTopMovers(TopMoversClient.KoreanMarket.KOSPI, TopMoversClient.Direction.LOSERS, limit)
-        }
-        val kosdaqGainers = CompletableFuture.supplyAsync {
+        }, httpFetchExecutor)
+        val kosdaqGainers = CompletableFuture.supplyAsync({
             topMoversClient.fetchTopMovers(TopMoversClient.KoreanMarket.KOSDAQ, TopMoversClient.Direction.GAINERS, limit)
-        }
-        val kosdaqLosers = CompletableFuture.supplyAsync {
+        }, httpFetchExecutor)
+        val kosdaqLosers = CompletableFuture.supplyAsync({
             topMoversClient.fetchTopMovers(TopMoversClient.KoreanMarket.KOSDAQ, TopMoversClient.Direction.LOSERS, limit)
-        }
+        }, httpFetchExecutor)
         // US — Yahoo Finance screener
-        val usGainers = CompletableFuture.supplyAsync { yahooFinanceScreenerClient.fetchGainers(limit) }
-        val usLosers = CompletableFuture.supplyAsync { yahooFinanceScreenerClient.fetchLosers(limit) }
+        val usGainers = CompletableFuture.supplyAsync({ yahooFinanceScreenerClient.fetchGainers(limit) }, httpFetchExecutor)
+        val usLosers = CompletableFuture.supplyAsync({ yahooFinanceScreenerClient.fetchLosers(limit) }, httpFetchExecutor)
 
         return TopMoversResponse(
             generatedAt = Instant.now().toString(),

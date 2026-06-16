@@ -1,6 +1,7 @@
 package com.giwon.signaldesk.features.market.application
 
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Component
 import java.net.URI
@@ -10,6 +11,7 @@ import java.net.http.HttpResponse
 import java.nio.charset.Charset
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
 
 /**
  * 네이버 finance 매매상위 페이지 스크래핑 — 외인/기관 순매수·매도 상위 종목.
@@ -19,7 +21,9 @@ import java.util.concurrent.CompletableFuture
  * 정규식만으로 종목명/코드 페어 추출. 거래대금 같은 부가 정보는 단순화를 위해 생략.
  */
 @Component
-class NaverInvestorRankClient {
+class NaverInvestorRankClient(
+    @Qualifier("httpFetchExecutor") private val httpFetchExecutor: ExecutorService,
+) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()
     private val eucKr: Charset = Charset.forName("EUC-KR")
@@ -66,9 +70,9 @@ class NaverInvestorRankClient {
             "kospiInstitutionSell" to Triple("KOSPI", "INSTITUTION", "SELL"),
             "kosdaqForeignBuy" to Triple("KOSDAQ", "FOREIGN", "BUY"),
         ).mapValues { (_, t) ->
-            CompletableFuture.supplyAsync {
+            CompletableFuture.supplyAsync({
                 runCatching { fetchTop(t.first, t.second, t.third, limit) }.getOrElse { emptyList() }
-            }
+            }, httpFetchExecutor)
         }
         return InvestorFlowSnapshot(
             kospiForeignBuy = tasks.getValue("kospiForeignBuy").join(),

@@ -30,6 +30,8 @@ interface ReadingRepository {
     fun followingLeaderIds(followerUserId: UUID): List<UUID>
     fun followerIds(leaderUserId: UUID): List<UUID>
     fun followerCount(leaderUserId: UUID): Int
+    /** 일괄 — 리딩 둘러보기에서 리더별 followerCount N+1 방지. */
+    fun followerCounts(leaderUserIds: Collection<UUID>): Map<UUID, Int>
 
     // Post
     fun createPost(post: ReadingPost): ReadingPost
@@ -43,6 +45,8 @@ interface ReadingRepository {
     /** 일괄 조회 — 피드 렌더에서 글별 단건 조회 N+1 방지. */
     fun callsByPosts(postIds: Collection<UUID>): Map<UUID, List<ReadingCall>>
     fun callsByLeader(leaderUserId: UUID): List<ReadingCall>
+    /** 일괄 — 리딩 둘러보기에서 리더별 callsByLeader N+1 방지. */
+    fun callsByLeaders(leaderUserIds: Collection<UUID>): Map<UUID, List<ReadingCall>>
     fun activeCalls(): List<ReadingCall>
     /** 콜 상태/결착 갱신 — entry_price 는 불변, hitPrice 는 HIT/CLOSED 결착가 박제. */
     fun markCallStatus(callId: UUID, status: CallStatus, hitAt: Instant?, hitPrice: java.math.BigDecimal? = null)

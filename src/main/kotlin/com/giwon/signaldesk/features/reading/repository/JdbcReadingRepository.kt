@@ -145,6 +145,17 @@ class JdbcReadingRepository(
             Int::class.java, leaderUserId.toString(),
         ) ?: 0
 
+    override fun followerCounts(leaderUserIds: Collection<UUID>): Map<UUID, Int> {
+        if (leaderUserIds.isEmpty()) return emptyMap()
+        val placeholders = leaderUserIds.joinToString(",") { "?::uuid" }
+        return jdbc.query(
+            "select leader_user_id, count(*) as c from signal_desk_reading_follow " +
+                "where leader_user_id in ($placeholders) group by leader_user_id",
+            { rs, _ -> UUID.fromString(rs.getString("leader_user_id")) to rs.getInt("c") },
+            *leaderUserIds.map { it.toString() }.toTypedArray(),
+        ).toMap()
+    }
+
     // ─── Post ────────────────────────────────────────────────────────────────
     override fun createPost(post: ReadingPost): ReadingPost {
         jdbc.update(
@@ -216,6 +227,15 @@ class JdbcReadingRepository(
             "select * from signal_desk_reading_call where leader_user_id = ?::uuid order by created_at desc",
             callMapper, leaderUserId.toString(),
         )
+
+    override fun callsByLeaders(leaderUserIds: Collection<UUID>): Map<UUID, List<ReadingCall>> {
+        if (leaderUserIds.isEmpty()) return emptyMap()
+        val placeholders = leaderUserIds.joinToString(",") { "?::uuid" }
+        return jdbc.query(
+            "select * from signal_desk_reading_call where leader_user_id in ($placeholders) order by created_at desc",
+            callMapper, *leaderUserIds.map { it.toString() }.toTypedArray(),
+        ).groupBy { it.leaderUserId }
+    }
 
     override fun activeCalls(): List<ReadingCall> =
         jdbc.query("select * from signal_desk_reading_call where status = 'ACTIVE'", callMapper)

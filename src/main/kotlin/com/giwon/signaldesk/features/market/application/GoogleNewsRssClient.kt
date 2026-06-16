@@ -15,6 +15,7 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
 import javax.xml.parsers.DocumentBuilderFactory
 
 /**
@@ -29,6 +30,7 @@ class GoogleNewsRssClient(
     @Value("\${signal-desk.integrations.google-news.enabled:true}") private val enabled: Boolean,
     @Value("\${signal-desk.integrations.google-news.base-url:https://news.google.com/rss/search}") private val baseUrl: String,
     @Value("\${signal-desk.integrations.google-news.per-query-limit:15}") private val perQueryLimit: Int,
+    @org.springframework.beans.factory.annotation.Qualifier("httpFetchExecutor") private val httpFetchExecutor: ExecutorService,
 ) {
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(3))
@@ -40,16 +42,16 @@ class GoogleNewsRssClient(
 
         return runCatching {
             val krFutures = KR_QUERIES.map { query ->
-                CompletableFuture.supplyAsync {
+                CompletableFuture.supplyAsync({
                     runCatching { fetchRss(market = "KR", query = query, impact = KR_IMPACT) }
                         .getOrElse { emptyList() }
-                }
+                }, httpFetchExecutor)
             }
             val usFutures = US_QUERIES.map { query ->
-                CompletableFuture.supplyAsync {
+                CompletableFuture.supplyAsync({
                     runCatching { fetchRss(market = "US", query = query, impact = US_IMPACT) }
                         .getOrElse { emptyList() }
-                }
+                }, httpFetchExecutor)
             }
             val all = (krFutures + usFutures).flatMap { it.join() }
             // URL 기준 중복 제거 (같은 기사를 다른 쿼리가 집어올 수 있음)

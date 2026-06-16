@@ -12,7 +12,7 @@ import java.time.LocalDate
 
 class SeasonalityBacktestServiceTest {
     // computeReport 는 네트워크를 안 타므로 disabled 클라이언트로 충분.
-    private val service = SeasonalityBacktestService(YahooQuoteClient(ObjectMapper(), false, "https://x"))
+    private val service = SeasonalityBacktestService(YahooQuoteClient(ObjectMapper(), false, "https://x", java.util.concurrent.Executors.newSingleThreadExecutor()))
 
     /** 1월에만 매 거래일 +0.45%(월 누적 ~+10%), 나머지 달은 flat 인 13년 합성 일봉. */
     private fun janBullBars(): List<HistoryBar> {

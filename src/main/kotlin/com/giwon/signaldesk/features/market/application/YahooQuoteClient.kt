@@ -15,6 +15,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
 
 /**
  * Yahoo Finance v8 chart API 로 임의 심볼(글로벌 지수·선물)의 현재가/등락률을 가져온다.
@@ -30,6 +31,7 @@ class YahooQuoteClient(
     private val objectMapper: ObjectMapper,
     @Value("\${signal-desk.integrations.yahoo-quote.enabled:true}") private val enabled: Boolean,
     @Value("\${signal-desk.integrations.yahoo-quote.base-url:https://query1.finance.yahoo.com}") private val baseUrl: String,
+    @org.springframework.beans.factory.annotation.Qualifier("httpFetchExecutor") private val httpFetchExecutor: ExecutorService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()
@@ -43,11 +45,11 @@ class YahooQuoteClient(
     fun fetchIndices(symbolToLabel: Map<String, String>): List<GlobalIndex> {
         if (!enabled || symbolToLabel.isEmpty()) return emptyList()
         val futures = symbolToLabel.entries.map { (symbol, label) ->
-            CompletableFuture.supplyAsync {
+            CompletableFuture.supplyAsync({
                 runCatching { fetchOne(symbol, label) }
                     .onFailure { log.debug("Yahoo quote failed. symbol={}, err={}", symbol, it.message) }
                     .getOrNull()
-            }
+            }, httpFetchExecutor)
         }
         return futures.mapNotNull { it.join() }
     }

@@ -67,8 +67,10 @@ class ReadingFeedService(
     }
 
     /** 리더 통계 — 콜 성과 집계. */
-    fun leaderStats(leaderUserId: UUID): LeaderStats {
-        val calls = repo.callsByLeader(leaderUserId)
+    fun leaderStats(leaderUserId: UUID): LeaderStats = statsFromCalls(repo.callsByLeader(leaderUserId))
+
+    /** 콜 목록 → 통계. leaderStats 와 discoverLeaders(일괄) 가 공유. */
+    private fun statsFromCalls(calls: List<ReadingCall>): LeaderStats {
         if (calls.isEmpty()) return LeaderStats(0, 0, 0.0, null)
         val hit = calls.count { it.status == CallStatus.HIT }
         // 적중률·평균수익 모두 '결착(HIT+CLOSED)' 콜만 모집단으로 — 진행 중(ACTIVE)의 시세 변동이
@@ -146,11 +148,15 @@ class ReadingFeedService(
         val leaders = repo.listApprovedLeaders()
         if (leaders.isEmpty()) return emptyList()
         val followingIds = viewerUserId?.let { repo.followingLeaderIds(it).toSet() } ?: emptySet()
+        // 리더별 콜·구독자수를 각각 1회 IN절로 일괄 조회(이전엔 리더마다 2쿼리씩 N+1).
+        val ids = leaders.map { it.userId }
+        val callsByLeader = repo.callsByLeaders(ids)
+        val followerCounts = repo.followerCounts(ids)
         return leaders.map { l ->
-            val stats = leaderStats(l.userId)
+            val stats = statsFromCalls(callsByLeader[l.userId].orEmpty())
             LeaderCard(
                 userId = l.userId, displayName = l.displayName, bio = l.bio,
-                followerCount = repo.followerCount(l.userId),
+                followerCount = followerCounts[l.userId] ?: 0,
                 totalCalls = stats.totalCalls, hitRate = stats.hitRate, avgReturnPct = stats.avgReturnPct,
                 following = l.userId == viewerUserId || l.userId in followingIds,
                 isAi = l.isAi,
