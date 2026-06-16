@@ -46,6 +46,8 @@ class AccountDeletionService(
         del("delete from signal_desk_ai_picks where user_id = ?::uuid")
         del("delete from signal_desk_ai_track_records where user_id = ?::uuid")
         del("delete from signal_desk_seasonality_rules where user_id = ?::uuid")
+        // 일별 포트폴리오 스냅샷(user-scoped, FK 없어 CASCADE 안 됨) — 탈퇴 시 재무 이력도 삭제(잔존 방지).
+        del("delete from signal_desk_daily_portfolio_snapshot where user_id = ?::uuid")
 
         // 4) 푸시/알림
         del("delete from signal_desk_push_devices where user_id = ?::uuid")
