@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 /**
@@ -42,7 +43,9 @@ class ReadingCallAlertService(
         val priceMap = priceService.currentPrices(active.map { it.market to it.ticker })
         val devicesByUser = pushRepository.listAllDevicesGroupedByUser()
         val now = Instant.now()
+        val expiryBefore = now.minus(EXPIRY_DAYS, ChronoUnit.DAYS)
         var hits = 0
+        var closed = 0
 
         for (call in active) {
             val current = priceMap[call.market to call.ticker] ?: continue
@@ -51,14 +54,20 @@ class ReadingCallAlertService(
                 .multiply(BigDecimal(100)).toDouble()
             val target = call.targetReturnPct?.toDouble() ?: DEFAULT_TARGET_PCT
             val reached = if (target >= 0) ret >= target else ret <= target
-            if (!reached) continue
-
-            repo.markCallStatus(call.id, CallStatus.HIT, now)
-            hits++
-            runCatching { notifyHit(call, ret, devicesByUser) }
-                .onFailure { log.warn("reading hit notify failed call={}: {}", call.id, it.message) }
+            if (reached) {
+                // 결착가(current) 박제 — 이후 시세 변동에도 적중/수익률 고정.
+                repo.markCallStatus(call.id, CallStatus.HIT, now, current)
+                hits++
+                runCatching { notifyHit(call, ret, devicesByUser) }
+                    .onFailure { log.warn("reading hit notify failed call={}: {}", call.id, it.message) }
+            } else if (call.entryLockedAt.isBefore(expiryBefore)) {
+                // 장기 미도달 콜은 현재가로 결착(CLOSED) — 적중률 통계에 정직 반영(무기한 ACTIVE 방지).
+                repo.markCallStatus(call.id, CallStatus.CLOSED, null, current)
+                closed++
+            }
         }
-        if (hits > 0) log.info("reading call alert — market={} active={} hits={}", marketFilter, active.size, hits)
+        if (hits > 0 || closed > 0)
+            log.info("reading call alert — market={} active={} hits={} closed={}", marketFilter, active.size, hits, closed)
     }
 
     private fun notifyHit(
@@ -97,5 +106,6 @@ class ReadingCallAlertService(
 
     companion object {
         const val DEFAULT_TARGET_PCT = 15.0
+        const val EXPIRY_DAYS = 45L  // 결착 안 된 콜 자동 종료 기준(스윙 호흡 + 여유)
     }
 }

@@ -15,16 +15,22 @@ import javax.crypto.SecretKey
 class JwtProvider(
     @Value("\${signal-desk.jwt.secret:change-me-please-make-this-at-least-32-bytes-long-secret}") private val rawSecret: String,
     @Value("\${signal-desk.jwt.expiration-hours:720}") private val expirationHours: Long,
+    @Value("\${signal-desk.store.mode:}") private val storeMode: String,
 ) {
     private val logger = LoggerFactory.getLogger(JwtProvider::class.java)
     private val key: SecretKey = Keys.hmacShaKeyFor(rawSecret.padEnd(32, 'x').toByteArray())
 
     @PostConstruct
     fun warnIfWeak() {
-        // 운영에서 기본 더미값 그대로 쓰면 토큰 위변조가 사실상 자유로움 → 부팅 시 시끄럽게 경고.
-        // 자동 fail-fast 는 안 함 (Railway 가 즉시 unhealthy 로 떨궈서 트래픽 끊김 → 운영자가 secret 못 넣고 디버깅 불가).
+        // 운영(jdbc 모드)에서 더미 시크릿이면 토큰 위변조가 자유로움 → 조용한 보안 구멍보다 기동 실패가 낫다.
+        // 로컬/file 모드는 경고만(개발 편의).
         if (rawSecret == DEFAULT_DUMMY) {
-            logger.error("⚠️  [SECURITY] signal-desk.jwt.secret 가 기본 더미값. 운영에서는 32자 이상 랜덤 secret 으로 반드시 교체.")
+            if (storeMode.equals("jdbc", ignoreCase = true)) {
+                throw IllegalStateException(
+                    "[SECURITY] signal-desk.jwt.secret 미설정(기본 더미값). 운영에서는 JWT_SECRET(32자+ 랜덤)을 반드시 설정해야 기동됩니다.",
+                )
+            }
+            logger.error("⚠️  [SECURITY] signal-desk.jwt.secret 가 기본 더미값 — 운영 전 32자 이상 랜덤 secret 으로 교체 필요.")
         } else if (rawSecret.length < 32) {
             logger.warn("⚠️  [SECURITY] signal-desk.jwt.secret 길이 ${rawSecret.length}자 — 32자 이상 권장.")
         }

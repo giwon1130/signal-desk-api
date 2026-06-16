@@ -21,6 +21,7 @@ class FlowReadingService(
     private val pipeline: BriefPipeline,
     private val geminiClient: GeminiClient,
     private val readingService: com.giwon.signaldesk.features.reading.application.ReadingService,
+    private val repository: MediaSummaryRepository,
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul")),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -74,7 +75,11 @@ class FlowReadingService(
                 visibility = com.giwon.signaldesk.features.reading.domain.PostVisibility.FOLLOWERS,
                 confirmedCalls = emptyList(),
             )
-        }.onFailure { log.warn("FlowReading publishPost failed", it) }
+        }.onFailure {
+            // 발행 실패 → 중복방지 원장 롤백(다음 스케줄 재시도). 안 그러면 그날 콘텐츠 영구 유실.
+            log.warn("FlowReading publishPost failed — 원장 롤백 videoId={}", m.videoId, it)
+            runCatching { repository.deleteByVideoId(m.videoId) }
+        }
     }
 
     /** 흐름 핵심 종목 — 급등 상위 + 외국인·기관 순매수 상위(실데이터, 환각 없음). 표시용 이름. */

@@ -113,9 +113,25 @@ class LeaderboardService(
     }
 
     /** 정산 — endsAt 도달 시 호출 (LeagueSchedulerService 에서). */
+    @org.springframework.transaction.annotation.Transactional
     fun finalize(leagueId: UUID) {
         val league = leagues.findById(leagueId) ?: error("league not found")
         require(league.status == LeagueStatus.RUNNING) { "league not RUNNING" }
+
+        // 시세 완전성 가드 — 보유 종목 시세를 못 받으면 매수가(손익 0)로 잘못 정산되므로 보류.
+        // RUNNING 유지 → 다음 스케줄러 틱에서 시세 복구 후 재시도.
+        val positionsByUser = positions.positionsByUser(leagueId)
+        val held = positionsByUser.values.flatten()
+        val krT = held.filter { it.market == "KR" }.map { it.ticker }.toSet()
+        val usT = held.filter { it.market == "US" }.map { it.ticker }.toSet()
+        val krP = if (krT.isNotEmpty()) runCatching { krQuotes.fetchKoreanQuotes(krT) }.getOrNull().orEmpty() else emptyMap()
+        val usP = if (usT.isNotEmpty()) runCatching { usQuotes.fetchUsQuotes(usT) }.getOrNull().orEmpty() else emptyMap()
+        val missing = krT.filter { it !in krP } + usT.filter { it !in usP }
+        if (missing.isNotEmpty()) {
+            log.warn("league finalize 보류 — 시세 누락 id={} 종목={}건 (다음 틱 재시도)", leagueId, missing.size)
+            return
+        }
+
         // 현재 시세로 모든 잔여 보유 평가 → final 값 계산
         val entries = entries(leagueId)
         // (모든 잔여 position 가상 청산 — DB 에 SELL trade 까지 INSERT 하지는 않고 evaluation 값만 사용.

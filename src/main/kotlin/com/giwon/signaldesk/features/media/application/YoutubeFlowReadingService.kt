@@ -100,7 +100,11 @@ class YoutubeFlowReadingService(
                     visibility = com.giwon.signaldesk.features.reading.domain.PostVisibility.FOLLOWERS,
                     confirmedCalls = emptyList(),
                 )
-            }.onFailure { log.warn("YoutubeFlow publishPost failed", it) }
+            }.onFailure {
+                // 발행 실패 → 중복방지 원장 롤백(다음 스케줄 재시도).
+                log.warn("YoutubeFlow publishPost failed — 원장 롤백 videoId={}", videoId, it)
+                runCatching { repository.deleteByVideoId(videoId) }
+            }
             return saved
         }
         log.info("YoutubeFlow({}) no transcript-able video among recent (attempts={})", cfg.label, attempts)

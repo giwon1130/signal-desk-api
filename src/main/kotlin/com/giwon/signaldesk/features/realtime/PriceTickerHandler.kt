@@ -62,7 +62,12 @@ class PriceTickerHandler(
         if (tickers.isEmpty()) return
         val subs = subscriptions[session.id] ?: return
         when (action) {
-            "subscribe"   -> subs.addAll(tickers)
+            "subscribe"   -> {
+                // 세션당 구독 상한 — 단일 연결이 수천 티커를 구독해 매 5초 외부 fetch 를 키우는 abuse 방지.
+                val room = MAX_SUBS_PER_SESSION - subs.size
+                if (room > 0) subs.addAll(tickers.take(room))
+                if (tickers.size > room) log.warn("WS {} subscription capped at {} (requested +{})", session.id, MAX_SUBS_PER_SESSION, tickers.size)
+            }
             "unsubscribe" -> subs.removeAll(tickers.toSet())
         }
     }
@@ -124,6 +129,11 @@ class PriceTickerHandler(
             val frame = mapper.writeValueAsString(mapOf("type" to "snapshot", "prices" to payload))
             runCatching { session.sendMessage(TextMessage(frame)) }
         }
+    }
+
+    companion object {
+        /** 세션당 최대 구독 티커 수 — 정상 사용자는 관심+보유 수십 종목 수준. */
+        private const val MAX_SUBS_PER_SESSION = 100
     }
 }
 

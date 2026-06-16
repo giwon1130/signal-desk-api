@@ -6,6 +6,8 @@ import java.util.UUID
 interface PushRepository {
     fun upsertDevice(userId: UUID, platform: String, expoToken: String): PushDevice
     fun deleteDevice(userId: UUID, expoToken: String)
+    /** Expo DeviceNotRegistered 등으로 죽은 토큰을 사용자 무관하게 제거. 반환: 삭제 행 수. */
+    fun deleteByToken(expoToken: String): Int
     fun listDevices(userId: UUID): List<PushDevice>
     fun listAllDevicesGroupedByUser(): Map<UUID, List<PushDevice>>
 

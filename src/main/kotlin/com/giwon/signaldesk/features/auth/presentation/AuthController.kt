@@ -1,6 +1,5 @@
 package com.giwon.signaldesk.features.auth.presentation
 
-import com.giwon.signaldesk.features.auth.application.AuthException
 import com.giwon.signaldesk.features.auth.application.AuthService
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Email
@@ -75,10 +74,4 @@ class AuthController(
     private fun AuthService.AuthResult.toResponse() =
         AuthResponse(token, userId, email, nickname, plan, admin)
 }
-
-@RestControllerAdvice
-class AuthExceptionHandler {
-    @ExceptionHandler(AuthException::class)
-    fun handle(e: AuthException) =
-        ResponseEntity.badRequest().body(mapOf("error" to (e.message ?: "auth error")))
-}
+// AuthException 은 전역 ValidationExceptionHandler 에서 401 + {"error": 메시지} 로 처리(로그인 실패는 401 이 정확).

@@ -23,6 +23,8 @@ class ExpoPushClient(
     @Value("\${signal-desk.integrations.expo.endpoint:https://exp.host/--/api/v2/push/send}") private val endpoint: String,
     // jdbc 모드에서만 존재 — 없으면(방해금지 미적용) 전량 발송. 순환참조 없음(AlertPreferenceService 는 ExpoPushClient 미참조).
     @Autowired(required = false) private val alertPreferenceService: AlertPreferenceService? = null,
+    // jdbc 모드에서만 존재 — DeviceNotRegistered 토큰 정리용(없으면 정리 스킵). 순환참조 없음(저수준 repo).
+    @Autowired(required = false) private val pushRepository: PushRepository? = null,
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul")),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -67,7 +69,13 @@ class ExpoPushClient(
                 if (t["status"]?.asText() == "error") {
                     errorCount++
                     val detail = t["details"]?.get("error")?.asText() ?: t["message"]?.asText() ?: "unknown"
-                    log.warn("Expo push ticket error. token={}, error={}", chunk.getOrNull(i)?.to, detail)
+                    val token = chunk.getOrNull(i)?.to
+                    log.warn("Expo push ticket error. token={}, error={}", token, detail)
+                    // 죽은 토큰은 제거 — 앱 삭제/토큰 갱신 후 영구 실패 토큰이 매 발송마다 쌓이지 않게.
+                    if (detail == "DeviceNotRegistered" && token != null) {
+                        runCatching { pushRepository?.deleteByToken(token) }
+                            .onSuccess { if ((it ?: 0) > 0) log.info("dead push token pruned. token={}", token) }
+                    }
                 }
             }
             log.info("Expo push sent. count={}, ticketErrors={}", chunk.size, errorCount)

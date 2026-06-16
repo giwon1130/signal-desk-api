@@ -43,9 +43,12 @@ class ReportCallService(
         var published = 0
         for (r in buys) {
             if (published >= dailyLimit) break
-            if (!force && isSeen(r.reportIdx)) continue
-            val entry = prices[r.ticker]?.exactPrice?.takeIf { it > 0 } ?: continue
-            if (r.targetPrice <= entry) continue  // 상승 여력 없는 콜은 스킵
+            // 발행 전 원자적 클레임(insert-on-conflict) — 동시 실행/재호출에도 1회만 발행(lock-once).
+            // 중복방지는 force 와 무관하게 항상 적용(force 가 중복 발행을 만들지 않게).
+            if (!claimSeen(r.reportIdx)) continue
+            val entry = prices[r.ticker]?.exactPrice?.takeIf { it > 0 }
+            if (entry == null) { releaseSeen(r.reportIdx); continue }
+            if (r.targetPrice <= entry) { releaseSeen(r.reportIdx); continue }  // 상승 여력 없는 콜은 스킵
 
             val targetReturnPct = ((r.targetPrice - entry) / entry) * 100
             val (stop, stopBasis) = suggestStop(r.ticker, entry)
@@ -71,7 +74,8 @@ class ReportCallService(
                 )
             }.onFailure { log.warn("ReportCall publish failed for {} ({})", r.name, r.ticker, it) }.isSuccess
 
-            if (ok) { markSeen(r.reportIdx); published++; log.info("ReportCall published {} {} target={}", r.name, r.ticker, r.targetPrice) }
+            if (ok) { published++; log.info("ReportCall published {} {} target={}", r.name, r.ticker, r.targetPrice) }
+            else releaseSeen(r.reportIdx)  // 발행 실패 → 클레임 롤백(다음 실행 재시도)
         }
         return published
     }
@@ -103,12 +107,14 @@ class ReportCallService(
         return o.contains("BUY") || opinion.contains("매수") || o.contains("STRONGBUY") || o.contains("OUTPERFORM")
     }
 
-    private fun isSeen(reportIdx: String): Boolean =
-        (jdbc.queryForObject("select count(*) from signal_desk_report_call_seen where report_key = ?", Int::class.java, reportIdx) ?: 0) > 0
-
-    private fun markSeen(reportIdx: String) {
+    /** 원자적 클레임 — insert 성공(영향 1행) 시에만 true. 동시 실행/중복 호출은 충돌로 false → 1회만 발행. */
+    private fun claimSeen(reportIdx: String): Boolean =
         runCatching {
-            jdbc.update("insert into signal_desk_report_call_seen (report_key) values (?) on conflict (report_key) do nothing", reportIdx)
-        }
+            jdbc.update("insert into signal_desk_report_call_seen (report_key) values (?) on conflict (report_key) do nothing", reportIdx) > 0
+        }.getOrDefault(false)
+
+    /** 클레임 롤백 — 발행 실패/스킵 시 다음 실행에서 재시도되도록 원장에서 제거. */
+    private fun releaseSeen(reportIdx: String) {
+        runCatching { jdbc.update("delete from signal_desk_report_call_seen where report_key = ?", reportIdx) }
     }
 }

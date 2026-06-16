@@ -22,6 +22,7 @@ import java.util.UUID
 class ReadingFeedService(
     private val repo: ReadingRepository,
     private val priceService: ReadingPriceService,
+    private val planService: com.giwon.signaldesk.features.plan.PlanService,
 ) {
     data class PostWithCalls(
         val post: ReadingPost,
@@ -38,7 +39,13 @@ class ReadingFeedService(
 
     /** 내 피드 — 구독 리더 + 본인(리더면) 글. 최신순. */
     fun feed(userId: UUID, limit: Int = 50): List<PostWithCalls> {
-        val leaderIds = (repo.followingLeaderIds(userId) + listOfNotNull(repo.findLeader(userId)?.userId)).distinct()
+        var leaderIds = (repo.followingLeaderIds(userId) + listOfNotNull(repo.findLeader(userId)?.userId)).distinct()
+        if (leaderIds.isEmpty()) return emptyList()
+        // 구독 후 PRO 만료 시 AI 리더 글 노출 차단(접근 시점 라이브 재확인). 본인이 AI는 아님.
+        if (!planService.isPro(userId)) {
+            val aiLeaderIds = repo.findLeaders(leaderIds).filterValues { it.isAi }.keys
+            if (aiLeaderIds.isNotEmpty()) leaderIds = leaderIds.filter { it !in aiLeaderIds }
+        }
         if (leaderIds.isEmpty()) return emptyList()
         val posts = repo.postsByLeaders(leaderIds, limit)
         return buildPostViews(posts)
@@ -49,7 +56,10 @@ class ReadingFeedService(
      * FOLLOWERS 공개 글은 구독자/본인에게만 — 비구독자는 PUBLIC 글만 본다(AI 리더 PRO 게이트 + 비공개글 누수 방지).
      */
     fun leaderPosts(leaderUserId: UUID, viewerUserId: UUID?, limit: Int = 50): List<PostWithCalls> {
-        val canSeeFollowers = viewerUserId != null &&
+        // AI 리더의 FOLLOWERS 글은 PRO 전용 — 구독 후 만료한 뷰어는 PUBLIC 만 보이게(접근 시점 재확인).
+        val isAiLeader = repo.findLeader(leaderUserId)?.isAi == true
+        val proOk = !isAiLeader || (viewerUserId != null && planService.isPro(viewerUserId))
+        val canSeeFollowers = proOk && viewerUserId != null &&
             (viewerUserId == leaderUserId || viewerUserId in repo.followerIds(leaderUserId))
         val posts = repo.postsByLeader(leaderUserId, limit)
             .filter { canSeeFollowers || it.visibility == com.giwon.signaldesk.features.reading.domain.PostVisibility.PUBLIC }
@@ -61,12 +71,14 @@ class ReadingFeedService(
         val calls = repo.callsByLeader(leaderUserId)
         if (calls.isEmpty()) return LeaderStats(0, 0, 0.0, null)
         val hit = calls.count { it.status == CallStatus.HIT }
+        // 적중률 = 적중 / 결착(HIT+CLOSED). 미결착(ACTIVE)은 분모에서 제외 — 진행 중 콜이 적중률을 끌어내리지 않게.
+        val resolved = calls.count { it.status == CallStatus.HIT || it.status == CallStatus.CLOSED }
         val perfs = withPerformance(calls).mapNotNull { it.returnPct }
         val avg = if (perfs.isEmpty()) null else perfs.average()
         return LeaderStats(
             totalCalls = calls.size,
             hitCount = hit,
-            hitRate = hit.toDouble() / calls.size,
+            hitRate = if (resolved > 0) hit.toDouble() / resolved else 0.0,
             avgReturnPct = avg,
         )
     }
@@ -93,13 +105,15 @@ class ReadingFeedService(
     }
 
     private fun toPerformance(call: ReadingCall, currentPrice: BigDecimal?): CallPerformance {
-        val ret = currentPrice?.let {
+        // HIT/CLOSED 는 결착가(박제)로 수익률 고정 — 결착 후 시세가 흔들려도 성과는 불변(신뢰 핵심).
+        val priceForReturn = if (call.status != CallStatus.ACTIVE && call.hitPrice != null) call.hitPrice else currentPrice
+        val ret = priceForReturn?.let {
             it.subtract(call.entryPrice)
                 .divide(call.entryPrice, 6, RoundingMode.HALF_UP)
                 .multiply(BigDecimal(100))
                 .toDouble()
         }
-        return CallPerformance(call, currentPrice, ret)
+        return CallPerformance(call, priceForReturn, ret)
     }
 
     fun getLeader(leaderUserId: UUID): Leader? = repo.findLeader(leaderUserId)

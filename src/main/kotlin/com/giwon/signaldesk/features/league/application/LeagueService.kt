@@ -122,14 +122,20 @@ class LeagueService(
         require(participants.count(l.id) < MAX_PARTICIPANTS) {
             "league full (max=$MAX_PARTICIPANTS)"
         }
-        val p = participants.add(Participant(
-            leagueId = l.id, userId = userId,
-            joinedAt = Instant.now(),
-            nickname = nickname.ifBlank { "참가자" },
-            avatarEmoji = avatarEmoji.ifBlank { "🐱" },
-            cashBalance = l.startingCapital,
-            finalReturnRate = null, finalRank = null,
-        ))
+        val p = try {
+            participants.add(Participant(
+                leagueId = l.id, userId = userId,
+                joinedAt = Instant.now(),
+                nickname = nickname.ifBlank { "참가자" },
+                avatarEmoji = avatarEmoji.ifBlank { "🐱" },
+                cashBalance = l.startingCapital,
+                finalReturnRate = null, finalRank = null,
+            ))
+        } catch (e: org.springframework.dao.DataIntegrityViolationException) {
+            // 동시 더블탭 등으로 (league,user) 유니크 충돌 — 이미 참가한 것으로 보고 멱등 반환.
+            participants.find(l.id, userId)?.let { return l to it }
+            throw e
+        }
         log.info("league joined — id={} user={}", l.id, userId)
         return l to p
     }

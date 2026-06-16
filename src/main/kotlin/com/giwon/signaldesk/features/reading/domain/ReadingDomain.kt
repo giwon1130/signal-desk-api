@@ -64,6 +64,7 @@ data class ReadingCall(
     val targetReturnPct: BigDecimal?,  // null 이면 기본 +15% 알림 기준
     val status: CallStatus,
     val hitAt: Instant?,
+    val hitPrice: BigDecimal? = null,  // HIT/CLOSED 결착가(박제). null=미결착(ACTIVE)
     val createdAt: Instant,
 )
 

@@ -20,22 +20,28 @@ class FlowReadingScheduler(
     private val youtubeService: YoutubeFlowReadingService,
     private val reportCallService: com.giwon.signaldesk.features.reading.application.ReportCallService,
     private val marketSessionService: MarketSessionService,
+    private val adminAlert: com.giwon.signaldesk.features.admin.AdminAlertService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private fun isKrTradingDay() = marketSessionService.isKrTradingDay(LocalDate.now(ZoneId.of("Asia/Seoul")))
+
+    private fun onFail(subject: String, e: Throwable) {
+        log.error("{} failed", subject, e)
+        adminAlert.notifyFailure(subject, e.message ?: e.javaClass.simpleName)
+    }
 
     @Scheduled(cron = "0 50 8 * * MON-FRI", zone = "Asia/Seoul")
     fun runPreopen() {
         if (!isKrTradingDay()) return
         runCatching { service.runFlow(FlowReadingService.Slot.PREOPEN) }
-            .onFailure { log.error("Flow reading(PREOPEN) scheduler failed", it) }
+            .onFailure { onFail("Flow reading(PREOPEN)", it) }
     }
 
     @Scheduled(cron = "0 50 15 * * MON-FRI", zone = "Asia/Seoul")
     fun runClose() {
         if (!isKrTradingDay()) return
         runCatching { service.runFlow(FlowReadingService.Slot.CLOSE) }
-            .onFailure { log.error("Flow reading(CLOSE) scheduler failed", it) }
+            .onFailure { onFail("Flow reading(CLOSE)", it) }
     }
 
     /**
@@ -45,19 +51,19 @@ class FlowReadingScheduler(
     @Scheduled(cron = "0 0 13 * * MON-FRI", zone = "Asia/Seoul")
     fun runYoutubeMidday() {
         if (!isKrTradingDay()) return
-        runCatching { youtubeService.runAll() }.onFailure { log.error("Youtube flow(13h) failed", it) }
+        runCatching { youtubeService.runAll() }.onFailure { onFail("Youtube flow(13h)", it) }
     }
 
     @Scheduled(cron = "0 0 17 * * MON-FRI", zone = "Asia/Seoul")
     fun runYoutubeEvening() {
         if (!isKrTradingDay()) return
-        runCatching { youtubeService.runAll() }.onFailure { log.error("Youtube flow(17h) failed", it) }
+        runCatching { youtubeService.runAll() }.onFailure { onFail("Youtube flow(17h)", it) }
     }
 
     /** 📈 AI 리포트 콜 — 장 마감 후 16:30, 그날 신규 증권사 목표주가 리포트를 콜로 발행. */
     @Scheduled(cron = "0 30 16 * * MON-FRI", zone = "Asia/Seoul")
     fun runReportCalls() {
         if (!isKrTradingDay()) return
-        runCatching { reportCallService.run() }.onFailure { log.error("Report calls(16:30) failed", it) }
+        runCatching { reportCallService.run() }.onFailure { onFail("Report calls(16:30)", it) }
     }
 }

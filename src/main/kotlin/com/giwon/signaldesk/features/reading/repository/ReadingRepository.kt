@@ -44,6 +44,6 @@ interface ReadingRepository {
     fun callsByPosts(postIds: Collection<UUID>): Map<UUID, List<ReadingCall>>
     fun callsByLeader(leaderUserId: UUID): List<ReadingCall>
     fun activeCalls(): List<ReadingCall>
-    /** 콜 상태/HIT 시각만 갱신 (entry_price 등 가격 정보는 불변). */
-    fun markCallStatus(callId: UUID, status: CallStatus, hitAt: Instant?)
+    /** 콜 상태/결착 갱신 — entry_price 는 불변, hitPrice 는 HIT/CLOSED 결착가 박제. */
+    fun markCallStatus(callId: UUID, status: CallStatus, hitAt: Instant?, hitPrice: java.math.BigDecimal? = null)
 }

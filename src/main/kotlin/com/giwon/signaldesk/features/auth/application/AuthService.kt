@@ -154,6 +154,13 @@ class AuthService(
                 return null
             }
         }
+        // 이메일 검증 — 미verified 이메일로 기존 계정에 링크되면 탈취 위험. verified 만 허용.
+        val ev = node.get("email_verified")
+        val emailVerified = ev != null && (ev.asBoolean(false) || ev.asText("") == "true")
+        if (!emailVerified) {
+            logger.warn("Google OAuth: email_verified=false → 거부 email={}", node.get("email")?.asText())
+            return null
+        }
         GoogleUserInfo(
             id    = node.get("sub")?.asText() ?: return null,
             email = node.get("email")?.asText() ?: return null,
@@ -171,6 +178,12 @@ class AuthService(
         if (res.statusCode() != 200) return null
         val node = mapper.readTree(res.body())
         val account = node.get("kakao_account") ?: return null
+        // 이메일 검증 — 미verified 이메일로 기존 계정에 링크되면 탈취 위험. verified 만 허용.
+        val ev = account.get("is_email_verified")
+        if (ev != null && !ev.asBoolean(false)) {
+            logger.warn("Kakao OAuth: is_email_verified=false → 거부 email={}", account.get("email")?.asText())
+            return null
+        }
         KakaoUserInfo(
             id       = node.get("id")?.asText() ?: return null,
             email    = account.get("email")?.asText() ?: return null,

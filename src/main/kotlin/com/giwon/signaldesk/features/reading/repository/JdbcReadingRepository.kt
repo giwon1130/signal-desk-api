@@ -60,6 +60,7 @@ class JdbcReadingRepository(
             targetReturnPct = rs.getBigDecimal("target_return_pct"),
             status = CallStatus.valueOf(rs.getString("status")),
             hitAt = rs.getTimestamp("hit_at")?.toInstant(),
+            hitPrice = rs.getBigDecimal("hit_price"),
             createdAt = rs.getTimestamp("created_at").toInstant(),
         )
     }
@@ -219,10 +220,10 @@ class JdbcReadingRepository(
     override fun activeCalls(): List<ReadingCall> =
         jdbc.query("select * from signal_desk_reading_call where status = 'ACTIVE'", callMapper)
 
-    override fun markCallStatus(callId: UUID, status: CallStatus, hitAt: Instant?) {
+    override fun markCallStatus(callId: UUID, status: CallStatus, hitAt: Instant?, hitPrice: java.math.BigDecimal?) {
         jdbc.update(
-            "update signal_desk_reading_call set status = ?, hit_at = ? where id = ?::uuid",
-            status.name, hitAt?.let { Timestamp.from(it) }, callId.toString(),
+            "update signal_desk_reading_call set status = ?, hit_at = ?, hit_price = ? where id = ?::uuid",
+            status.name, hitAt?.let { Timestamp.from(it) }, hitPrice, callId.toString(),
         )
     }
 }

@@ -38,6 +38,10 @@ class JdbcMediaSummaryRepository(
             rowMapper, videoId,
         ).firstOrNull()
 
+    override fun deleteByVideoId(videoId: String) {
+        jdbcTemplate.update("delete from signal_desk_media_summaries where video_id = ?", videoId)
+    }
+
     override fun save(summary: MediaSummary): MediaSummary {
         jdbcTemplate.update(
             """

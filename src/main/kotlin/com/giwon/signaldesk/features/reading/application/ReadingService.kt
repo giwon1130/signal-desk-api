@@ -38,9 +38,12 @@ class ReadingService(
     private val expoPushClient: ExpoPushClient,
     private val planService: com.giwon.signaldesk.features.plan.PlanService,
     private val alertPreferences: com.giwon.signaldesk.features.push.application.AlertPreferenceService,
+    txManager: org.springframework.transaction.PlatformTransactionManager,
     @Value("\${signal-desk.reading.admin-emails:gwim113000@gmail.com}") private val adminEmailsProp: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+    // post + calls 의 원자적 저장만 트랜잭션으로 — 시세 lock(HTTP) 은 트랜잭션 밖에서 수행(커넥션 점유 방지).
+    private val tx = org.springframework.transaction.support.TransactionTemplate(txManager)
 
     /** 자동 승인 + 승인 권한을 가진 운영자 이메일 집합 (config, 기본 운영자 1명 고정). */
     private val adminEmails: Set<String> by lazy {
@@ -150,9 +153,9 @@ class ReadingService(
     )
 
     /**
-     * 리딩 글 게시 + 확정 콜들의 가격 박제. 트랜잭션 1건처럼 묶되, 시세 실패한 콜은 전체 거부.
+     * 리딩 글 게시 + 확정 콜들의 가격 박제. 시세 실패한 콜은 전체 거부.
+     * 시세 lock(외부 HTTP)은 트랜잭션 밖에서, post+calls DB 저장만 트랜잭션으로 묶어 커넥션 점유를 최소화.
      */
-    @org.springframework.transaction.annotation.Transactional
     fun publishPost(
         userId: UUID,
         title: String,
@@ -173,7 +176,7 @@ class ReadingService(
             createdAt = now,
         )
 
-        // 먼저 모든 콜 가격을 lock — 하나라도 실패하면 post 도 안 만든다.
+        // 먼저 모든 콜 가격을 lock(HTTP) — 트랜잭션 밖. 하나라도 실패하면 post 도 안 만든다.
         val locked = confirmedCalls.map { input ->
             val market = input.market.uppercase()
             require(market == "KR" || market == "US") { "market must be KR or US" }
@@ -196,8 +199,11 @@ class ReadingService(
             )
         }
 
-        repo.createPost(post)
-        locked.forEach { repo.insertCall(it) }
+        // DB 쓰기만 원자적으로 (HTTP 없음 → 커넥션 점유 짧음).
+        tx.executeWithoutResult {
+            repo.createPost(post)
+            locked.forEach { repo.insertCall(it) }
+        }
         log.info("reading post published — leader={} post={} calls={}", userId, post.id, locked.size)
 
         runCatching { notifyFollowersOfNewPost(userId, post, locked) }

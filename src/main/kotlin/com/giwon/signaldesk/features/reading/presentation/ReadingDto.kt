@@ -49,6 +49,7 @@ data class LeaderResponse(
     val inviteCode: String?,     // 본인/구독자 화면에서만 노출
     val status: String,
     val followerCount: Int,
+    val isAi: Boolean,
 ) {
     companion object {
         fun from(l: Leader, followerCount: Int, includeCode: Boolean) = LeaderResponse(
@@ -58,6 +59,7 @@ data class LeaderResponse(
             inviteCode = if (includeCode) l.inviteCode else null,
             status = l.status.name,
             followerCount = followerCount,
+            isAi = l.isAi,
         )
     }
 }

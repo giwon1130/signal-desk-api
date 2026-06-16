@@ -41,6 +41,9 @@ class JdbcPushRepository(
         )
     }
 
+    override fun deleteByToken(expoToken: String): Int =
+        jdbcTemplate.update("delete from signal_desk_push_devices where expo_token = ?", expoToken)
+
     override fun listDevices(userId: UUID): List<PushDevice> =
         jdbcTemplate.query(
             "select id, user_id, platform, expo_token from signal_desk_push_devices where user_id = ?::uuid",
