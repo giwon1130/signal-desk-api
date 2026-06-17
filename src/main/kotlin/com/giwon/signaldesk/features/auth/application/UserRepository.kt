@@ -19,6 +19,7 @@ class UserRepository(private val jdbc: JdbcTemplate) {
             nickname     = rs.getString("nickname"),
             googleId     = rs.getString("google_id"),
             kakaoId      = rs.getString("kakao_id"),
+            appleId      = rs.getString("apple_id"),
             createdAt    = rs.getTimestamp("created_at").toInstant(),
             plan         = rs.getString("plan") ?: "FREE",
         )
@@ -36,6 +37,9 @@ class UserRepository(private val jdbc: JdbcTemplate) {
     fun findByKakaoId(kakaoId: String): SignalUser? =
         jdbc.query("SELECT * FROM signal_desk_users WHERE kakao_id = ?", rowMapper, kakaoId).firstOrNull()
 
+    fun findByAppleId(appleId: String): SignalUser? =
+        jdbc.query("SELECT * FROM signal_desk_users WHERE apple_id = ?", rowMapper, appleId).firstOrNull()
+
     fun existsByEmail(email: String): Boolean =
         (jdbc.queryForObject("SELECT COUNT(*) FROM signal_desk_users WHERE email = ?", Int::class.java, email) ?: 0) > 0
 
@@ -48,11 +52,11 @@ class UserRepository(private val jdbc: JdbcTemplate) {
         return findById(id)!!
     }
 
-    fun saveOAuthUser(email: String, nickname: String, googleId: String? = null, kakaoId: String? = null): SignalUser {
+    fun saveOAuthUser(email: String, nickname: String, googleId: String? = null, kakaoId: String? = null, appleId: String? = null): SignalUser {
         val id = UUID.randomUUID()
         jdbc.update(
-            "INSERT INTO signal_desk_users (id, email, nickname, google_id, kakao_id) VALUES (?, ?, ?, ?, ?)",
-            id, email, nickname, googleId, kakaoId,
+            "INSERT INTO signal_desk_users (id, email, nickname, google_id, kakao_id, apple_id) VALUES (?, ?, ?, ?, ?, ?)",
+            id, email, nickname, googleId, kakaoId, appleId,
         )
         return findById(id)!!
     }
@@ -63,5 +67,9 @@ class UserRepository(private val jdbc: JdbcTemplate) {
 
     fun linkKakaoId(userId: UUID, kakaoId: String) {
         jdbc.update("UPDATE signal_desk_users SET kakao_id = ? WHERE id = ?", kakaoId, userId)
+    }
+
+    fun linkAppleId(userId: UUID, appleId: String) {
+        jdbc.update("UPDATE signal_desk_users SET apple_id = ? WHERE id = ?", appleId, userId)
     }
 }

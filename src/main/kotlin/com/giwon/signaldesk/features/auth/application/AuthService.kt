@@ -23,6 +23,7 @@ class AuthService(
     private val jwt: JwtProvider,
     private val adminGuard: com.giwon.signaldesk.features.admin.AdminGuard,
     @Value("\${signal-desk.auth.google.allowed-audiences:}") private val rawGoogleAllowedAudiences: String,
+    @Value("\${signal-desk.auth.apple.allowed-audiences:com.giwon.signaldesk}") private val rawAppleAllowedAudiences: String,
 ) {
     private val encoder = BCryptPasswordEncoder()
     private val http = HttpClient.newHttpClient()
@@ -40,6 +41,10 @@ class AuthService(
         .map { it.trim() }
         .filter { it.isNotEmpty() }
         .toSet()
+
+    /** Apple Sign-In audience(앱 번들 ID) 화이트리스트. identityToken.aud 가 이 안에 있어야 함. */
+    private val appleAllowedAudiences: Set<String> = rawAppleAllowedAudiences
+        .split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
     @PostConstruct
     fun warnIfAudienceMissing() {
@@ -132,10 +137,29 @@ class AuthService(
         return user.toResult()
     }
 
+    // ── Apple OAuth (Sign in with Apple) ───────────────────────────────────────
+
+    fun appleOAuth(identityToken: String): AuthResult {
+        val info = verifyAppleToken(identityToken) ?: run {
+            logger.info("oauth fail provider=apple reason=invalid-token")
+            throw AuthException("유효하지 않은 애플 토큰입니다.")
+        }
+        val user = userRepo.findByAppleId(info.id)
+            ?: info.email?.let { em -> userRepo.findByEmail(em)?.also { userRepo.linkAppleId(it.id, info.id) } }
+            ?: userRepo.saveOAuthUser(
+                email = info.email ?: "apple-${info.id.takeLast(12)}@privaterelay.appleid.com",
+                nickname = (info.email?.substringBefore("@")) ?: "Apple 사용자",
+                appleId = info.id,
+            ).also { logger.info("signup user={} method=apple", it.id.toString().take(8)) }
+        logger.info("login success user={} method=apple", user.id.toString().take(8))
+        return user.toResult()
+    }
+
     // ── 토큰 검증 헬퍼 ───────────────────────────────────────────────────────
 
     private data class GoogleUserInfo(val id: String, val email: String, val name: String)
     private data class KakaoUserInfo(val id: String, val email: String, val nickname: String)
+    private data class AppleUserInfo(val id: String, val email: String?)
 
     private fun verifyGoogleToken(idToken: String): GoogleUserInfo? = runCatching {
         val req = HttpRequest.newBuilder()
@@ -189,6 +213,45 @@ class AuthService(
             email    = account.get("email")?.asText() ?: return null,
             nickname = account.get("profile")?.get("nickname")?.asText() ?: "",
         )
+    }.getOrNull()
+
+    /**
+     * Apple identityToken(JWT, RS256) 검증 — Apple JWKS 로 서명 확인 + iss/aud/exp 검증.
+     *  1) 토큰 헤더의 kid 로 https://appleid.apple.com/auth/keys 에서 공개키 선택
+     *  2) JWK(n,e) → RSAPublicKey 구성 후 jjwt 로 서명·만료 검증
+     *  3) iss=https://appleid.apple.com, aud=앱 번들ID 확인 → sub(고유 ID)·email 추출
+     */
+    private fun verifyAppleToken(identityToken: String): AppleUserInfo? = runCatching {
+        val parts = identityToken.split(".")
+        if (parts.size < 2) return null
+        val header = mapper.readTree(java.util.Base64.getUrlDecoder().decode(parts[0]))
+        val kid = header.get("kid")?.asText() ?: return null
+
+        val keysReq = HttpRequest.newBuilder()
+            .uri(URI.create("https://appleid.apple.com/auth/keys"))
+            .timeout(Duration.ofSeconds(5)).GET().build()
+        val keysRes = http.send(keysReq, HttpResponse.BodyHandlers.ofString())
+        if (keysRes.statusCode() != 200) return null
+        val jwk = mapper.readTree(keysRes.body()).get("keys")
+            ?.firstOrNull { it.get("kid")?.asText() == kid } ?: return null
+        val n = java.math.BigInteger(1, java.util.Base64.getUrlDecoder().decode(jwk.get("n").asText()))
+        val e = java.math.BigInteger(1, java.util.Base64.getUrlDecoder().decode(jwk.get("e").asText()))
+        val pub = java.security.KeyFactory.getInstance("RSA")
+            .generatePublic(java.security.spec.RSAPublicKeySpec(n, e))
+
+        // 서명·exp 검증(jjwt). 실패 시 예외 → runCatching 으로 null.
+        val claims = io.jsonwebtoken.Jwts.parser().verifyWith(pub).build()
+            .parseSignedClaims(identityToken).payload
+
+        if (claims.issuer != "https://appleid.apple.com") {
+            logger.warn("Apple OAuth: 잘못된 iss={}", claims.issuer); return null
+        }
+        if (appleAllowedAudiences.isNotEmpty() && claims.audience.orEmpty().intersect(appleAllowedAudiences).isEmpty()) {
+            logger.warn("Apple OAuth: audience {} 가 화이트리스트에 없음 → 거부", claims.audience); return null
+        }
+        val sub = claims.subject ?: return null
+        val email = runCatching { claims.get("email", String::class.java) }.getOrNull()?.takeIf { it.isNotBlank() }
+        AppleUserInfo(id = sub, email = email)
     }.getOrNull()
 
     // ── 공통 변환 ─────────────────────────────────────────────────────────────

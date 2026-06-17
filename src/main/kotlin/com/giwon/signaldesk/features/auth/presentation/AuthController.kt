@@ -22,6 +22,7 @@ data class LoginRequest(
 
 data class GoogleOAuthRequest(@field:NotBlank val idToken: String)
 data class KakaoOAuthRequest(@field:NotBlank val accessToken: String)
+data class AppleOAuthRequest(@field:NotBlank val identityToken: String)
 
 data class AuthResponse(
     val token: String,
@@ -61,6 +62,10 @@ class AuthController(
     @PostMapping("/oauth/kakao")
     fun kakaoOAuth(@Valid @RequestBody req: KakaoOAuthRequest): ResponseEntity<AuthResponse> =
         ResponseEntity.ok(authService.kakaoOAuth(req.accessToken).toResponse())
+
+    @PostMapping("/oauth/apple")
+    fun appleOAuth(@Valid @RequestBody req: AppleOAuthRequest): ResponseEntity<AuthResponse> =
+        ResponseEntity.ok(authService.appleOAuth(req.identityToken).toResponse())
 
     /** 회원 탈퇴 — 토큰의 본인 계정 + 모든 데이터 영구 삭제. */
     @DeleteMapping("/account")
