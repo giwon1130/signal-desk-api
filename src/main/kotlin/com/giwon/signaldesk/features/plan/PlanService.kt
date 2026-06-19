@@ -19,10 +19,14 @@ import java.util.UUID
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 open class PlanService(
     private val jdbc: JdbcTemplate,
-    @Value("\${signal-desk.plan.free.watchlist:20}") private val watchlistLimit: Int,
+    @Value("\${signal-desk.plan.free.watchlist:10}") private val watchlistLimit: Int,
     @Value("\${signal-desk.plan.free.holdings:10}") private val holdingsLimit: Int,
-    @Value("\${signal-desk.plan.free.leader-subscriptions:3}") private val leaderSubLimit: Int,
+    @Value("\${signal-desk.plan.free.leader-subscriptions:1}") private val leaderSubLimit: Int,
     @Value("\${signal-desk.plan.free.leagues:1}") private val leagueLimit: Int,
+    @Value("\${signal-desk.plan.pro.watchlist:100}") private val proWatchlistLimit: Int,
+    @Value("\${signal-desk.plan.pro.holdings:50}") private val proHoldingsLimit: Int,
+    @Value("\${signal-desk.plan.pro.leader-subscriptions:30}") private val proLeaderSubLimit: Int,
+    @Value("\${signal-desk.plan.pro.leagues:5}") private val proLeagueLimit: Int,
 ) {
     enum class Resource { WATCHLIST, HOLDINGS, LEADER_SUBSCRIPTIONS, LEAGUES }
 
@@ -53,21 +57,39 @@ open class PlanService(
         Resource.LEAGUES -> leagueLimit
     }
 
-    /**
-     * FREE 사용자가 [currentCount] 개를 이미 보유한 상태에서 1개 더 추가할 수 있는지.
-     * PRO 면 무조건 통과. 초과 시 IllegalArgumentException → 전역 핸들러가 400 + 한국어 메시지.
-     * 신규 추가일 때만 호출할 것(기존 키 수정은 카운트 제외).
-     */
-    fun assertCanAdd(userId: UUID, resource: Resource, currentCount: Int) {
-        if (isPro(userId)) return
-        val limit = freeLimitFor(resource)
-        require(currentCount < limit) { limitMessage(resource, limit) }
+    fun proLimitFor(resource: Resource): Int = when (resource) {
+        Resource.WATCHLIST -> proWatchlistLimit
+        Resource.HOLDINGS -> proHoldingsLimit
+        Resource.LEADER_SUBSCRIPTIONS -> proLeaderSubLimit
+        Resource.LEAGUES -> proLeagueLimit
     }
 
-    private fun limitMessage(resource: Resource, limit: Int): String = when (resource) {
-        Resource.WATCHLIST -> "관심 종목은 FREE 플랜에서 최대 ${limit}개까지예요. PRO 로 업그레이드하면 무제한이에요. 💎"
-        Resource.HOLDINGS -> "보유 종목은 FREE 플랜에서 최대 ${limit}개까지예요. PRO 로 업그레이드하면 무제한이에요. 💎"
-        Resource.LEADER_SUBSCRIPTIONS -> "리더 구독은 FREE 플랜에서 최대 ${limit}명까지예요. PRO 로 업그레이드하면 무제한이에요. 💎"
-        Resource.LEAGUES -> "진행 중인 리그는 FREE 플랜에서 최대 ${limit}개까지 만들 수 있어요. PRO 로 업그레이드하면 무제한이에요. 💎"
+    /**
+     * [currentCount] 개를 이미 보유한 상태에서 1개 더 추가할 수 있는지.
+     * FREE/PRO 각각의 상한을 적용(PRO 도 남용 방지로 넉넉한 캡 있음). 초과 시
+     * IllegalArgumentException → 전역 핸들러가 400 + 한국어 메시지. 신규 추가일 때만 호출.
+     */
+    fun assertCanAdd(userId: UUID, resource: Resource, currentCount: Int) {
+        val pro = isPro(userId)
+        val limit = if (pro) proLimitFor(resource) else freeLimitFor(resource)
+        require(currentCount < limit) { limitMessage(resource, limit, pro) }
+    }
+
+    private fun limitMessage(resource: Resource, limit: Int, pro: Boolean): String {
+        val unit = when (resource) {
+            Resource.LEADER_SUBSCRIPTIONS -> "명"
+            else -> "개"
+        }
+        val label = when (resource) {
+            Resource.WATCHLIST -> "관심 종목"
+            Resource.HOLDINGS -> "보유 종목"
+            Resource.LEADER_SUBSCRIPTIONS -> "리더 구독"
+            Resource.LEAGUES -> "진행 중인 리그"
+        }
+        return if (pro) {
+            "${label}은(는) 최대 ${limit}${unit}까지예요."
+        } else {
+            "${label}은(는) FREE 플랜에서 최대 ${limit}${unit}까지예요. PRO 로 업그레이드하면 더 늘릴 수 있어요. 💎"
+        }
     }
 }

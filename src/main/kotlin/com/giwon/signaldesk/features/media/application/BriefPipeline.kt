@@ -171,9 +171,17 @@ class BriefPipeline(
         } else null
 
         val krMovers = krMoversF.join()
+        // 야후 실패로 FRED 폴백(stale)된 미국 지수는 한 세션 지연이라 방향이 반대로 찍힐 수 있음 →
+        // 잘못된 방향을 넣느니 지수를 빼고(=데이터 없음 취급) 작성. 모닝·장중 브리프 공통.
+        val usIndices = indicesF.join()?.let {
+            if (it.stale) {
+                log.warn("Brief — 미국 지수 stale(FRED 폴백) → 지수 방향 표기 생략(뉴스 중심)")
+                null
+            } else it
+        }
         return KrMarketData(
             vix = vixF.join(),
-            indices = indicesF.join(),
+            indices = usIndices,
             macro = macroF.join(),
             headlines = headlinesF.join() ?: emptyList(),
             upcomingEvents = eventsF.join() ?: emptyList(),

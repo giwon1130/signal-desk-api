@@ -24,8 +24,8 @@ class UsIndexService(
     @Cacheable(cacheNames = ["macro-index"], key = "'us-indices'", unless = "#result == null")
     fun fetchUsIndices(): UsIndicesSnapshot? {
         yahooQuoteClient.fetchUsIndices()?.let { return it }
-        log.warn("US indices: 야후 조회 실패 → FRED 폴백(한 세션 지연 가능성 있음)")
-        return fredIndexClient.fetchUsIndices()
+        log.warn("US indices: 야후 조회 실패 → FRED 폴백(한 세션 지연 가능성 있음, stale 표시)")
+        return fredIndexClient.fetchUsIndices()?.copy(stale = true)
     }
 
     /** 위험도용 거시 시세(환율·미 10년물) — 라이브 야후만(전일 대비 정확). 실패 시 null. */

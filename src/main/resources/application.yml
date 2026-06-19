@@ -97,9 +97,9 @@ signal-desk:
       api-key: ${SUPADATA_API_KEY:}
       base-url: ${SUPADATA_BASE_URL:https://api.supadata.ai/v1}
     youtube:
-      # AI 흐름 요약 소스 채널 — "channelId|제목필터(옵션)|표시이름" 콤마 구분.
-      # 예) 삼프로TV 오전방송. 제목필터는 최신 영상 중 그 단어 포함 영상을 고름(없으면 최신).
-      flow-channels: ${SIGNAL_DESK_YOUTUBE_FLOW_CHANNELS:UChlv4GSd7OQl3js-jkLOnFA|방송|삼프로TV}
+      # AI 흐름 요약 소스 채널 — 저작권/부정경쟁 리스크로 기능 폐지(2026-06). 기본 빈 값 = 수집 안 함.
+      # 비우면 YoutubeFlowReadingService.runAll() 이 no-op. (env 로도 설정하지 말 것.)
+      flow-channels: ${SIGNAL_DESK_YOUTUBE_FLOW_CHANNELS:}
   auth:
     google:
       # idToken aud 화이트리스트 (콤마). iOS + web 신/구 클라이언트 모두 허용.
@@ -113,7 +113,7 @@ signal-desk:
     emails: ${SIGNAL_DESK_ADMIN_EMAILS:gwim113000@gmail.com}
   assistant:
     # AI 비서 일일 질문 한도 — Gemini 무료 쿼터 보호 + 요금제 차등. 운영자는 무제한.
-    free-daily-limit: ${SIGNAL_DESK_ASSISTANT_FREE_DAILY_LIMIT:10}
+    free-daily-limit: ${SIGNAL_DESK_ASSISTANT_FREE_DAILY_LIMIT:5}
     pro-daily-limit: ${SIGNAL_DESK_ASSISTANT_PRO_DAILY_LIMIT:100}
     admin-emails: ${SIGNAL_DESK_ASSISTANT_ADMIN_EMAILS:gwim113000@gmail.com}
     # PRO 전용 AI 종목 심층 리포트 일일 한도 (비싼 호출이라 별도 캡).
@@ -123,11 +123,17 @@ signal-desk:
     daily-limit: ${SIGNAL_DESK_REPORT_CALL_DAILY_LIMIT:5}
     stop-loss-pct: ${SIGNAL_DESK_REPORT_CALL_STOP_PCT:8}
   plan:
-    # FREE 플랜 자원 상한 — PRO 는 무제한. 기존 사용자 grandfather(추가만 차단, 삭제 없음).
+    # 플랜별 자원 상한 — 추가만 차단(삭제·미발송 없음, 기존 사용자 grandfather).
+    # PRO 도 무제한이 아니라 넉넉한 상한을 둬 남용 방지.
     free:
-      watchlist: ${SIGNAL_DESK_FREE_WATCHLIST_LIMIT:20}
+      watchlist: ${SIGNAL_DESK_FREE_WATCHLIST_LIMIT:10}
       holdings: ${SIGNAL_DESK_FREE_HOLDINGS_LIMIT:10}
-      leader-subscriptions: ${SIGNAL_DESK_FREE_LEADER_SUB_LIMIT:3}
+      leader-subscriptions: ${SIGNAL_DESK_FREE_LEADER_SUB_LIMIT:1}
       leagues: ${SIGNAL_DESK_FREE_LEAGUE_LIMIT:1}
+    pro:
+      watchlist: ${SIGNAL_DESK_PRO_WATCHLIST_LIMIT:100}
+      holdings: ${SIGNAL_DESK_PRO_HOLDINGS_LIMIT:50}
+      leader-subscriptions: ${SIGNAL_DESK_PRO_LEADER_SUB_LIMIT:30}
+      leagues: ${SIGNAL_DESK_PRO_LEAGUE_LIMIT:5}
   cors:
     allowed-origin-patterns: ${SIGNAL_DESK_CORS_ALLOWED_ORIGINS:}

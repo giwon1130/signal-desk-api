@@ -17,7 +17,6 @@ import java.time.ZoneId
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class FlowReadingScheduler(
     private val service: FlowReadingService,
-    private val youtubeService: YoutubeFlowReadingService,
     private val reportCallService: com.giwon.signaldesk.features.reading.application.ReportCallService,
     private val marketSessionService: MarketSessionService,
     private val adminAlert: com.giwon.signaldesk.features.admin.AdminAlertService,
@@ -44,21 +43,8 @@ class FlowReadingScheduler(
             .onFailure { onFail("Flow reading(CLOSE)", it) }
     }
 
-    /**
-     * 유튜브 방송 요약 — 라이브 종료 후 자막 생성에 시차가 있어 오후에 2회 시도.
-     * 이미 요약한 영상은 videoId 가드로 스킵되므로 중복 없음. Supadata 키 없으면 no-op.
-     */
-    @Scheduled(cron = "0 0 13 * * MON-FRI", zone = "Asia/Seoul")
-    fun runYoutubeMidday() {
-        if (!isKrTradingDay()) return
-        runCatching { youtubeService.runAll() }.onFailure { onFail("Youtube flow(13h)", it) }
-    }
-
-    @Scheduled(cron = "0 0 17 * * MON-FRI", zone = "Asia/Seoul")
-    fun runYoutubeEvening() {
-        if (!isKrTradingDay()) return
-        runCatching { youtubeService.runAll() }.onFailure { onFail("Youtube flow(17h)", it) }
-    }
+    // 유튜브 방송(삼프로TV) 자막 요약 스케줄 제거 — 저작권/부정경쟁 리스크로 기능 폐지(2026-06).
+    // 자막 수집·요약·발행 경로 전체 중단. (YoutubeFlowReadingService 는 빈 채널 설정으로 no-op.)
 
     /** 📈 AI 리포트 콜 — 장 마감 후 16:30, 그날 신규 증권사 목표주가 리포트를 콜로 발행. */
     @Scheduled(cron = "0 30 16 * * MON-FRI", zone = "Asia/Seoul")

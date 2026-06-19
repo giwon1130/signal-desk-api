@@ -54,7 +54,13 @@ class MarketInsightService(
         }
 
         val vix = runCatching { cboeVixClient.fetchVix() }.getOrNull()
-        val indices = runCatching { usIndexService.fetchUsIndices() }.getOrNull()
+        // stale(FRED 폴백) 지수는 한 세션 지연이라 방향 오류 위험 → 지수 빼고 작성(데이터 없음 취급).
+        val indices = runCatching { usIndexService.fetchUsIndices() }.getOrNull()?.let {
+            if (it.stale) {
+                log.warn("MarketInsight — 미국 지수 stale(FRED 폴백) → 지수 방향 표기 생략(뉴스 중심)")
+                null
+            } else it
+        }
         val headlines = runCatching { newsRssClient.fetchMarketNews() }.getOrNull() ?: emptyList()
         // 다가오는 3일치 이벤트 (FOMC/실적/휴장 등) — Gemini가 시점 컨텍스트로 활용
         val upcomingEvents = runCatching { marketEventService.upcoming(3) }.getOrNull() ?: emptyList()

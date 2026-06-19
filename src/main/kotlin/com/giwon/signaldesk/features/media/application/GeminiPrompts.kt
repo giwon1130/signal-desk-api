@@ -304,11 +304,17 @@ $gainersBlock$losersBlock$earningsBlock
             === 미국 시장 뉴스 헤드라인 (${capped.size}건) ===
             $headlineLines
 
+            ⚠️ 정확성 규칙(반드시 준수):
+            - 지수 방향(상승/하락/혼조)과 등락률은 위 '미국 시장 마감' 의 S&P500·NASDAQ 수치를 그대로 따르세요. 제공된 수치/방향과 모순되는 서술은 절대 금지합니다.
+            - summary 첫 문장에 S&P500·NASDAQ 의 등락률 수치(%)와 방향을 반드시 포함하세요. 예: "S&P500 +1.08%, 나스닥 +1.54% 로 상승 마감했습니다."
+            - 지수가 '데이터 없음' 이면 방향을 단정하지 말고 뉴스·급등락 중심으로 작성하세요.
+            - 급등/급락 종목은 위 목록의 실제 등락률 수치를 사용하세요(임의 추정 금지).
+
             아래 JSON 스키마로 한국어 답변:
             {
               "headline": "미국장 마감을 한 줄로 (20자 이내, 강세/약세/혼조 같은 키워드 포함)",
-              "summary": "3~4문장. 지수 마감 → 주도주·급등락 → 실적 이슈 → 오늘 한국장 시사점 순으로 연결",
-              "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나",
+              "summary": "3~4문장. 지수 마감(수치·방향 명시) → 주도주·급등락(수치 포함) → 실적 이슈 → 오늘 한국장 시사점 순으로 연결",
+              "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나 (지수 등락률 방향과 일치)",
               "keyPoints": ["오늘 봐야 할 미국장 포인트 3개. 각 25자 이내"]
             }
         """.trimIndent()
@@ -330,11 +336,15 @@ $gainersBlock$losersBlock$earningsBlock
             아래 JSON 스키마에 맞춰 한국어로 답변하세요.
             모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요.
 
+            ⚠️ 정확성 규칙(반드시 준수):
+            - 지수 등락률 수치는 제공되지 않았습니다. 헤드라인에 명시되지 않은 한 특정 지수(S&P500·나스닥·코스피 등)의 상승/하락 방향이나 수치를 단정하지 마세요.
+            - 헤드라인에서 방향이 엇갈리면 '혼조' 로 서술하고, 근거가 약하면 단정 대신 섹터·테마·종목 이슈 중심으로 요약하세요.
+
             스키마:
             {
               "summary": "3~5문장으로 오늘 시장의 핵심 흐름 요약 (각 문장은 줄바꿈으로 구분)",
               "flowAnalysis": "2~3문장으로 시장 흐름 해석 — 강세/약세/관망의 이유와 주목할 섹터",
-              "keyTickers": ["헤드라인에서 반복 언급된 종목명 또는 티커. 한국 종목은 6자리 코드(예: 005930), 미국 종목은 티커(예: NVDA). 최대 6개"],
+              "keyTickers": ["헤드라인에서 반복 언급된 '개별 종목'의 코드/티커만. 한국=6자리(예: 005930), 미국=티커(예: NVDA). 지수명(S&P500·나스닥·다우·코스피 등)·일반어는 제외. 최대 6개"],
               "sentiment": "BULLISH | BEARISH | NEUTRAL 중 하나"
             }
 
@@ -441,13 +451,20 @@ $gainersBlock$losersBlock$earningsBlock
     private fun vixLine(vix: VixSnapshot?) =
         if (vix != null) "VIX(공포지수): ${vix.currentPrice} (변화: ${vix.priceChange})" else "VIX: 데이터 없음"
 
+    /** 등락률 → 방향어. AI 가 방향을 임의로 추론하지 못하게 수치와 함께 명시한다. */
+    private fun dir(rate: Double) = when {
+        rate > 0.05 -> "상승"
+        rate < -0.05 -> "하락"
+        else -> "보합"
+    }
+
     private fun nasdaqLine(indices: UsIndicesSnapshot?) =
-        if (indices?.nasdaq != null) "NASDAQ: ${indices.nasdaq.currentValue} (${indices.nasdaq.changeRate}%)"
-        else "NASDAQ: 데이터 없음"
+        indices?.nasdaq?.let { "NASDAQ: ${"%,.2f".format(it.currentValue)}, ${"%+.2f".format(it.changeRate)}% (${dir(it.changeRate)} 마감)" }
+            ?: "NASDAQ: 데이터 없음"
 
     private fun sp500Line(indices: UsIndicesSnapshot?) =
-        if (indices?.sp500 != null) "S&P500: ${indices.sp500.currentValue} (${indices.sp500.changeRate}%)"
-        else "S&P500: 데이터 없음"
+        indices?.sp500?.let { "S&P500: ${"%,.2f".format(it.currentValue)}, ${"%+.2f".format(it.changeRate)}% (${dir(it.changeRate)} 마감)" }
+            ?: "S&P500: 데이터 없음"
 
     private fun investorFlowBlock(flow: InvestorFlowSnapshot?): String {
         if (flow == null || flow.isEmpty()) return ""

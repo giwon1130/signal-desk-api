@@ -146,6 +146,7 @@ class FredIndexClient(
 data class UsIndicesSnapshot(
     val sp500: FredSeriesSnapshot,
     val nasdaq: FredSeriesSnapshot,
+    val stale: Boolean = false,   // true = FRED 폴백(한 세션 지연) — 방향/등락률 신뢰 불가
 )
 
 data class FredSeriesSnapshot(

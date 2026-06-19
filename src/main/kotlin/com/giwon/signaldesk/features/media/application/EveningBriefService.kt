@@ -64,7 +64,14 @@ class EveningBriefService(
         val headlinesF = pipeline.supplyAsync { googleNewsRssClient.fetchMarketNews() }
 
         val vix = vixF.join()
-        val indices = indicesF.join()
+        // 야후 실패로 FRED 폴백(stale)된 지수는 한 세션 지연이라 방향이 반대로 찍힐 수 있음 →
+        // 잘못된 지수 방향을 요약/푸시에 넣느니 지수를 빼고(=데이터 없음 취급) 뉴스·급등락 중심으로 작성.
+        val indices = indicesF.join()?.let {
+            if (it.stale) {
+                log.warn("Evening brief — 미국 지수 stale(FRED 폴백) → 지수 방향 표기 생략, 뉴스·급등락 중심으로 생성")
+                null
+            } else it
+        }
         val gainers = gainersF.join() ?: emptyList()
         val losers = losersF.join() ?: emptyList()
         val earnings = earningsF.join() ?: emptyList()
