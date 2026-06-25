@@ -46,7 +46,7 @@ class PlanRequestService(
         )
         notifyAdmins(user.nickname, user.email)
         log.info("plan request — user={} ({})", userId.toString().take(8), user.email)
-        return "신청이 접수됐어요. 검토 후 알림으로 알려드릴게요!"
+        return "신청이 접수됐어요! PRO는 베타 준비 중이라 지금 바로 승인되진 않고, 정식 오픈 때 순차적으로 안내드릴게요."
     }
 
     fun myStatus(userId: UUID): MyRequest =
