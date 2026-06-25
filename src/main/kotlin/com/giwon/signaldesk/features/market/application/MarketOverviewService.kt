@@ -32,6 +32,10 @@ class MarketOverviewService(
     private val recommendationMetricsCalculator: RecommendationMetricsCalculator,
     private val pickNewsMatcher: PickNewsMatcher,
     private val enrichmentService: WorkspaceEnrichmentService,
+    private val preMarketDirectionService: PreMarketDirectionService,
+    // PlanService 는 jdbc 스토어 모드에서만 존재 → 없으면 모두 FREE 취급(야간방향성 잠금).
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private val planService: com.giwon.signaldesk.features.plan.PlanService? = null,
 ) {
     private val logger = LoggerFactory.getLogger(MarketOverviewService::class.java)
 
@@ -98,6 +102,13 @@ class MarketOverviewService(
             alternativeSignals = alternativeSignals,
             tradingDay = tradingDay,
         )
+        // 야간 방향성 — PRO 전용. 비로그인/FREE 는 잠금(앱에서 블러+업그레이드 유도).
+        val pro = userId != null && (planService?.isPro(userId) ?: false)
+        val preMarketDirection = if (pro) {
+            runCatching { preMarketDirectionService.current() }.getOrDefault(PreMarketDirection.EMPTY)
+        } else {
+            PreMarketDirection.LOCKED
+        }
         val news = getCachedNews().news
         val compositeRisk = compositeRiskService.build(
             alternativeSignals = alternativeSignals,
@@ -131,7 +142,7 @@ class MarketOverviewService(
             compositeRiskKr = compositeRiskKr,
             compositeRiskUs = compositeRiskUs,
             watchAlerts = watchAlerts, marketSessions = core.marketSessions,
-            briefing = briefing, sourceNotes = core.sourceNotes,
+            briefing = briefing, preMarketDirection = preMarketDirection, sourceNotes = core.sourceNotes,
             workspaceCounts = enrichmentService.buildWorkspaceCounts(userId),
             newsSentiments = listOf(
                 NewsSentimentBuilder.build("KR", news),

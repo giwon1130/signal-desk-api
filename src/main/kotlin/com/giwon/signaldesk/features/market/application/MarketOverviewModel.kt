@@ -19,6 +19,7 @@ data class MarketSummaryResponse(
     val watchAlerts: List<WatchAlert>,
     val marketSessions: List<MarketSessionStatus>,
     val briefing: DailyBriefing,
+    val preMarketDirection: PreMarketDirection,   // 야간 방향성(PRO 전용) — FREE 면 locked=true
     val sourceNotes: List<SourceNote>,
     val workspaceCounts: WorkspaceCounts,
     val newsSentiments: List<NewsSentiment>,

@@ -18,6 +18,7 @@ class PlanServiceTest {
 
     private fun service(pro: Boolean) = object : PlanService(
         mock(JdbcTemplate::class.java), watchlistLimit = 20, holdingsLimit = 10, leaderSubLimit = 3, leagueLimit = 1,
+        proWatchlistLimit = 100, proHoldingsLimit = 50, proLeaderSubLimit = 30, proLeagueLimit = 5,
     ) {
         override fun isPro(userId: UUID) = pro
     }
@@ -48,9 +49,18 @@ class PlanServiceTest {
     }
 
     @Test
-    fun `PRO 는 상한과 무관하게 통과`() {
+    fun `PRO 는 넉넉한 상한 미만이면 통과`() {
         val svc = service(pro = true)
-        assertThatCode { svc.assertCanAdd(uid, PlanService.Resource.WATCHLIST, 9999) }.doesNotThrowAnyException()
-        assertThatCode { svc.assertCanAdd(uid, PlanService.Resource.LEAGUES, 9999) }.doesNotThrowAnyException()
+        assertThatCode { svc.assertCanAdd(uid, PlanService.Resource.WATCHLIST, 99) }.doesNotThrowAnyException()
+        assertThatCode { svc.assertCanAdd(uid, PlanService.Resource.LEAGUES, 4) }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `PRO 도 넉넉한 상한(남용 방지) 도달 시 거부`() {
+        val svc = service(pro = true)
+        assertThatThrownBy { svc.assertCanAdd(uid, PlanService.Resource.WATCHLIST, 100) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { svc.assertCanAdd(uid, PlanService.Resource.LEAGUES, 5) }
+            .isInstanceOf(IllegalArgumentException::class.java)
     }
 }
