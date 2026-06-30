@@ -30,9 +30,12 @@ enum class RiskWeightPreset(
     AGGRESSIVE(
         "공격형", "뉴스·지정학 노이즈는 줄이고 가격·변동성 위주",
         mapOf(LBL_NEWS to 0.5, LBL_PIZZ to 0.4, LBL_FX to 0.8, LBL_RATE to 0.8, LBL_KR to 1.2),
-    );
+    ),
 
-    /** 컴포넌트 라벨 → 가중 배수(미지정 1.0). */
+    /** 지표별 배수를 사용자가 직접 지정. 실제 배수는 저장된 customWeights 에서 온다(여기 multipliers 는 비움). */
+    CUSTOM("직접 설정", "지표별 비중을 직접 조정", emptyMap());
+
+    /** 컴포넌트 라벨 → 가중 배수(미지정 1.0). CUSTOM 은 [RiskWeightProfile] 가 customWeights 로 덮어쓴다. */
     fun multiplierFor(label: String): Double = multipliers[label] ?: 1.0
 
     companion object {
@@ -41,19 +44,62 @@ enum class RiskWeightPreset(
     }
 }
 
-/** 응답 노출용 — 현재 적용 프리셋 + 커스터마이징 가능 여부 + 선택지 카탈로그. */
+/** 조정 가능한 지표(컴포넌트) 카탈로그 — 슬라이더 UI 용. id = 서버 컴포넌트 라벨. */
+data class RiskWeightFactor(val id: String, val label: String)
+
+val RISK_WEIGHT_FACTORS = listOf(
+    RiskWeightFactor(LBL_KR, "한국 지수"),
+    RiskWeightFactor(LBL_FX, "원/달러 환율"),
+    RiskWeightFactor(LBL_RATE, "미 10년물 금리"),
+    RiskWeightFactor(LBL_VIX, "美 변동성(VIX)"),
+    RiskWeightFactor(LBL_NEWS, "뉴스 위험도"),
+    RiskWeightFactor(LBL_PIZZ, "시장 신호(PizzINT)"),
+)
+
+/** 사용자 선택 = 프리셋 + (CUSTOM 일 때) 지표별 배수. customWeights 미지정 라벨은 1.0. */
+data class RiskWeightSelection(
+    val preset: RiskWeightPreset,
+    val customWeights: Map<String, Double> = emptyMap(),
+) {
+    /** 적용할 배수 함수. CUSTOM 이면 customWeights(미지정 1.0), 아니면 프리셋 배수. */
+    fun multiplierOf(label: String): Double =
+        if (preset == RiskWeightPreset.CUSTOM) customWeights[label] ?: 1.0
+        else preset.multiplierFor(label)
+
+    companion object {
+        val BALANCED = RiskWeightSelection(RiskWeightPreset.BALANCED)
+
+        /** 입력 배수 정제 — 알려진 라벨만, [0, 3] 클램프. 빈/전부 0 이면 빈 맵(=BALANCED 효과). */
+        fun sanitize(raw: Map<String, Double>?): Map<String, Double> {
+            if (raw.isNullOrEmpty()) return emptyMap()
+            val known = RISK_WEIGHT_FACTORS.map { it.id }.toSet()
+            return raw.filterKeys { it in known }
+                .mapValues { it.value.coerceIn(0.0, 3.0) }
+        }
+    }
+}
+
+/** 응답 노출용 — 현재 적용 프리셋/커스텀 + 커스터마이징 가능 여부 + 선택지·지표 카탈로그. */
 data class RiskWeightInfo(
     val preset: String,              // 현재 적용 중인 프리셋 (FREE 는 항상 BALANCED)
     val customizable: Boolean,       // PRO 여부 — false 면 앱에서 잠금+업그레이드 유도
     val options: List<RiskWeightOption>,
+    val factors: List<RiskWeightFactor>,          // CUSTOM 슬라이더용 지표 카탈로그
+    val customWeights: Map<String, Double>,       // 현재 커스텀 배수(라벨→배수). 미지정 라벨은 1.0
 ) {
     companion object {
         val OPTIONS = RiskWeightPreset.entries.map {
             RiskWeightOption(id = it.name, label = it.label, description = it.description)
         }
 
-        fun of(preset: RiskWeightPreset, customizable: Boolean) =
-            RiskWeightInfo(preset = preset.name, customizable = customizable, options = OPTIONS)
+        fun of(selection: RiskWeightSelection, customizable: Boolean) =
+            RiskWeightInfo(
+                preset = selection.preset.name,
+                customizable = customizable,
+                options = OPTIONS,
+                factors = RISK_WEIGHT_FACTORS,
+                customWeights = selection.customWeights,
+            )
     }
 }
 

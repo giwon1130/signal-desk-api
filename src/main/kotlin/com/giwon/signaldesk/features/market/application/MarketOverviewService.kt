@@ -114,9 +114,9 @@ class MarketOverviewService(
             PreMarketDirection.LOCKED
         }
         val news = getCachedNews().news
-        // 위험도 가중 프리셋 — PRO 만 적용, FREE/비로그인은 BALANCED 고정.
-        val riskPreset = if (pro) riskWeightPreferenceService?.get(userId!!) ?: RiskWeightPreset.BALANCED
-        else RiskWeightPreset.BALANCED
+        // 위험도 가중 — PRO 만 적용(프리셋/커스텀), FREE/비로그인은 BALANCED 고정.
+        val riskSelection = if (pro) riskWeightPreferenceService?.get(userId!!) ?: RiskWeightSelection.BALANCED
+        else RiskWeightSelection.BALANCED
         val compositeRisk = compositeRiskService.build(
             alternativeSignals = alternativeSignals,
             vix = core.vixSnapshot,
@@ -126,7 +126,7 @@ class MarketOverviewService(
             koreaMarket = core.koreaMarket,
             usdKrw = core.macroQuotes?.usdKrw,
             us10y = core.macroQuotes?.us10y,
-            preset = riskPreset,
+            weights = riskSelection,
         )
         val compositeRiskKr = compositeRiskService.buildKr(
             koreaMarket = core.koreaMarket,
@@ -135,7 +135,7 @@ class MarketOverviewService(
             portfolio = snapshot.portfolio,
             usdKrw = core.macroQuotes?.usdKrw,
             us10y = core.macroQuotes?.us10y,
-            preset = riskPreset,
+            weights = riskSelection,
         )
         val compositeRiskUs = compositeRiskService.buildUs(
             vix = core.vixSnapshot,
@@ -144,7 +144,7 @@ class MarketOverviewService(
             watchlist = snapshot.watchlist,
             portfolio = snapshot.portfolio,
             us10y = core.macroQuotes?.us10y,
-            preset = riskPreset,
+            weights = riskSelection,
         )
         return MarketSummaryResponse(
             generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
@@ -160,7 +160,7 @@ class MarketOverviewService(
                 newsSentimentService.build("US", news),
             ),
             tradingDayStatus = tradingDay,
-            riskWeight = RiskWeightInfo.of(riskPreset, customizable = pro),
+            riskWeight = RiskWeightInfo.of(riskSelection, customizable = pro),
         )
     }
 

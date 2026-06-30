@@ -276,7 +276,7 @@ class CompositeRiskServiceTest {
     fun `FX_SENSITIVE 프리셋은 환율 가중을 BALANCED 보다 높인다`() {
         val fx = FredSeriesSnapshot(1450.0, 1.0, emptyList())
         val balanced = service.build(emptyList(), null, emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx)
-        val fxHeavy = service.build(emptyList(), null, emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx, preset = RiskWeightPreset.FX_SENSITIVE)
+        val fxHeavy = service.build(emptyList(), null, emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx, weights = RiskWeightSelection(RiskWeightPreset.FX_SENSITIVE))
         val wBalanced = balanced.components.first { it.label == "원/달러 환율" }.weight
         val wFx = fxHeavy.components.first { it.label == "원/달러 환율" }.weight
         assertTrue(wFx > wBalanced, "fx=$wFx balanced=$wBalanced")
@@ -285,7 +285,7 @@ class CompositeRiskServiceTest {
     @Test
     fun `프리셋 적용 후에도 가중 합은 약 1`() {
         val fx = FredSeriesSnapshot(1450.0, 1.0, emptyList())
-        val r = service.build(emptyList(), vix(20.0), emptyList(), emptyList(), emptyPortfolio, krMarket(-1.0), usdKrw = fx, us10y = fx, preset = RiskWeightPreset.DEFENSIVE)
+        val r = service.build(emptyList(), vix(20.0), emptyList(), emptyList(), emptyPortfolio, krMarket(-1.0), usdKrw = fx, us10y = fx, weights = RiskWeightSelection(RiskWeightPreset.DEFENSIVE))
         val sum = r.components.sumOf { it.weight }
         assertTrue(kotlin.math.abs(sum - 1.0) < 1e-6, "sum=$sum")
     }
@@ -294,7 +294,37 @@ class CompositeRiskServiceTest {
     fun `BALANCED 프리셋은 가중을 바꾸지 않는다`() {
         val fx = FredSeriesSnapshot(1450.0, 1.0, emptyList())
         val a = service.build(emptyList(), vix(20.0), emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx)
-        val b = service.build(emptyList(), vix(20.0), emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx, preset = RiskWeightPreset.BALANCED)
+        val b = service.build(emptyList(), vix(20.0), emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx, weights = RiskWeightSelection(RiskWeightPreset.BALANCED))
         assertEquals(a.score100, b.score100)
+    }
+
+    @Test
+    fun `CUSTOM 배수로 특정 지표 가중을 직접 올린다`() {
+        val fx = FredSeriesSnapshot(1450.0, 1.0, emptyList())
+        val balanced = service.build(emptyList(), null, emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx)
+        val custom = service.build(
+            emptyList(), null, emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx,
+            weights = RiskWeightSelection(RiskWeightPreset.CUSTOM, mapOf(LBL_FX to 2.5)),
+        )
+        val wBal = balanced.components.first { it.label == LBL_FX }.weight
+        val wCustom = custom.components.first { it.label == LBL_FX }.weight
+        assertTrue(wCustom > wBal, "custom=$wCustom balanced=$wBal")
+        assertTrue(kotlin.math.abs(custom.components.sumOf { it.weight } - 1.0) < 1e-6)
+    }
+
+    @Test
+    fun `CUSTOM 인데 배수 비어있으면 BALANCED 와 동일`() {
+        val fx = FredSeriesSnapshot(1450.0, 1.0, emptyList())
+        val a = service.build(emptyList(), vix(20.0), emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx)
+        val b = service.build(emptyList(), vix(20.0), emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx, weights = RiskWeightSelection(RiskWeightPreset.CUSTOM, emptyMap()))
+        assertEquals(a.score100, b.score100)
+    }
+
+    @Test
+    fun `sanitize 는 알 수 없는 라벨 제거하고 범위를 클램프`() {
+        val cleaned = RiskWeightSelection.sanitize(mapOf(LBL_FX to 9.0, "없는라벨" to 2.0, LBL_RATE to -1.0))
+        assertEquals(setOf(LBL_FX, LBL_RATE), cleaned.keys)
+        assertEquals(3.0, cleaned[LBL_FX])    // 9.0 → 3.0 클램프
+        assertEquals(0.0, cleaned[LBL_RATE])  // -1.0 → 0.0 클램프
     }
 }

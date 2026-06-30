@@ -3,6 +3,7 @@ package com.giwon.signaldesk.features.market.presentation
 import com.giwon.signaldesk.features.auth.application.AuthContext
 import com.giwon.signaldesk.features.market.application.RiskWeightInfo
 import com.giwon.signaldesk.features.market.application.RiskWeightPreferenceService
+import com.giwon.signaldesk.features.market.application.RiskWeightSelection
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -28,8 +29,8 @@ class RiskWeightPreferenceController(
         val userId = authContext.requireUserId(auth)
         val pro = planService.isPro(userId)
         // FREE 는 저장값과 무관하게 BALANCED 로 노출(적용도 BALANCED).
-        val preset = if (pro) service.get(userId) else com.giwon.signaldesk.features.market.application.RiskWeightPreset.BALANCED
-        return RiskWeightInfo.of(preset, customizable = pro)
+        val selection = if (pro) service.get(userId) else RiskWeightSelection.BALANCED
+        return RiskWeightInfo.of(selection, customizable = pro)
     }
 
     @PutMapping
@@ -41,9 +42,10 @@ class RiskWeightPreferenceController(
         require(planService.isPro(userId)) {
             "시장 분위기 가중치 커스터마이징은 PRO 플랜 전용이에요. PRO 로 업그레이드하면 조정할 수 있어요. 💎"
         }
-        val saved = service.update(userId, body.preset)
+        val saved = service.update(userId, body.preset, body.customWeights)
         return RiskWeightInfo.of(saved, customizable = true)
     }
 }
 
-data class RiskWeightUpdateRequest(val preset: String)
+/** customWeights = 라벨→배수(CUSTOM 일 때만 의미). preset != CUSTOM 이면 무시됨. */
+data class RiskWeightUpdateRequest(val preset: String, val customWeights: Map<String, Double>? = null)
