@@ -37,6 +37,9 @@ class MarketOverviewService(
     // PlanService 는 jdbc 스토어 모드에서만 존재 → 없으면 모두 FREE 취급(야간방향성 잠금).
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private val planService: com.giwon.signaldesk.features.plan.PlanService? = null,
+    // 위험도 가중 프리셋 저장소(PRO) — jdbc 모드에서만. 없으면 전원 BALANCED.
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private val riskWeightPreferenceService: RiskWeightPreferenceService? = null,
 ) {
     private val logger = LoggerFactory.getLogger(MarketOverviewService::class.java)
 
@@ -111,6 +114,9 @@ class MarketOverviewService(
             PreMarketDirection.LOCKED
         }
         val news = getCachedNews().news
+        // 위험도 가중 프리셋 — PRO 만 적용, FREE/비로그인은 BALANCED 고정.
+        val riskPreset = if (pro) riskWeightPreferenceService?.get(userId!!) ?: RiskWeightPreset.BALANCED
+        else RiskWeightPreset.BALANCED
         val compositeRisk = compositeRiskService.build(
             alternativeSignals = alternativeSignals,
             vix = core.vixSnapshot,
@@ -120,6 +126,7 @@ class MarketOverviewService(
             koreaMarket = core.koreaMarket,
             usdKrw = core.macroQuotes?.usdKrw,
             us10y = core.macroQuotes?.us10y,
+            preset = riskPreset,
         )
         val compositeRiskKr = compositeRiskService.buildKr(
             koreaMarket = core.koreaMarket,
@@ -128,6 +135,7 @@ class MarketOverviewService(
             portfolio = snapshot.portfolio,
             usdKrw = core.macroQuotes?.usdKrw,
             us10y = core.macroQuotes?.us10y,
+            preset = riskPreset,
         )
         val compositeRiskUs = compositeRiskService.buildUs(
             vix = core.vixSnapshot,
@@ -136,6 +144,7 @@ class MarketOverviewService(
             watchlist = snapshot.watchlist,
             portfolio = snapshot.portfolio,
             us10y = core.macroQuotes?.us10y,
+            preset = riskPreset,
         )
         return MarketSummaryResponse(
             generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
@@ -151,6 +160,7 @@ class MarketOverviewService(
                 newsSentimentService.build("US", news),
             ),
             tradingDayStatus = tradingDay,
+            riskWeight = RiskWeightInfo.of(riskPreset, customizable = pro),
         )
     }
 

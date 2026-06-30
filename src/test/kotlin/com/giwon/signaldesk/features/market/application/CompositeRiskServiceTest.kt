@@ -270,4 +270,31 @@ class CompositeRiskServiceTest {
         assertFalse(result.description.isBlank())
         assertFalse(result.methodology.isBlank())
     }
+
+    // ─── 가중 프리셋(PRO 커스터마이징) ──────────────────────────────────────
+    @Test
+    fun `FX_SENSITIVE 프리셋은 환율 가중을 BALANCED 보다 높인다`() {
+        val fx = FredSeriesSnapshot(1450.0, 1.0, emptyList())
+        val balanced = service.build(emptyList(), null, emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx)
+        val fxHeavy = service.build(emptyList(), null, emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx, preset = RiskWeightPreset.FX_SENSITIVE)
+        val wBalanced = balanced.components.first { it.label == "원/달러 환율" }.weight
+        val wFx = fxHeavy.components.first { it.label == "원/달러 환율" }.weight
+        assertTrue(wFx > wBalanced, "fx=$wFx balanced=$wBalanced")
+    }
+
+    @Test
+    fun `프리셋 적용 후에도 가중 합은 약 1`() {
+        val fx = FredSeriesSnapshot(1450.0, 1.0, emptyList())
+        val r = service.build(emptyList(), vix(20.0), emptyList(), emptyList(), emptyPortfolio, krMarket(-1.0), usdKrw = fx, us10y = fx, preset = RiskWeightPreset.DEFENSIVE)
+        val sum = r.components.sumOf { it.weight }
+        assertTrue(kotlin.math.abs(sum - 1.0) < 1e-6, "sum=$sum")
+    }
+
+    @Test
+    fun `BALANCED 프리셋은 가중을 바꾸지 않는다`() {
+        val fx = FredSeriesSnapshot(1450.0, 1.0, emptyList())
+        val a = service.build(emptyList(), vix(20.0), emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx)
+        val b = service.build(emptyList(), vix(20.0), emptyList(), emptyList(), emptyPortfolio, krMarket(0.0), usdKrw = fx, us10y = fx, preset = RiskWeightPreset.BALANCED)
+        assertEquals(a.score100, b.score100)
+    }
 }

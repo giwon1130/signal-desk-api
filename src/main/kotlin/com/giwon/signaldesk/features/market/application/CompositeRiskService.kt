@@ -26,6 +26,7 @@ class CompositeRiskService {
         koreaMarket: MarketSection? = null,
         usdKrw: FredSeriesSnapshot? = null,
         us10y: FredSeriesSnapshot? = null,
+        preset: RiskWeightPreset = RiskWeightPreset.BALANCED,
     ): CompositeRiskSignal = assemble(
         // 거시 드라이버(환율·미 10년물 금리)를 상향, 실험지표(PizzINT)·뉴스는 하향.
         // 모든 항목 동일 등급이 아니라 시장 영향력 순으로 차등.
@@ -40,6 +41,7 @@ class CompositeRiskService {
         marketLabel = "",
         watchlist = watchlist,
         portfolio = portfolio,
+        preset = preset,
     )
 
     /**
@@ -53,6 +55,7 @@ class CompositeRiskService {
         portfolio: PortfolioSummary,
         usdKrw: FredSeriesSnapshot? = null,
         us10y: FredSeriesSnapshot? = null,
+        preset: RiskWeightPreset = RiskWeightPreset.BALANCED,
     ): CompositeRiskSignal = assemble(
         components = listOf(
             krComponent(koreaMarket, 0.40),
@@ -63,6 +66,7 @@ class CompositeRiskService {
         marketLabel = "한국 ",
         watchlist = watchlist,
         portfolio = portfolio,
+        preset = preset,
     )
 
     /** 미국 투자자 관점 — 美 VIX(0.38) + 미 10년물 금리(0.27) + 미국 뉴스(0.20) + 지정학 PizzINT(0.15). */
@@ -73,6 +77,7 @@ class CompositeRiskService {
         watchlist: List<WatchItem>,
         portfolio: PortfolioSummary,
         us10y: FredSeriesSnapshot? = null,
+        preset: RiskWeightPreset = RiskWeightPreset.BALANCED,
     ): CompositeRiskSignal = assemble(
         components = listOf(
             vixComponent(vix, 0.38),
@@ -83,29 +88,41 @@ class CompositeRiskService {
         marketLabel = "미국 ",
         watchlist = watchlist,
         portfolio = portfolio,
+        preset = preset,
     )
 
-    /** 컴포넌트 목록 → 1~10 위험도 신호로 환산 (통합/시장별 공통). */
+    /** 컴포넌트 목록 → 1~10 위험도 신호로 환산 (통합/시장별 공통). preset 으로 가중 프로파일 적용(PRO). */
     private fun assemble(
         components: List<RiskComponent>,
         marketLabel: String,
         watchlist: List<WatchItem>,
         portfolio: PortfolioSummary,
+        preset: RiskWeightPreset = RiskWeightPreset.BALANCED,
     ): CompositeRiskSignal {
-        val score100 = components.sumOf { it.score * it.weight }.roundToInt().coerceIn(0, 100)
+        val adjusted = applyPreset(components, preset)
+        val score100 = adjusted.sumOf { it.score * it.weight }.roundToInt().coerceIn(0, 100)
         val score = (score100 / 10.0).roundToInt().coerceIn(1, 10)
         val level = levelOf(score)
         return CompositeRiskSignal(
             score = score,
             score100 = score100,
             level = level,
-            headline = buildHeadline(score, level, marketLabel, components),
-            components = components,
+            headline = buildHeadline(score, level, marketLabel, adjusted),
+            components = adjusted,
             description = DESCRIPTION,
             methodology = METHODOLOGY,
             asOf = LocalDateTime.now(KST).toString(),
             personalImpact = buildPersonalImpact(score, watchlist, portfolio),
         )
+    }
+
+    /** 프리셋 가중 배수 적용 후 합=1 재정규화. BALANCED 면 무변경. 표시 가중(component.weight)도 적용값으로. */
+    private fun applyPreset(components: List<RiskComponent>, preset: RiskWeightPreset): List<RiskComponent> {
+        if (preset == RiskWeightPreset.BALANCED) return components
+        val scaled = components.map { it to it.weight * preset.multiplierFor(it.label) }
+        val total = scaled.sumOf { it.second }
+        if (total <= 0.0) return components
+        return scaled.map { (c, w) -> c.copy(weight = w / total) }
     }
 
     // ─── 美 VIX 변동성 (가중 0.3) ─────────────────────────────────────────────

@@ -24,6 +24,7 @@ data class MarketSummaryResponse(
     val workspaceCounts: WorkspaceCounts,
     val newsSentiments: List<NewsSentiment>,
     val tradingDayStatus: TradingDayStatus,
+    val riskWeight: RiskWeightInfo,                // 시장 분위기 가중 프리셋(현재값+PRO 여부+선택지)
 )
 
 data class MarketSectionsResponse(
