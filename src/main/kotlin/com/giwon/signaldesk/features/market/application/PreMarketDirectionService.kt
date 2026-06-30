@@ -11,14 +11,17 @@ import org.springframework.stereotype.Service
  * 데이터 (전부 [YahooQuoteClient], 한국장 시작 전에도 라이브로 받히는 '간밤' 대용 지표):
  *  - MSCI 한국 ETF(EWY) — 간밤 미국장에서 외국인이 본 한국. 주신호(headline).
  *  - 해외상장 삼성: 런던 GDR(SMSN.IL) + 프랑크푸르트(SSU.F) — 한국 대표주 야간 등락.
+ *  - 마이크론(MU) — SK하이닉스와 메모리/HBM 동조, 간밤 미국장이 SK하이닉스 시초가의 사실상 표준 프록시.
  *  - S&P500 선물(ES=F) — 간밤 글로벌 위험선호.
  *
  * 왜 코스피200 야간선물(EUREX)을 직접 안 쓰나: Naver `FUT` 은 정규장(09:00~15:30) 인스트루먼트라
  * 야간 세션을 안 태운다 → 새벽엔 어제 주간 종가의 등락률이 굳어 'stale'. 안정적 공개 야간선물 피드가
  * 없어, 한국장 시작 전에 라이브로 갱신되는 위 대용 지표로 방향을 가늠한다.
+ * (SK하이닉스는 삼성과 달리 유동성 있는 런던 GDR/미국 ADR 이 없어, 거래 얇은 독일 secondary 대신
+ *  메모리 동조주 마이크론으로 간밤 반도체 방향을 가늠한다.)
  *
- * 방향(bias)은 Gemini 없이 룰기반 — MSCI한국 0.45 + 런던삼성 0.35 + S&P선물 0.20 가중(결측은 정규화).
- * 프랑크푸르트는 거래가 얇아 표시만 하고 판정엔 안 쓴다. 라이브 시세라 quote-short(45s) 캐시.
+ * 방향(bias)은 Gemini 없이 룰기반 — MSCI한국 0.40 + 런던삼성 0.30 + 마이크론 0.15 + S&P선물 0.15
+ * 가중(결측은 정규화). 프랑크푸르트는 거래가 얇아 표시만 하고 판정엔 안 쓴다. 라이브 시세라 quote-short(45s) 캐시.
  */
 @Service
 class PreMarketDirectionService(
@@ -31,6 +34,7 @@ class PreMarketDirectionService(
     private val symbols = linkedMapOf(
         "EWY" to GAUGE_LABEL,
         "SMSN.IL" to LONDON_LABEL,
+        "MU" to MICRON_LABEL,
         "ES=F" to SP_FUTURES_LABEL,
         "SSU.F" to "삼성전자(프랑크푸르트)",
     )
@@ -50,7 +54,12 @@ class PreMarketDirectionService(
             return PreMarketDirection.EMPTY
         }
 
-        val bias = computeBias(gauge?.changeRate, london?.changeRate, byLabel[SP_FUTURES_LABEL]?.changeRate)
+        val bias = computeBias(
+            gaugeRate = gauge?.changeRate,
+            londonRate = london?.changeRate,
+            micronRate = byLabel[MICRON_LABEL]?.changeRate,
+            spRate = byLabel[SP_FUTURES_LABEL]?.changeRate,
+        )
 
         return PreMarketDirection(
             locked = false,
@@ -71,14 +80,15 @@ class PreMarketDirectionService(
     }
 
     /**
-     * MSCI한국 0.45 + 런던삼성 0.35 + S&P선물 0.20 가중. 결측 지표는 빼고 남은 가중치로 정규화한다.
+     * MSCI한국 0.40 + 런던삼성 0.30 + 마이크론 0.15 + S&P선물 0.15 가중. 결측 지표는 빼고 남은 가중치로 정규화한다.
      * visibility=internal: 회귀 테스트용.
      */
-    internal fun computeBias(gaugeRate: Double?, londonRate: Double?, spRate: Double?): Bias {
+    internal fun computeBias(gaugeRate: Double?, londonRate: Double?, micronRate: Double?, spRate: Double?): Bias {
         val parts = listOfNotNull(
-            gaugeRate?.let { it to 0.45 },
-            londonRate?.let { it to 0.35 },
-            spRate?.let { it to 0.20 },
+            gaugeRate?.let { it to 0.40 },
+            londonRate?.let { it to 0.30 },
+            micronRate?.let { it to 0.15 },
+            spRate?.let { it to 0.15 },
         )
         if (parts.isEmpty()) return Bias.NEUTRAL
         val weighted = parts.sumOf { it.first * it.second } / parts.sumOf { it.second }
@@ -108,6 +118,7 @@ class PreMarketDirectionService(
     companion object {
         const val GAUGE_LABEL = "MSCI 한국(간밤)"
         const val LONDON_LABEL = "삼성전자(런던)"
+        const val MICRON_LABEL = "마이크론(SK하이닉스 가늠)"
         const val SP_FUTURES_LABEL = "S&P500 선물"
     }
 }
