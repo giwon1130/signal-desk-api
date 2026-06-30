@@ -195,7 +195,12 @@ class CompositeRiskServiceTest {
         val calmPizz = pizzSignals(0, 0, 0)
         val benignNews = listOf(news("기업 실적 호조"), news("거래량 평이"))
 
-        val result = service.build(calmPizz, calmVix, benignNews, emptyList(), emptyPortfolio, krMarket(0.0))
+        // 거시(환율·금리)도 calm 값을 줘야 한다 — 미제공 시 중립값(45)이 상향된 가중에 실려 baseline 이 뜬다.
+        val result = service.build(
+            calmPizz, calmVix, benignNews, emptyList(), emptyPortfolio, krMarket(0.0),
+            usdKrw = FredSeriesSnapshot(1280.0, -0.1, emptyList()),   // 저환율·소폭 하락 → 0
+            us10y = FredSeriesSnapshot(3.8, -0.5, emptyList()),       // 저금리·소폭 하락 → 0
+        )
         assertEquals(1, result.score)
         assertEquals("안정", result.level)
     }
@@ -225,9 +230,10 @@ class CompositeRiskServiceTest {
             news = listOf(news("코스피 사이드카 급락", "KR"), news("S&P 사상 최고치 랠리", "US")),
             watchlist = emptyList(), portfolio = emptyPortfolio,
         )
-        assertEquals(3, krDanger.components.size)
+        assertEquals(4, krDanger.components.size)   // 한국지수·환율·미10년물·한국뉴스
         assertTrue(krDanger.components.any { it.label == "한국 지수 변동" })
         assertTrue(krDanger.components.any { it.label == "원/달러 환율" })
+        assertTrue(krDanger.components.any { it.label == "미 10년물 금리" })
         assertTrue(krDanger.components.none { it.label == "VIX 변동성" })
         assertTrue(krDanger.score >= 5, "score=${krDanger.score}")   // 한국 급락+위험뉴스 → 높음
         assertTrue(krDanger.headline.contains("한국"), "headline=${krDanger.headline}")

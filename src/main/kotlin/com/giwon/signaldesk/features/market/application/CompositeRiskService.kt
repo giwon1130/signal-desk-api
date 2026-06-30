@@ -27,38 +27,45 @@ class CompositeRiskService {
         usdKrw: FredSeriesSnapshot? = null,
         us10y: FredSeriesSnapshot? = null,
     ): CompositeRiskSignal = assemble(
+        // 거시 드라이버(환율·미 10년물 금리)를 상향, 실험지표(PizzINT)·뉴스는 하향.
+        // 모든 항목 동일 등급이 아니라 시장 영향력 순으로 차등.
         components = listOf(
-            vixComponent(vix, 0.22),
             krComponent(koreaMarket, 0.22),
-            fxComponent(usdKrw, 0.15),
-            rateComponent(us10y, 0.13),
-            pizzComponent(alternativeSignals, 0.13),
-            newsComponent(news, 0.15),
+            fxComponent(usdKrw, 0.19),
+            rateComponent(us10y, 0.19),
+            vixComponent(vix, 0.18),
+            newsComponent(news, 0.12),
+            pizzComponent(alternativeSignals, 0.10),
         ),
         marketLabel = "",
         watchlist = watchlist,
         portfolio = portfolio,
     )
 
-    /** 한국 투자자 관점 — 한국 지수(0.45) + 원/달러 환율(0.25) + 한국 뉴스(0.30). */
+    /**
+     * 한국 투자자 관점 — 한국 지수(0.40) + 원/달러 환율(0.25) + 미 10년물 금리(0.15) + 한국 뉴스(0.20).
+     * 미 10년물 금리는 한국 성장주·외국인 수급에 직접 영향이라 한국 관점에도 비중 있게 반영한다.
+     */
     fun buildKr(
         koreaMarket: MarketSection?,
         news: List<MarketNews>,
         watchlist: List<WatchItem>,
         portfolio: PortfolioSummary,
         usdKrw: FredSeriesSnapshot? = null,
+        us10y: FredSeriesSnapshot? = null,
     ): CompositeRiskSignal = assemble(
         components = listOf(
-            krComponent(koreaMarket, 0.45),
+            krComponent(koreaMarket, 0.40),
             fxComponent(usdKrw, 0.25),
-            newsComponent(news.filter { it.market.equals("KR", ignoreCase = true) }, 0.30),
+            rateComponent(us10y, 0.15),
+            newsComponent(news.filter { it.market.equals("KR", ignoreCase = true) }, 0.20),
         ),
         marketLabel = "한국 ",
         watchlist = watchlist,
         portfolio = portfolio,
     )
 
-    /** 미국 투자자 관점 — 美 VIX(0.40) + 미 10년물 금리(0.20) + 미국 뉴스(0.25) + 지정학 PizzINT(0.15). */
+    /** 미국 투자자 관점 — 美 VIX(0.38) + 미 10년물 금리(0.27) + 미국 뉴스(0.20) + 지정학 PizzINT(0.15). */
     fun buildUs(
         vix: VixSnapshot?,
         alternativeSignals: List<AlternativeSignal>,
@@ -68,9 +75,9 @@ class CompositeRiskService {
         us10y: FredSeriesSnapshot? = null,
     ): CompositeRiskSignal = assemble(
         components = listOf(
-            vixComponent(vix, 0.40),
-            rateComponent(us10y, 0.20),
-            newsComponent(news.filter { it.market.equals("US", ignoreCase = true) }, 0.25),
+            vixComponent(vix, 0.38),
+            rateComponent(us10y, 0.27),
+            newsComponent(news.filter { it.market.equals("US", ignoreCase = true) }, 0.20),
             pizzComponent(alternativeSignals, 0.15),
         ),
         marketLabel = "미국 ",
@@ -350,15 +357,16 @@ class CompositeRiskService {
         )
 
         private const val DESCRIPTION =
-            "美 VIX 변동성, 한국 지수(KOSPI/KOSDAQ) 일간 변동, PizzINT 실험 지표(Pentagon Pizza/Policy Buzz/" +
-            "Bar Counter-Signal), 주요 뉴스 위험 키워드 빈도 — 네 신호를 하나로 합친 1~10 시장 위험도. " +
-            "개별 지표는 노이즈가 커서 단독으로 보기 어렵기 때문에, 가중 합성해 '오늘 얼마나 불안정한가'만 본다."
+            "한국 지수·美 VIX 변동성, 원/달러 환율, 미 10년물 금리, 뉴스 위험 키워드, PizzINT 실험 지표를 " +
+            "가중 합성한 1~10 시장 위험도. 모든 지표를 같은 등급으로 보지 않고, 시장 영향력이 큰 거시 드라이버" +
+            "(환율·금리)에 더 높은 비중을 둔다. 관점(통합/한국/미국)마다 가중이 다르다."
         private const val METHODOLOGY =
-            "1) 美 VIX 변동성 (가중 0.3) — VIX 13~36 구간을 0~100으로 정규화, 전일 대비 상승분 가산\n" +
-            "2) 한국 지수 변동 (가중 0.3) — KOSPI/KOSDAQ 일간 등락에서 낙폭 중심으로 위험 산출\n" +
-            "3) PizzINT 종합 (가중 0.2) — Pentagon Pizza 0.5 / Policy Buzz 0.3 / Bar Counter 0.2 가중 평균 후 baseline 보정\n" +
-            "4) 뉴스 키워드 (가중 0.2) — 주요 헤드라인 표본의 위험 키워드 밀도\n" +
-            "각 sub-score(0~100)를 가중 합산한 뒤 1~10 위험도로 환산.\n" +
-            "※ 한국 관점엔 원/달러 환율(원화 약세·고환율=위험), 미국 관점엔 미 10년물 금리(금리 급등=위험)를 추가 반영."
+            "각 sub-score(0~100)를 가중 합산한 뒤 1~10 위험도로 환산. 관점별 가중:\n" +
+            "• 통합 — 한국지수 0.22 · 환율 0.19 · 미10년물 0.19 · VIX 0.18 · 뉴스 0.12 · PizzINT 0.10\n" +
+            "• 한국 관점 — 한국지수 0.40 · 환율 0.25 · 미10년물 0.15 · 한국뉴스 0.20\n" +
+            "• 미국 관점 — VIX 0.38 · 미10년물 0.27 · 미국뉴스 0.20 · PizzINT 0.15\n" +
+            "지표 산출: VIX 13~36→0~100·전일상승분 가산 / 한국지수 낙폭 중심 / 환율 고환율·약세폭 / " +
+            "미10년물 고금리·급등bp / 뉴스 위험키워드 밀도 / PizzINT 가중평균 후 baseline 보정.\n" +
+            "※ 환율·금리 비중은 거시 영향력을 반영해 상향(2026-06 조정)."
     }
 }

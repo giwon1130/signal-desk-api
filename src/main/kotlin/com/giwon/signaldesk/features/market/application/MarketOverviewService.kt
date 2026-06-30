@@ -127,6 +127,7 @@ class MarketOverviewService(
             watchlist = snapshot.watchlist,
             portfolio = snapshot.portfolio,
             usdKrw = core.macroQuotes?.usdKrw,
+            us10y = core.macroQuotes?.us10y,
         )
         val compositeRiskUs = compositeRiskService.buildUs(
             vix = core.vixSnapshot,
