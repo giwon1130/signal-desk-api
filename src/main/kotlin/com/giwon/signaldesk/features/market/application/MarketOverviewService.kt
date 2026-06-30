@@ -33,6 +33,7 @@ class MarketOverviewService(
     private val pickNewsMatcher: PickNewsMatcher,
     private val enrichmentService: WorkspaceEnrichmentService,
     private val preMarketDirectionService: PreMarketDirectionService,
+    private val newsSentimentService: NewsSentimentService,
     // PlanService 는 jdbc 스토어 모드에서만 존재 → 없으면 모두 FREE 취급(야간방향성 잠금).
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private val planService: com.giwon.signaldesk.features.plan.PlanService? = null,
@@ -145,8 +146,8 @@ class MarketOverviewService(
             briefing = briefing, preMarketDirection = preMarketDirection, sourceNotes = core.sourceNotes,
             workspaceCounts = enrichmentService.buildWorkspaceCounts(userId),
             newsSentiments = listOf(
-                NewsSentimentBuilder.build("KR", news),
-                NewsSentimentBuilder.build("US", news),
+                newsSentimentService.build("KR", news),
+                newsSentimentService.build("US", news),
             ),
             tradingDayStatus = tradingDay,
         )

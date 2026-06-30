@@ -28,6 +28,8 @@ class CacheConfig {
         manager.registerCustomCache("krx-official", build(Duration.ofMinutes(5), 200))
         manager.registerCustomCache("top-movers", build(Duration.ofMinutes(2), 100))
         manager.registerCustomCache("market-insight", build(Duration.ofMinutes(30), 10))
+        // 뉴스 톤 분류(Gemini) — 뉴스 갱신 주기(5~15분)에 맞춰 15분. 시장×표본 단위라 엔트리 적음.
+        manager.registerCustomCache("news-sentiment", build(Duration.ofMinutes(15), 50))
         // FRED 매크로·네이버 수급 — 일 단위로 갱신되는 데이터. 미등록 시 TTL 없는 영구 캐시가 됨.
         manager.registerCustomCache("macro-snapshot", build(Duration.ofHours(6), 10))
         manager.registerCustomCache("investor-rank", build(Duration.ofHours(6), 50))
