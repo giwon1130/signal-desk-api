@@ -11,16 +11,17 @@ import org.springframework.stereotype.Service
  * 데이터 (전부 [YahooQuoteClient], 한국장 시작 전에도 라이브로 받히는 '간밤' 대용 지표):
  *  - MSCI 한국 ETF(EWY) — 간밤 미국장에서 외국인이 본 한국. 주신호(headline).
  *  - 해외상장 삼성: 런던 GDR(SMSN.IL) + 프랑크푸르트(SSU.F) — 한국 대표주 야간 등락.
- *  - 마이크론(MU) — SK하이닉스와 메모리/HBM 동조, 간밤 미국장이 SK하이닉스 시초가의 사실상 표준 프록시.
+ *  - SK하이닉스 ADR(SKHY) — 나스닥에 상장된 하이닉스 자체의 간밤 등락.
+ *  - 마이크론(MU) — 메모리/HBM 업종 흐름을 보완하는 보조 프록시.
  *  - S&P500 선물(ES=F) — 간밤 글로벌 위험선호.
  *
  * 왜 코스피200 야간선물(EUREX)을 직접 안 쓰나: Naver `FUT` 은 정규장(09:00~15:30) 인스트루먼트라
  * 야간 세션을 안 태운다 → 새벽엔 어제 주간 종가의 등락률이 굳어 'stale'. 안정적 공개 야간선물 피드가
  * 없어, 한국장 시작 전에 라이브로 갱신되는 위 대용 지표로 방향을 가늠한다.
- * (SK하이닉스는 삼성과 달리 유동성 있는 런던 GDR/미국 ADR 이 없어, 거래 얇은 독일 secondary 대신
- *  메모리 동조주 마이크론으로 간밤 반도체 방향을 가늠한다.)
+ * (SK하이닉스는 2026-07 나스닥 ADR(SKHY) 상장으로 직접 야간 시세를 확인할 수 있다. ADR은 한국
+ * 보통주와 가격 괴리가 날 수 있으므로, 마이크론·EWY와 함께 결측 정규화 가중으로만 반영한다.)
  *
- * 방향(bias)은 Gemini 없이 룰기반 — MSCI한국 0.40 + 런던삼성 0.30 + 마이크론 0.15 + S&P선물 0.15
+ * 방향(bias)은 Gemini 없이 룰기반 — MSCI한국 0.35 + 런던삼성 0.25 + 하이닉스ADR 0.20 + 마이크론 0.10 + S&P선물 0.10
  * 가중(결측은 정규화). 프랑크푸르트는 거래가 얇아 표시만 하고 판정엔 안 쓴다. 라이브 시세라 quote-short(45s) 캐시.
  */
 @Service
@@ -34,6 +35,7 @@ class PreMarketDirectionService(
     private val symbols = linkedMapOf(
         "EWY" to GAUGE_LABEL,
         "SMSN.IL" to LONDON_LABEL,
+        "SKHY" to HYNIX_ADR_LABEL,
         "MU" to MICRON_LABEL,
         "ES=F" to SP_FUTURES_LABEL,
         "SSU.F" to "삼성전자(프랑크푸르트)",
@@ -44,7 +46,7 @@ class PreMarketDirectionService(
         val raw = runCatching { yahooQuoteClient.fetchIndices(symbols) }.getOrNull().orEmpty()
         val byLabel = raw.associateBy({ it.label }, { DirectionQuote(it.label, it.changeRate, it.value) })
 
-        // headline = MSCI 한국(간밤). overseas = 삼성런던·S&P선물·삼성프랑크푸르트(수집된 것만, 입력 순서).
+        // headline = MSCI 한국(간밤). overseas = 삼성·하이닉스 ADR·반도체/선물(수집된 것만, 입력 순서).
         val gauge = byLabel[GAUGE_LABEL]
         val london = byLabel[LONDON_LABEL]
         val overseas = symbols.values.filter { it != GAUGE_LABEL }.mapNotNull { byLabel[it] }
@@ -57,6 +59,7 @@ class PreMarketDirectionService(
         val bias = computeBias(
             gaugeRate = gauge?.changeRate,
             londonRate = london?.changeRate,
+            hynixAdrRate = byLabel[HYNIX_ADR_LABEL]?.changeRate,
             micronRate = byLabel[MICRON_LABEL]?.changeRate,
             spRate = byLabel[SP_FUTURES_LABEL]?.changeRate,
         )
@@ -67,7 +70,7 @@ class PreMarketDirectionService(
             overseas = overseas,
             bias = bias.name,
             biasLabel = bias.label,
-            summary = buildSummary(gauge, london, bias),
+            summary = buildSummary(gauge, london, byLabel[HYNIX_ADR_LABEL], bias),
             sessionActive = false,  // 대용 지표라 야간선물 라이브 세션 개념 없음
             asOf = null,
         )
@@ -80,15 +83,23 @@ class PreMarketDirectionService(
     }
 
     /**
-     * MSCI한국 0.40 + 런던삼성 0.30 + 마이크론 0.15 + S&P선물 0.15 가중. 결측 지표는 빼고 남은 가중치로 정규화한다.
+     * MSCI한국 0.35 + 런던삼성 0.25 + 하이닉스ADR 0.20 + 마이크론 0.10 + S&P선물 0.10 가중.
+     * 결측 지표는 빼고 남은 가중치로 정규화한다.
      * visibility=internal: 회귀 테스트용.
      */
-    internal fun computeBias(gaugeRate: Double?, londonRate: Double?, micronRate: Double?, spRate: Double?): Bias {
+    internal fun computeBias(
+        gaugeRate: Double?,
+        londonRate: Double?,
+        hynixAdrRate: Double?,
+        micronRate: Double?,
+        spRate: Double?,
+    ): Bias {
         val parts = listOfNotNull(
-            gaugeRate?.let { it to 0.40 },
-            londonRate?.let { it to 0.30 },
-            micronRate?.let { it to 0.15 },
-            spRate?.let { it to 0.15 },
+            gaugeRate?.let { it to 0.35 },
+            londonRate?.let { it to 0.25 },
+            hynixAdrRate?.let { it to 0.20 },
+            micronRate?.let { it to 0.10 },
+            spRate?.let { it to 0.10 },
         )
         if (parts.isEmpty()) return Bias.NEUTRAL
         val weighted = parts.sumOf { it.first * it.second } / parts.sumOf { it.second }
@@ -99,11 +110,12 @@ class PreMarketDirectionService(
         }
     }
 
-    /** "MSCI 한국 +0.7% · 삼성(런던) +1.2% → 오늘 상승 출발 기대". */
-    private fun buildSummary(gauge: DirectionQuote?, london: DirectionQuote?, bias: Bias): String {
+    /** "MSCI 한국 +0.7% · 삼성(런던) +1.2% · 하이닉스 ADR +0.9% → 오늘 상승 출발 기대". */
+    private fun buildSummary(gauge: DirectionQuote?, london: DirectionQuote?, hynixAdr: DirectionQuote?, bias: Bias): String {
         val parts = buildList {
             gauge?.let { add("MSCI 한국 ${signed(it.changeRate)}") }
             london?.let { add("삼성(런던) ${signed(it.changeRate)}") }
+            hynixAdr?.let { add("하이닉스 ADR ${signed(it.changeRate)}") }
         }
         val prefix = if (parts.isEmpty()) "" else parts.joinToString(" · ") + " → "
         return prefix + bias.label
@@ -118,6 +130,7 @@ class PreMarketDirectionService(
     companion object {
         const val GAUGE_LABEL = "MSCI 한국(간밤)"
         const val LONDON_LABEL = "삼성전자(런던)"
+        const val HYNIX_ADR_LABEL = "SK하이닉스(나스닥 ADR)"
         const val MICRON_LABEL = "마이크론(SK하이닉스 가늠)"
         const val SP_FUTURES_LABEL = "S&P500 선물"
     }
