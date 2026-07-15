@@ -119,8 +119,8 @@ signal-desk:
     # PRO 전용 AI 종목 심층 리포트 일일 한도 (비싼 호출이라 별도 캡).
     deep-report-daily-limit: ${SIGNAL_DESK_DEEP_REPORT_DAILY_LIMIT:5}
   report-call:
-    # 📈 AI 리포트 콜 — 하루 발행 상한 + AI 제안 손절가(진입가 -N%).
-    daily-limit: ${SIGNAL_DESK_REPORT_CALL_DAILY_LIMIT:5}
+    # 📈 AI 리포트 콜 — 하루 2개만 엄선. 진행 중인 같은 종목은 재발행하지 않는다.
+    daily-limit: ${SIGNAL_DESK_REPORT_CALL_DAILY_LIMIT:2}
     stop-loss-pct: ${SIGNAL_DESK_REPORT_CALL_STOP_PCT:8}
   plan:
     # 플랜별 자원 상한 — 추가만 차단(삭제·미발송 없음, 기존 사용자 grandfather).

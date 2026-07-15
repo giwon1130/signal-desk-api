@@ -4,6 +4,7 @@ import com.giwon.signaldesk.features.market.application.NaverFinanceQuoteClient
 import com.giwon.signaldesk.features.market.application.NaverStockChartClient
 import com.giwon.signaldesk.features.reading.domain.AiLeaders
 import com.giwon.signaldesk.features.reading.domain.PostVisibility
+import com.giwon.signaldesk.features.reading.repository.ReadingRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -26,8 +27,9 @@ class ReportCallService(
     private val reading: ReadingService,
     private val krQuotes: NaverFinanceQuoteClient,
     private val chart: NaverStockChartClient,
+    private val readingRepository: ReadingRepository,
     private val jdbc: JdbcTemplate,
-    @Value("\${signal-desk.report-call.daily-limit:3}") private val dailyLimit: Int,
+    @Value("\${signal-desk.report-call.daily-limit:2}") private val dailyLimit: Int,
     @Value("\${signal-desk.report-call.stop-loss-pct:8}") private val stopLossPct: Int,
     // 대형·유명 종목만 발행 — 시가총액 하한(원). 기본 2조(한국거래소 '대형주' 라인).
     @Value("\${signal-desk.report-call.min-market-cap-won:2000000000000}") private val minMarketCapWon: Long,
@@ -42,8 +44,16 @@ class ReportCallService(
         // 후보 시세 일괄 조회.
         val prices = runCatching { krQuotes.fetchKoreanQuotes(buys.map { it.ticker }.distinct()) }.getOrNull().orEmpty()
 
-        // 대형·유명 종목만: 시가총액(현재가*상장주식수) >= 하한. 시총 큰 순 정렬 + 종목 중복 제거
-        // (같은 종목 여러 리포트면 시총 큰 순 1건). 이후 하루 상한만큼만 발행 → 소형·잡주 노이즈 제거.
+        // 이미 진행 중인 AI 리포트 콜 종목은 새 목표가가 나와도 재발행하지 않는다.
+        // 같은 종목의 콜이 쌓이면 피드와 성과 분모가 모두 왜곡되기 때문이다.
+        val activeReportTickers = readingRepository.activeCalls()
+            .asSequence()
+            .filter { it.leaderUserId == AiLeaders.REPORT }
+            .map { it.ticker }
+            .toSet()
+
+        // 대형·유명 종목만: 시가총액(현재가*상장주식수) >= 하한. 시총 큰 순 정렬 + 종목 중복 제거.
+        // 같은 종목 여러 리포트면 시총 큰 순 1건만 남기고, 진행 중인 종목도 제외한 뒤 하루 상한만큼만 발행한다.
         val seenTickers = HashSet<String>()
         val ranked = buys
             .mapNotNull { r ->
@@ -55,7 +65,11 @@ class ReportCallService(
             .sortedByDescending { it.second }
             .map { it.first }
             .filter { seenTickers.add(it.ticker) }
-        log.info("ReportCall: buys={}, 대형주 후보={} (min_cap={}조)", buys.size, ranked.size, minMarketCapWon / 1_000_000_000_000)
+            .filter { it.ticker !in activeReportTickers }
+        log.info(
+            "ReportCall: buys={}, 대형주·미진행 후보={} (active_skip={}, min_cap={}조)",
+            buys.size, ranked.size, activeReportTickers.size, minMarketCapWon / 1_000_000_000_000,
+        )
 
         var published = 0
         for (r in ranked) {

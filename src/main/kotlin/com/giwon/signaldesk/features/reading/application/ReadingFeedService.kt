@@ -32,6 +32,8 @@ class ReadingFeedService(
 
     data class LeaderStats(
         val totalCalls: Int,
+        /** 적중률·평균 수익률의 분모. HIT 또는 CLOSED 로 결과가 확정된 콜 수. */
+        val resolvedCalls: Int,
         val hitCount: Int,
         val hitRate: Double,        // 0~1
         val avgReturnPct: Double?,  // 활성/전체 콜 평균 (null=계산 불가)
@@ -71,7 +73,7 @@ class ReadingFeedService(
 
     /** 콜 목록 → 통계. leaderStats 와 discoverLeaders(일괄) 가 공유. */
     private fun statsFromCalls(calls: List<ReadingCall>): LeaderStats {
-        if (calls.isEmpty()) return LeaderStats(0, 0, 0.0, null)
+        if (calls.isEmpty()) return LeaderStats(0, 0, 0, 0.0, null)
         val hit = calls.count { it.status == CallStatus.HIT }
         // 적중률·평균수익 모두 '결착(HIT+CLOSED)' 콜만 모집단으로 — 진행 중(ACTIVE)의 시세 변동이
         // 지표를 흔들지 않게 일치시킴. 결착 콜은 hitPrice(박제)로 수익률 계산 → 라이브 시세 fetch 불필요
@@ -81,6 +83,7 @@ class ReadingFeedService(
         val avg = if (perfs.isEmpty()) null else perfs.average()
         return LeaderStats(
             totalCalls = calls.size,
+            resolvedCalls = resolvedCalls.size,
             hitCount = hit,
             hitRate = if (resolvedCalls.isNotEmpty()) hit.toDouble() / resolvedCalls.size else 0.0,
             avgReturnPct = avg,
@@ -134,6 +137,7 @@ class ReadingFeedService(
         val bio: String,
         val followerCount: Int,
         val totalCalls: Int,
+        val resolvedCalls: Int,
         val hitRate: Double,
         val avgReturnPct: Double?,
         val following: Boolean,
@@ -157,7 +161,8 @@ class ReadingFeedService(
             LeaderCard(
                 userId = l.userId, displayName = l.displayName, bio = l.bio,
                 followerCount = followerCounts[l.userId] ?: 0,
-                totalCalls = stats.totalCalls, hitRate = stats.hitRate, avgReturnPct = stats.avgReturnPct,
+                totalCalls = stats.totalCalls, resolvedCalls = stats.resolvedCalls,
+                hitRate = stats.hitRate, avgReturnPct = stats.avgReturnPct,
                 following = l.userId == viewerUserId || l.userId in followingIds,
                 isAi = l.isAi,
             )

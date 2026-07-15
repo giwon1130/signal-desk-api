@@ -71,13 +71,14 @@ class ReadingFeedController(
 
 data class LeaderStatsResponse(
     val totalCalls: Int,
+    val resolvedCalls: Int,
     val hitCount: Int,
     val hitRate: Double,
     val avgReturnPct: Double?,
 ) {
     companion object {
         fun from(s: ReadingFeedService.LeaderStats) =
-            LeaderStatsResponse(s.totalCalls, s.hitCount, s.hitRate, s.avgReturnPct)
+            LeaderStatsResponse(s.totalCalls, s.resolvedCalls, s.hitCount, s.hitRate, s.avgReturnPct)
     }
 }
 
@@ -93,6 +94,7 @@ data class LeaderCardResponse(
     val bio: String,
     val followerCount: Int,
     val totalCalls: Int,
+    val resolvedCalls: Int,
     val hitRate: Double,
     val avgReturnPct: Double?,
     val following: Boolean,
@@ -101,7 +103,7 @@ data class LeaderCardResponse(
     companion object {
         fun from(c: ReadingFeedService.LeaderCard) = LeaderCardResponse(
             c.userId.toString(), c.displayName, c.bio, c.followerCount,
-            c.totalCalls, c.hitRate, c.avgReturnPct, c.following, c.isAi,
+            c.totalCalls, c.resolvedCalls, c.hitRate, c.avgReturnPct, c.following, c.isAi,
         )
     }
 }
