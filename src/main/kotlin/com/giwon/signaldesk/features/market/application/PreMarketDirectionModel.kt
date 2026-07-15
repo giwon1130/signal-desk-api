@@ -3,7 +3,7 @@ package com.giwon.signaldesk.features.market.application
 /**
  * 한국장 시작 전 "야간 방향성 미리보기" (PRO 전용).
  *
- * 간밤 MSCI 한국(EWY) + 해외상장 삼성(런던 GDR/프랑크푸르트) + S&P선물 등락을 모아 오늘 한국장 출발
+ * 간밤 MSCI 한국(EWY) + 해외상장 삼성·SK하이닉스 ADR + S&P선물 등락을 모아 오늘 한국장 출발
  * 방향을 가늠한다. [locked]=true 면 FREE 사용자라 값은 비공개(앱에서 블러+업그레이드 유도).
  */
 data class PreMarketDirection(
@@ -15,6 +15,10 @@ data class PreMarketDirection(
     val summary: String?,                 // 한 줄 요약 (간밤지표 + 방향)
     val sessionActive: Boolean,           // (대용 지표라 항상 false)
     val asOf: String?,                    // 기준 시각(ISO local)
+    val score: Double? = null,            // 가중 등락률(%), null=핵심 지표 부족
+    val confidence: String? = null,       // HIGH | MEDIUM | LOW | INSUFFICIENT
+    val coverage: Int? = null,            // 핵심 지표 가중치 커버리지(0~100)
+    val inputCount: Int? = null,          // 산식에 실제 사용한 핵심 지표 수
 ) {
     companion object {
         /** FREE 사용자용 — 값 없이 잠금 표시만. */

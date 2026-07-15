@@ -108,7 +108,9 @@ class MarketOverviewService(
         )
         // 야간 방향성 — PRO 전용. 비로그인/FREE 는 잠금(앱에서 블러+업그레이드 유도).
         val pro = userId != null && (planService?.isPro(userId) ?: false)
-        val preMarketDirection = if (pro) {
+        val preMarketDirection = if (!preMarketDirectionService.isPredictionWindow()) {
+            PreMarketDirection.EMPTY
+        } else if (pro) {
             runCatching { preMarketDirectionService.current() }.getOrDefault(PreMarketDirection.EMPTY)
         } else {
             PreMarketDirection.LOCKED

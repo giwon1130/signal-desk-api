@@ -43,6 +43,23 @@ class YahooQuoteClient(
         unless = "#result.isEmpty()",
     )
     fun fetchIndices(symbolToLabel: Map<String, String>): List<GlobalIndex> {
+        return fetchIndicesUncached(symbolToLabel)
+    }
+
+    /**
+     * 장전 방향성처럼 장 시작 직전에 쓰는 지표용. 일반 글로벌 브리프(30분 캐시)와 분리해
+     * quote-short TTL(45초) 안에서 최신 값을 다시 읽는다.
+     */
+    @org.springframework.cache.annotation.Cacheable(
+        cacheNames = ["quote-short"],
+        key = "'yq-live:' + new java.util.TreeSet(#symbolToLabel.keySet()).toString()",
+        unless = "#result.isEmpty()",
+    )
+    fun fetchLiveIndices(symbolToLabel: Map<String, String>): List<GlobalIndex> {
+        return fetchIndicesUncached(symbolToLabel)
+    }
+
+    private fun fetchIndicesUncached(symbolToLabel: Map<String, String>): List<GlobalIndex> {
         if (!enabled || symbolToLabel.isEmpty()) return emptyList()
         val futures = symbolToLabel.entries.map { (symbol, label) ->
             CompletableFuture.supplyAsync({

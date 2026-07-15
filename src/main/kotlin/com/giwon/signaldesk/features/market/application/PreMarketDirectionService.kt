@@ -1,9 +1,12 @@
 package com.giwon.signaldesk.features.market.application
 
+import com.giwon.signaldesk.common.KST
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
+import java.time.LocalTime
+import java.time.ZonedDateTime
+import kotlin.math.roundToInt
 
 /**
  * 한국장 시작 전 "야간 방향성" 조립 (PRO 전용 — 게이팅은 호출부 [MarketOverviewService] 에서).
@@ -27,6 +30,7 @@ import org.springframework.stereotype.Service
 @Service
 class PreMarketDirectionService(
     private val yahooQuoteClient: YahooQuoteClient,
+    private val marketSessionService: MarketSessionService,
     @Value("\${signal-desk.premarket.bias-threshold:0.3}") private val biasThreshold: Double,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -41,9 +45,9 @@ class PreMarketDirectionService(
         "SSU.F" to "삼성전자(프랑크푸르트)",
     )
 
-    @Cacheable(cacheNames = ["quote-short"], key = "'premarket-direction'", unless = "#result == null")
     fun current(): PreMarketDirection {
-        val raw = runCatching { yahooQuoteClient.fetchIndices(symbols) }.getOrNull().orEmpty()
+        val asOf = ZonedDateTime.now(KST)
+        val raw = runCatching { yahooQuoteClient.fetchLiveIndices(symbols) }.getOrNull().orEmpty()
         val byLabel = raw.associateBy({ it.label }, { DirectionQuote(it.label, it.changeRate, it.value) })
 
         // headline = MSCI 한국(간밤). overseas = 삼성·하이닉스 ADR·반도체/선물(수집된 것만, 입력 순서).
@@ -56,7 +60,7 @@ class PreMarketDirectionService(
             return PreMarketDirection.EMPTY
         }
 
-        val bias = computeBias(
+        val signal = computeSignal(
             gaugeRate = gauge?.changeRate,
             londonRate = london?.changeRate,
             hynixAdrRate = byLabel[HYNIX_ADR_LABEL]?.changeRate,
@@ -68,12 +72,23 @@ class PreMarketDirectionService(
             locked = false,
             kospiFutures = gauge,   // headline 슬롯 = 간밤 한국 게이지(MSCI 한국)
             overseas = overseas,
-            bias = bias.name,
-            biasLabel = bias.label,
-            summary = buildSummary(gauge, london, byLabel[HYNIX_ADR_LABEL], bias),
+            bias = signal.bias?.name,
+            biasLabel = signal.bias?.label ?: "핵심 지표 수집 부족",
+            summary = buildSummary(gauge, london, byLabel[HYNIX_ADR_LABEL], signal),
             sessionActive = false,  // 대용 지표라 야간선물 라이브 세션 개념 없음
-            asOf = null,
+            asOf = asOf.toOffsetDateTime().toString(),
+            score = signal.score,
+            confidence = signal.confidence.name,
+            coverage = (signal.coverage * 100).roundToInt(),
+            inputCount = signal.inputCount,
         )
+    }
+
+    /** 한국 거래일 06:30~09:00 KST에만 '오늘 시초가' 예측을 노출한다. */
+    internal fun isPredictionWindow(now: ZonedDateTime = ZonedDateTime.now(KST)): Boolean {
+        val koreaNow = now.withZoneSameInstant(KST)
+        return marketSessionService.isKrTradingDay(koreaNow.toLocalDate()) &&
+            koreaNow.toLocalTime() >= PREDICTION_START && koreaNow.toLocalTime() < PREDICTION_END
     }
 
     enum class Bias(val label: String) {
@@ -87,13 +102,13 @@ class PreMarketDirectionService(
      * 결측 지표는 빼고 남은 가중치로 정규화한다.
      * visibility=internal: 회귀 테스트용.
      */
-    internal fun computeBias(
+    internal fun computeSignal(
         gaugeRate: Double?,
         londonRate: Double?,
         hynixAdrRate: Double?,
         micronRate: Double?,
         spRate: Double?,
-    ): Bias {
+    ): DirectionSignal {
         val parts = listOfNotNull(
             gaugeRate?.let { it to 0.35 },
             londonRate?.let { it to 0.25 },
@@ -101,24 +116,36 @@ class PreMarketDirectionService(
             micronRate?.let { it to 0.10 },
             spRate?.let { it to 0.10 },
         )
-        if (parts.isEmpty()) return Bias.NEUTRAL
+        val coverage = parts.sumOf { it.second }
+        if (coverage < MIN_DIRECTION_COVERAGE) {
+            return DirectionSignal(null, null, coverage, parts.size, Confidence.INSUFFICIENT)
+        }
         val weighted = parts.sumOf { it.first * it.second } / parts.sumOf { it.second }
-        return when {
+        val bias = when {
             weighted >= biasThreshold -> Bias.RISING
             weighted <= -biasThreshold -> Bias.FALLING
             else -> Bias.NEUTRAL
         }
+        val confidence = when {
+            coverage >= 0.85 -> Confidence.HIGH
+            coverage >= 0.65 -> Confidence.MEDIUM
+            else -> Confidence.LOW
+        }
+        return DirectionSignal(bias, weighted, coverage, parts.size, confidence)
     }
 
     /** "MSCI 한국 +0.7% · 삼성(런던) +1.2% · 하이닉스 ADR +0.9% → 오늘 상승 출발 기대". */
-    private fun buildSummary(gauge: DirectionQuote?, london: DirectionQuote?, hynixAdr: DirectionQuote?, bias: Bias): String {
+    private fun buildSummary(gauge: DirectionQuote?, london: DirectionQuote?, hynixAdr: DirectionQuote?, signal: DirectionSignal): String {
+        if (signal.bias == null) {
+            return "핵심 야간 지표가 ${signal.inputCount}개만 수집돼 방향을 제시하지 않아요."
+        }
         val parts = buildList {
             gauge?.let { add("MSCI 한국 ${signed(it.changeRate)}") }
             london?.let { add("삼성(런던) ${signed(it.changeRate)}") }
             hynixAdr?.let { add("하이닉스 ADR ${signed(it.changeRate)}") }
         }
         val prefix = if (parts.isEmpty()) "" else parts.joinToString(" · ") + " → "
-        return prefix + bias.label
+        return prefix + signal.bias.label
     }
 
     /** +1.23% / -0.45% (소수 2자리, 부호 항상). */
@@ -128,10 +155,23 @@ class PreMarketDirectionService(
     }
 
     companion object {
+        private val PREDICTION_START = LocalTime.of(6, 30)
+        private val PREDICTION_END = LocalTime.of(9, 0)
+        private const val MIN_DIRECTION_COVERAGE = 0.55
         const val GAUGE_LABEL = "MSCI 한국(간밤)"
         const val LONDON_LABEL = "삼성전자(런던)"
         const val HYNIX_ADR_LABEL = "SK하이닉스(나스닥 ADR)"
         const val MICRON_LABEL = "마이크론(SK하이닉스 가늠)"
         const val SP_FUTURES_LABEL = "S&P500 선물"
     }
+
+    internal data class DirectionSignal(
+        val bias: Bias?,
+        val score: Double?,
+        val coverage: Double,
+        val inputCount: Int,
+        val confidence: Confidence,
+    )
+
+    enum class Confidence { HIGH, MEDIUM, LOW, INSUFFICIENT }
 }
