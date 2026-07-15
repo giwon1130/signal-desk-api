@@ -67,6 +67,7 @@ class NaverFinanceQuoteClient(
                         ticker = ticker,
                         currentPrice = nv,
                         changeRate = signedRate,
+                        listedShares = node["countOfListedStock"]?.asLong() ?: 0L,
                     )
                 }
                 .orEmpty()
@@ -89,4 +90,6 @@ data class StockQuote(
     val changeRate: Double,
     /** 정밀 계산용(체결가·수익률·평가액) — US 센트 보존. KR은 currentPrice 와 동일. */
     val exactPrice: Double = currentPrice.toDouble(),
+    /** 상장주식수(KR). 시가총액 = exactPrice * listedShares. 미제공 시 0. */
+    val listedShares: Long = 0L,
 )

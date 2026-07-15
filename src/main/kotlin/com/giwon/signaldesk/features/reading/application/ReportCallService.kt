@@ -27,8 +27,10 @@ class ReportCallService(
     private val krQuotes: NaverFinanceQuoteClient,
     private val chart: NaverStockChartClient,
     private val jdbc: JdbcTemplate,
-    @Value("\${signal-desk.report-call.daily-limit:5}") private val dailyLimit: Int,
+    @Value("\${signal-desk.report-call.daily-limit:3}") private val dailyLimit: Int,
     @Value("\${signal-desk.report-call.stop-loss-pct:8}") private val stopLossPct: Int,
+    // 대형·유명 종목만 발행 — 시가총액 하한(원). 기본 2조(한국거래소 '대형주' 라인).
+    @Value("\${signal-desk.report-call.min-market-cap-won:2000000000000}") private val minMarketCapWon: Long,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -40,8 +42,23 @@ class ReportCallService(
         // 후보 시세 일괄 조회.
         val prices = runCatching { krQuotes.fetchKoreanQuotes(buys.map { it.ticker }.distinct()) }.getOrNull().orEmpty()
 
+        // 대형·유명 종목만: 시가총액(현재가*상장주식수) >= 하한. 시총 큰 순 정렬 + 종목 중복 제거
+        // (같은 종목 여러 리포트면 시총 큰 순 1건). 이후 하루 상한만큼만 발행 → 소형·잡주 노이즈 제거.
+        val seenTickers = HashSet<String>()
+        val ranked = buys
+            .mapNotNull { r ->
+                val q = prices[r.ticker] ?: return@mapNotNull null
+                val cap = q.exactPrice * q.listedShares
+                if (cap < minMarketCapWon) return@mapNotNull null
+                r to cap
+            }
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .filter { seenTickers.add(it.ticker) }
+        log.info("ReportCall: buys={}, 대형주 후보={} (min_cap={}조)", buys.size, ranked.size, minMarketCapWon / 1_000_000_000_000)
+
         var published = 0
-        for (r in buys) {
+        for (r in ranked) {
             if (published >= dailyLimit) break
             // 발행 전 원자적 클레임(insert-on-conflict) — 동시 실행/재호출에도 1회만 발행(lock-once).
             // 중복방지는 force 와 무관하게 항상 적용(force 가 중복 발행을 만들지 않게).
