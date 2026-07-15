@@ -28,6 +28,38 @@ class PreMarketDirectionForecastService(
     data class CaptureResult(val saved: Boolean, val bias: String?, val coverage: Int?)
     data class EvaluationResult(val evaluated: Boolean, val actualGapRate: Double?, val correct: Boolean?)
 
+    /** 최근 평가 완료된 방향 예측만 모아 적중률을 계산한다. 방향을 내지 못한 날은 표본에서 제외한다. */
+    fun stats(windowSize: Int = DEFAULT_STATS_WINDOW): PreMarketForecastStats {
+        val rows = jdbc.query(
+            """
+            select prediction_date, correct, actual_gap_rate
+            from signal_desk_premarket_direction_forecast
+            where evaluated_at is not null and correct is not null
+            order by prediction_date desc
+            limit ?
+            """.trimIndent(),
+            { rs, _ ->
+                ForecastRow(
+                    predictionDate = rs.getDate("prediction_date").toLocalDate(),
+                    correct = rs.getBoolean("correct"),
+                    actualGapRate = rs.getDouble("actual_gap_rate").takeUnless { rs.wasNull() },
+                )
+            },
+            windowSize.coerceAtLeast(1),
+        )
+        val last = rows.firstOrNull()
+        val correctCount = rows.count { it.correct }
+        return PreMarketForecastStats(
+            evaluatedCount = rows.size,
+            correctCount = correctCount,
+            accuracyPct = rows.takeIf { it.isNotEmpty() }?.let { correctCount * 100 / it.size },
+            windowSize = windowSize,
+            lastPredictionDate = last?.predictionDate?.toString(),
+            lastCorrect = last?.correct,
+            lastActualGapRate = last?.actualGapRate,
+        )
+    }
+
     fun capture(date: LocalDate = LocalDate.now(KST)): CaptureResult {
         if (!marketSessionService.isKrTradingDay(date)) return CaptureResult(false, null, null)
         val direction = directionService.current()
@@ -85,6 +117,7 @@ class PreMarketDirectionForecastService(
     }
 
     companion object {
+        private const val DEFAULT_STATS_WINDOW = 20
         /** ±0.05% 이내 시초 갭은 체결 오차 수준으로 보고 보합으로 분류한다. */
         private const val GAP_THRESHOLD = 0.05
 
@@ -94,4 +127,10 @@ class PreMarketDirectionForecastService(
             else -> PreMarketDirectionService.Bias.NEUTRAL
         }
     }
+
+    private data class ForecastRow(
+        val predictionDate: LocalDate,
+        val correct: Boolean,
+        val actualGapRate: Double?,
+    )
 }

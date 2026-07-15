@@ -40,6 +40,9 @@ class MarketOverviewService(
     // 위험도 가중 프리셋 저장소(PRO) — jdbc 모드에서만. 없으면 전원 BALANCED.
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private val riskWeightPreferenceService: RiskWeightPreferenceService? = null,
+    // JDBC 모드에서만 예측 이력이 저장된다. 파일 모드에서는 성과 지표를 생략한다.
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private val preMarketDirectionForecastService: PreMarketDirectionForecastService? = null,
 ) {
     private val logger = LoggerFactory.getLogger(MarketOverviewService::class.java)
 
@@ -115,6 +118,9 @@ class MarketOverviewService(
         } else {
             PreMarketDirection.LOCKED
         }
+        val preMarketForecastStats = if (pro) {
+            runCatching { preMarketDirectionForecastService?.stats() }.getOrNull()
+        } else null
         val news = getCachedNews().news
         // 위험도 가중 — PRO 만 적용(프리셋/커스텀), FREE/비로그인은 BALANCED 고정.
         val riskSelection = if (pro) riskWeightPreferenceService?.get(userId!!) ?: RiskWeightSelection.BALANCED
@@ -155,7 +161,8 @@ class MarketOverviewService(
             compositeRiskKr = compositeRiskKr,
             compositeRiskUs = compositeRiskUs,
             watchAlerts = watchAlerts, marketSessions = core.marketSessions,
-            briefing = briefing, preMarketDirection = preMarketDirection, sourceNotes = core.sourceNotes,
+            briefing = briefing, preMarketDirection = preMarketDirection,
+            preMarketForecastStats = preMarketForecastStats, sourceNotes = core.sourceNotes,
             workspaceCounts = enrichmentService.buildWorkspaceCounts(userId),
             newsSentiments = listOf(
                 newsSentimentService.build("KR", news),

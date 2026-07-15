@@ -35,6 +35,20 @@ data class PreMarketDirection(
     }
 }
 
+/**
+ * 장전 방향성의 검증 성과. 방향을 실제로 제시한 날만 표본으로 삼고 최근 [windowSize]건을 집계한다.
+ * 초기 데이터가 적을 때도 응답은 유지하되, 앱은 [evaluatedCount]를 보고 노출 시점을 결정한다.
+ */
+data class PreMarketForecastStats(
+    val evaluatedCount: Int,
+    val correctCount: Int,
+    val accuracyPct: Int?,
+    val windowSize: Int,
+    val lastPredictionDate: String? = null,
+    val lastCorrect: Boolean? = null,
+    val lastActualGapRate: Double? = null,
+)
+
 data class DirectionQuote(
     val label: String,       // "MSCI 한국(간밤)", "삼성전자(런던)"
     val changeRate: Double,  // 부호 포함 등락률 %
