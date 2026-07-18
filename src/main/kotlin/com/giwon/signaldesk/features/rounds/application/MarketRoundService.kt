@@ -80,6 +80,30 @@ class MarketRoundService(private val jdbc: JdbcTemplate) {
         { rs, _ -> roundFrom(rs) }, id,
     ).firstOrNull()?.let(::withContents)
 
+    /** 자동 수집은 기존 운영자 큐레이션을 덮어쓰지 않고, 같은 원문이 없을 때만 추가한다. */
+    @Transactional
+    fun appendContentsIfMissing(roundId: String, additions: List<MarketRoundContentDraft>): Int {
+        if (additions.isEmpty()) return 0
+        val current = requireNotNull(findById(roundId)) { "존재하지 않는 시장 라운드입니다." }
+        val knownUrls = current.contents.map { it.url }.toSet()
+        val candidates = additions.filter { it.url !in knownUrls }.take((MAX_CONTENTS - current.contents.size).coerceAtLeast(0))
+        candidates.forEachIndexed { offset, content ->
+            require(content.url.startsWith("https://")) { "콘텐츠 링크는 https 주소여야 합니다." }
+            jdbc.update(
+                """
+                insert into signal_desk_market_round_contents
+                  (id, round_id, kind, source_name, expert_name, title, url, published_at, why_recommended, label, official, display_order)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent(),
+                UUID.randomUUID().toString(), roundId, content.kind.trim().uppercase().take(24), content.sourceName.trim().take(80),
+                content.expertName?.trim()?.takeIf { it.isNotBlank() }?.take(80), content.title.trim().take(300), content.url.trim(),
+                content.publishedAt?.let(Timestamp::from), content.whyRecommended.trim().take(300), content.label.trim().ifBlank { "시장 해설" }.take(40),
+                content.official, current.contents.size + offset,
+            )
+        }
+        return candidates.size
+    }
+
     @Transactional
     fun save(draft: MarketRoundDraft): MarketRound {
         require(draft.title.isNotBlank()) { "라운드 제목을 입력해 주세요." }

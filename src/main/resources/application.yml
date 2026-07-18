@@ -100,6 +100,15 @@ signal-desk:
       # AI 흐름 요약 소스 채널 — 저작권/부정경쟁 리스크로 기능 폐지(2026-06). 기본 빈 값 = 수집 안 함.
       # 비우면 YoutubeFlowReadingService.runAll() 이 no-op. (env 로도 설정하지 말 것.)
       flow-channels: ${SIGNAL_DESK_YOUTUBE_FLOW_CHANNELS:}
+  rounds:
+    automation:
+      # 공식 채널 RSS의 제목·발행시각·원문 링크만 사용한다. 자막 수집/AI 요약은 하지 않는다.
+      enabled: ${SIGNAL_DESK_ROUNDS_AUTOMATION_ENABLED:true}
+      kr-chip-drop-pct: ${SIGNAL_DESK_ROUNDS_KR_CHIP_DROP_PCT:-4.0}
+      us-chip-drop-pct: ${SIGNAL_DESK_ROUNDS_US_CHIP_DROP_PCT:-5.0}
+      # 삼프로TV 공식 YouTube 채널. 필요하면 운영 환경변수로 허용 채널을 교체할 수 있다.
+      youtube-channel-id: ${SIGNAL_DESK_ROUNDS_YOUTUBE_CHANNEL_ID:UChlv4GSd7OQl3js-jkLOnFA}
+      youtube-source-name: ${SIGNAL_DESK_ROUNDS_YOUTUBE_SOURCE_NAME:삼프로TV}
   auth:
     google:
       # idToken aud 화이트리스트 (콤마). iOS + web 신/구 클라이언트 모두 허용.
