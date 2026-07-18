@@ -127,6 +127,7 @@ class MarketSessionServiceTest {
         val us = sessions.first { it.market == "US" }
         assertEquals("CLOSED", us.phase)
         assertTrue(us.note.contains("휴장"))
+        assertFalse(service.isUsTradingDay(LocalDate.of(2025, 7, 4)))
     }
 
     @Test

@@ -1,9 +1,12 @@
 package com.giwon.signaldesk.features.snapshot
 
+import com.giwon.signaldesk.common.KST
+import com.giwon.signaldesk.features.market.application.MarketSessionService
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
+import java.time.LocalDate
 
 /**
  * 일별 스냅샷 적재 스케줄.
@@ -15,11 +18,17 @@ import org.springframework.stereotype.Component
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class DailySnapshotScheduler(
     private val service: DailySnapshotService,
+    private val marketSessionService: MarketSessionService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     @Scheduled(cron = "0 40 16 * * MON-FRI", zone = "Asia/Seoul")
     fun run() {
+        val today = LocalDate.now(KST)
+        if (!marketSessionService.isKrTradingDay(today)) {
+            log.debug("daily snapshot skipped — KR non-trading day {}", today)
+            return
+        }
         runCatching { service.runDailySnapshot() }
             .onFailure { log.error("daily snapshot run failed", it) }
     }
