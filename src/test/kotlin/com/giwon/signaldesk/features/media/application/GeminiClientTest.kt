@@ -142,6 +142,18 @@ class GeminiClientTest {
     }
 
     @Test
+    fun `모든 키의 quota 소진 후에는 회복 대기 동안 추가 호출을 생략한다`() {
+        byKey["k"] = 429 to quotaBody
+        val gemini = client("k", baseUrl = baseUrl())
+
+        assertThat(gemini.summarizeMarketInsight(vix = null, indices = null, headlines = emptyList())).isNull()
+
+        // 쿼터 소진 직후에는 성공 응답으로 바뀌어도 5분간 circuit-open 상태라 외부 호출을 하지 않는다.
+        byKey["k"] = 200 to insightOk("회복 전에는 호출하지 않음")
+        assertThat(gemini.summarizeMarketInsight(vix = null, indices = null, headlines = emptyList())).isNull()
+    }
+
+    @Test
     fun `fallback 비어있으면 단일 키로 동작한다`() {
         byKey["solo"] = 200 to insightOk("단일 키")
 

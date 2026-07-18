@@ -232,6 +232,10 @@ class GeminiClient(
             log.warn("GeminiClient disabled (assistant) — GEMINI_API_KEY 미설정")
             return null
         }
+        if (!isHealthy()) {
+            log.debug("Gemini circuit open (assistant) — cached or deterministic fallback will be used")
+            return null
+        }
         val chain = if (model.isNullOrBlank()) modelChain else (listOf(model) + modelChain).distinct()
         val content = buildPayload(prompt, maxOutputTokens, jsonOutput = !plainTextOutput, disableThinking = disableThinking)
         val body = postWithRetry(content, timeoutSeconds, chain) ?: return null
@@ -263,6 +267,10 @@ class GeminiClient(
     private fun call(prompt: String, timeoutSeconds: Long, label: String): String? {
         if (!isEnabled()) {
             log.warn("GeminiClient disabled ($label) — GEMINI_API_KEY 미설정")
+            return null
+        }
+        if (!isHealthy()) {
+            log.debug("Gemini circuit open ($label) — cached or deterministic fallback will be used")
             return null
         }
         return postWithRetry(buildPayload(prompt), timeoutSeconds, modelChain)
