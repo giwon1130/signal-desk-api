@@ -249,6 +249,7 @@ class MarketSessionService {
             put(LocalDate.of(2026, 3, 2),  "삼일절 대체휴일")  // 3/1 일요일
             put(LocalDate.of(2026, 5, 5),  "어린이날")
             put(LocalDate.of(2026, 5, 25), "부처님오신날 대체휴일")  // 5/24 일요일
+            put(LocalDate.of(2026, 7, 17), "제헌절")
             put(LocalDate.of(2026, 9, 24), "추석 연휴")
             put(LocalDate.of(2026, 9, 25), "추석")
             put(LocalDate.of(2026, 10, 5), "개천절 대체휴일")  // 10/3 토요일

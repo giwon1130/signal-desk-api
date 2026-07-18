@@ -68,6 +68,17 @@ class MarketSessionServiceTest {
     }
 
     @Test
+    fun `한국 재헌절 2026-07-17 금요일 - CLOSED 휴장`() {
+        val koreaUtc = ZonedDateTime.of(2026, 7, 17, 2, 0, 0, 0, ZoneId.of("UTC"))
+        val sessions = service.buildMarketSessions(koreaUtc)
+        val kr = sessions.first { it.market == "KR" }
+
+        assertEquals("CLOSED", kr.phase)
+        assertTrue(kr.note.contains("제헌절"))
+        assertFalse(service.isKrTradingDay(LocalDate.of(2026, 7, 17)))
+    }
+
+    @Test
     fun `한국 연말폐장 2026-12-31 목요일 - CLOSED 휴장`() {
         val koreaUtc = ZonedDateTime.of(2026, 12, 31, 2, 0, 0, 0, ZoneId.of("UTC"))
         val sessions = service.buildMarketSessions(koreaUtc)
