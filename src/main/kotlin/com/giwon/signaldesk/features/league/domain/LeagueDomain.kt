@@ -30,7 +30,7 @@ data class League(
     val status: LeagueStatus,
     val tradingHours: TradingHours,
     val fee: BigDecimal,              // 0.003 = 0.3%
-    val maxPositionPct: BigDecimal,   // 0.30 = 30%
+    val maxPositionPct: BigDecimal,   // 0 = 제한 없음 (레거시 API/DB 호환 필드)
     val visibility: LeagueVisibility,
     val createdAt: Instant,
 )

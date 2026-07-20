@@ -108,18 +108,6 @@ class TradeService(
                 require(participant.cashBalance >= totalCost) {
                     "insufficient cash: need=$totalCost have=${participant.cashBalance}"
                 }
-                // 분산 규칙(maxPositionPct) — 단일 종목 누적 보유원가가 시드의 N% 초과 매수 금지(과집중 방지).
-                if (league.maxPositionPct.signum() > 0) {
-                    val held = positions.positionsForUser(leagueId, userId)
-                        .firstOrNull { it.market == market && it.ticker == ticker }
-                    val existingCost = held?.averageCost
-                        ?.multiply(BigDecimal(held.quantity))?.setScale(0, RoundingMode.HALF_UP)?.toLong() ?: 0L
-                    val cap = BigDecimal(league.startingCapital).multiply(league.maxPositionPct)
-                        .setScale(0, RoundingMode.DOWN).toLong()
-                    require(existingCost + notional <= cap) {
-                        "단일 종목은 시드의 ${league.maxPositionPct.multiply(BigDecimal(100)).toInt()}%까지만 담을 수 있어요"
-                    }
-                }
             } else {
                 // SELL — 보유 수량 검증.
                 val pos = positions.positionsForUser(leagueId, userId)

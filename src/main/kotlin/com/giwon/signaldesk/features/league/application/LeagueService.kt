@@ -69,7 +69,7 @@ class LeagueService(
             status = LeagueStatus.DRAFT,
             tradingHours = tradingHours,
             fee = BigDecimal("0.003"),
-            maxPositionPct = BigDecimal("0.30"),
+            maxPositionPct = BigDecimal.ZERO,
             visibility = visibility,
             createdAt = Instant.now(),
         )
