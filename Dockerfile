@@ -16,8 +16,8 @@ RUN apt-get update \
 COPY --from=builder /app/build/libs/*.jar app.jar
 EXPOSE 8091
 ENTRYPOINT ["java", \
-  "-XX:MaxRAMPercentage=75.0", \
-  "-XX:InitialRAMPercentage=50.0", \
+  "-Xms128m", \
+  "-Xmx768m", \
   "-XX:+UseG1GC", \
   "-XX:+ExitOnOutOfMemoryError", \
   "-jar", "app.jar"]
