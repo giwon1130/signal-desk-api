@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service
  *  - daily_portfolio_snapshot: 사용자×일 누적(차트 히스토리). 400일(1년+α).
  *  - report_call_seen / media_summaries(FLOW_READING 원장): 중복방지용. 오래된 리포트/영상은
  *    소스(최근 RSS/컨센서스)에 더는 안 떠 재발행 위험 없음. 30/90일.
+ *  - market_rounds: 이벤트 종료 후 14일. 연결된 검수 원문은 FK cascade로 함께 삭제.
  *
  * market_snapshot(1행/일)·ai_pick_history(적중률 판정 근거)는 작거나 보존 가치가 있어 제외.
  */
@@ -37,6 +38,9 @@ class RetentionService(
         deleted["media_summaries"] = delete(
             "delete from signal_desk_media_summaries where created_at < now() - make_interval(days => ?)", MEDIA_DAYS,
         )
+        deleted["market_rounds"] = delete(
+            "delete from signal_desk_market_rounds where ends_at < now() - make_interval(days => ?)", MARKET_ROUND_DAYS,
+        )
         val total = deleted.values.sum()
         if (total > 0) log.info("retention 정리 — {} (총 {}건)", deleted.filterValues { it > 0 }, total)
         return deleted
@@ -50,5 +54,6 @@ class RetentionService(
         const val PORTFOLIO_SNAPSHOT_DAYS = 400
         const val DEDUP_LEDGER_DAYS = 30
         const val MEDIA_DAYS = 90
+        const val MARKET_ROUND_DAYS = 14
     }
 }
