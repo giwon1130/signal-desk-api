@@ -1,6 +1,7 @@
 package com.giwon.signaldesk.features.ai.application
 
 import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
+import com.giwon.signaldesk.features.market.application.NaverFinanceQuoteClient
 import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
 import com.giwon.signaldesk.features.market.application.TopMoversService
 import com.giwon.signaldesk.features.media.application.GeminiClient
@@ -26,6 +27,8 @@ class AiPickService(
     private val investorRankClient: NaverInvestorRankClient,
     private val newsRssClient: GoogleNewsRssClient,
     private val geminiClient: GeminiClient,
+    private val tradePlanFactory: TradePlanFactory,
+    private val quoteClient: NaverFinanceQuoteClient,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -40,7 +43,7 @@ class AiPickService(
         val flow = runCatching { investorRankClient.fetchFlowSnapshot(7) }.getOrNull()
         val headlines = runCatching { newsRssClient.fetchMarketNews() }.getOrNull() ?: emptyList()
 
-        val candidates = buildCandidates(movers, flow)
+        val candidates = enrichMissingPrices(buildCandidates(movers, flow))
         if (candidates.isEmpty()) {
             log.warn("AiPickService skipped — 후보 종목 없음")
             return null
@@ -54,6 +57,7 @@ class AiPickService(
         // ticker 매칭 시: leading zero 손실 보정(017900→17900) + 종목명 fallback.
         val byTicker = candidates.associateBy { it.ticker }
         val byName = candidates.associateBy { it.name.trim() }
+        val generatedAt = Instant.now()
         val picks = analysis.picks.mapNotNull { p ->
             val raw = p.ticker.trim()
             val c = byTicker[raw]
@@ -67,10 +71,11 @@ class AiPickService(
             val riskNote = if (chase != null && !p.riskNote.contains("추격") && !p.riskNote.contains("급등")) {
                 "이미 ${"%+.1f".format(chase)}% 급등 — 추격 매수 주의. ${p.riskNote.trim()}".trim()
             } else p.riskNote
-            p.copy(
+            val matched = p.copy(
                 market = c.market, ticker = c.ticker, name = c.name,
                 riskNote = riskNote, changeRate = c.changeRate, flowTag = c.flowTag,
             )
+            matched.copy(tradePlan = tradePlanFactory.build(matched, c, generatedAt))
         }
         if (picks.isEmpty()) {
             log.warn(
@@ -81,7 +86,7 @@ class AiPickService(
             return null
         }
         log.info("AiPicks generated. candidates={}, picks={}", candidates.size, picks.size)
-        return AiPicksResponse(generatedAt = Instant.now().toString(), summary = analysis.summary, picks = picks)
+        return AiPicksResponse(generatedAt = generatedAt.toString(), summary = analysis.summary, picks = picks)
     }
 
     private fun buildCandidates(
@@ -94,10 +99,13 @@ class AiPickService(
         // US 는 가격제한폭이 없지만 일중 ±25% 급변은 어차피 단기 노이즈가 커 같은 컷 적용.
         movers?.let { m ->
             val krMovers = m.kospi.gainers + m.kospi.losers + m.kosdaq.gainers + m.kosdaq.losers
-            val usMovers = m.us?.let { it.gainers + it.losers } ?: emptyList()
+            val usMovers = m.us.let { it.gainers + it.losers }
             (krMovers + usMovers).forEach { mv ->
                 if (kotlin.math.abs(mv.changeRate) > 25.0) return@forEach
-                out.putIfAbsent(mv.ticker, PickCandidate(mv.market, mv.ticker, mv.name, mv.changeRate, null))
+                out.putIfAbsent(
+                    mv.ticker,
+                    PickCandidate(mv.market, mv.ticker, mv.name, mv.price.toDouble(), mv.changeRate, null),
+                )
             }
         }
         // 외인/기관 순매수 상위 — 수급 태그
@@ -106,7 +114,7 @@ class AiPickService(
                 items.forEach { it ->
                     val existing = out[it.ticker]
                     if (existing == null) {
-                        out[it.ticker] = PickCandidate("KR", it.ticker, it.name, null, tag)
+                        out[it.ticker] = PickCandidate("KR", it.ticker, it.name, null, null, tag)
                     } else if (existing.flowTag == null) {
                         out[it.ticker] = existing.copy(flowTag = tag)
                     }
@@ -117,5 +125,25 @@ class AiPickService(
             add(f.kosdaqForeignBuy, "코스닥 외인 순매수")
         }
         return out.values.toList()
+    }
+
+    /** 수급만으로 들어온 한국 후보도 계획 가격을 만들 수 있도록 짧은 시세를 보강한다. */
+    private fun enrichMissingPrices(candidates: List<PickCandidate>): List<PickCandidate> {
+        val missingKrTickers = candidates
+            .filter { it.market == "KR" && it.price == null }
+            .map { it.ticker }
+        if (missingKrTickers.isEmpty()) return candidates
+
+        val quotes = runCatching { quoteClient.fetchKoreanQuotes(missingKrTickers) }
+            .getOrElse {
+                log.warn("AiPick quote enrichment failed. tickers={}", missingKrTickers, it)
+                emptyMap()
+            }
+        return candidates.map { candidate ->
+            val quote = quotes[candidate.ticker]
+            if (candidate.price == null && quote != null) {
+                candidate.copy(price = quote.exactPrice, changeRate = candidate.changeRate ?: quote.changeRate)
+            } else candidate
+        }
     }
 }
