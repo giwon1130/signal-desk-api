@@ -24,6 +24,17 @@ data class AiPick(
      * trader 연동 전까지 executable=false 를 유지한다.
      */
     val tradePlan: TradePlan? = null,
+    /** 모델 확신도와 독립적인 검토 규칙. 과거 수익으로 검증한 매수 신호가 아니다. */
+    val assessment: PickAssessment? = null,
+)
+
+enum class PickDecision { REVIEW, WATCH, AVOID, INSUFFICIENT_DATA }
+
+data class PickAssessment(
+    val decision: PickDecision,
+    val reasons: List<String>,
+    val blockers: List<String>,
+    val rulesVersion: String = "review-v1",
 )
 
 enum class TradePlanRiskLevel { LOW, MEDIUM, HIGH }

@@ -410,18 +410,20 @@ $gainersBlock$losersBlock$earningsBlock
             아래는 오늘 시장에서 움직임이 큰 종목 후보 목록입니다.
             - KR: 급등/급락 상위 + 외인·기관 순매수 상위 (ticker 는 6자리 숫자, 앞자리 0 포함)
             - US: Yahoo top gainers/losers (ticker 는 영문 심볼 — NVDA/TSLA 등)
-            이 목록 안에서만 골라 오늘 단타 관점에서 주목할 종목 3~5개를 추천하세요.
+            이 목록 안에서만 골라 오늘 검토할 후보를 최대 5개 제시하세요. 근거가 없으면 빈 배열을 반환하세요.
             **목록에 없는 종목(ticker)은 절대 추천하지 마세요.**
             가급적 KR/US 가 섞이도록 다양성을 확보하되, 근거가 약한 종목은 빼고 강한 것만 골라도 됩니다.
-            reason·riskNote·summary 등 모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요.
+            reason·riskNote·summary는 자연스러운 한국어 반말(~해, ~봐)로 작성하세요.
 
             선정 원칙:
             - 이미 +15% 이상 급등한 종목은 추격매수 리스크가 크다. 단순 급등률만 보고 고르지 말 것.
               추천한다면 riskNote 에 추격 리스크를 명시.
             - [외인 순매수] / [기관 순매수] 태그가 붙은 종목(KR)을 우선 고려하라 —
               수급이 뒷받침돼야 모멘텀이 지속된다. 급등률보다 수급·뉴스 근거가 우선.
-            - US 는 수급 태그가 없으므로 뉴스 헤드라인·섹터 흐름과 연결지어 근거를 만들 것.
+            - 뉴스와 종목의 연관성이 입력에 명확할 때만 연결하세요. 없는 실적·거래량·수급·미래 가격은 만들지 마세요.
             - confidence 는 보수적으로. 수급·뉴스 근거 없이 급등만으론 60 이하.
+            - confidence 는 모델 의견이지 상승 확률이 아닙니다. 최종 검토 여부는 별도 데이터 규칙이 판단합니다.
+            - expectedReturnRate 는 반드시 null로 반환하세요. 제공 데이터만으로 미래 수익률을 추정할 수 없습니다.
 
             === 종목 후보 (이 안에서만 선택) ===
             $candidateLines
@@ -437,13 +439,13 @@ $gainersBlock$losersBlock$earningsBlock
                   "ticker": "후보 목록의 ticker 그대로 — KR 은 6자리 숫자(앞자리 0 포함, 예: \"017900\"), US 는 영문 심볼(예: \"NVDA\")",
                   "name": "후보 목록의 종목명 그대로",
                   "reason": "추천 근거 2~3문장 — 수급/모멘텀/뉴스 연결",
-                  "expectedReturnRate": 5.0,
+                  "expectedReturnRate": null,
                   "confidence": 70,
                   "riskNote": "리스크 한 줄 (20자 이내)"
                 }
               ]
             }
-            confidence 는 0~100 정수, expectedReturnRate 는 % 숫자(3~20 권장).
+            confidence 는 0~100 정수, expectedReturnRate 는 null.
         """.trimIndent()
     }
 

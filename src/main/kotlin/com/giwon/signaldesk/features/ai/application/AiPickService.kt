@@ -27,7 +27,7 @@ class AiPickService(
     private val investorRankClient: NaverInvestorRankClient,
     private val newsRssClient: GoogleNewsRssClient,
     private val geminiClient: GeminiClient,
-    private val tradePlanFactory: TradePlanFactory,
+    private val pickAssembler: AiPickAssembler,
     private val quoteClient: NaverFinanceQuoteClient,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -53,37 +53,15 @@ class AiPickService(
             .getOrElse { log.warn("AiPick Gemini call failed", it); null }
             ?: return null
 
-        // Gemini 가 universe 밖 종목을 환각으로 만들면 제거.
-        // ticker 매칭 시: leading zero 손실 보정(017900→17900) + 종목명 fallback.
-        val byTicker = candidates.associateBy { it.ticker }
-        val byName = candidates.associateBy { it.name.trim() }
         val generatedAt = Instant.now()
-        val picks = analysis.picks.mapNotNull { p ->
-            val raw = p.ticker.trim()
-            val c = byTicker[raw]
-                ?: byTicker[raw.padStart(6, '0')]
-                ?: byName[raw]
-                ?: byName[p.name.trim()]
-                ?: return@mapNotNull null
-            // 이미 크게 급등(>=15%)한 종목은 추격매수 리스크를 riskNote 앞에 명시한다.
-            // (Gemini 가 '시장 변동성' 처럼 일반화하는 경향을 데이터 기반으로 보정)
-            val chase = c.changeRate?.takeIf { it >= 15.0 }
-            val riskNote = if (chase != null && !p.riskNote.contains("추격") && !p.riskNote.contains("급등")) {
-                "이미 ${"%+.1f".format(chase)}% 급등 — 추격 매수 주의. ${p.riskNote.trim()}".trim()
-            } else p.riskNote
-            val matched = p.copy(
-                market = c.market, ticker = c.ticker, name = c.name,
-                riskNote = riskNote, changeRate = c.changeRate, flowTag = c.flowTag,
-            )
-            matched.copy(tradePlan = tradePlanFactory.build(matched, c, generatedAt))
-        }
+        val picks = pickAssembler.assemble(analysis.picks, candidates, generatedAt)
         if (picks.isEmpty()) {
             log.warn(
                 "AiPick — 매칭된 픽 0. geminiPicks(ticker/name)={}, candidate ticker 샘플={}",
                 analysis.picks.map { "${it.ticker}/${it.name}" },
                 candidates.take(12).map { it.ticker },
             )
-            return null
+            return AiPicksResponse(generatedAt.toString(), "지금은 검토 근거가 충분한 후보가 없어", emptyList())
         }
         log.info("AiPicks generated. candidates={}, picks={}", candidates.size, picks.size)
         return AiPicksResponse(generatedAt = generatedAt.toString(), summary = analysis.summary, picks = picks)
@@ -115,8 +93,8 @@ class AiPickService(
                     val existing = out[it.ticker]
                     if (existing == null) {
                         out[it.ticker] = PickCandidate("KR", it.ticker, it.name, null, null, tag)
-                    } else if (existing.flowTag == null) {
-                        out[it.ticker] = existing.copy(flowTag = tag)
+                    } else {
+                        out[it.ticker] = existing.copy(flowTag = listOfNotNull(existing.flowTag, tag).distinct().joinToString(" · "))
                     }
                 }
             }

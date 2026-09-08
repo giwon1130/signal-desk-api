@@ -66,7 +66,7 @@ internal object GeminiResponseParsing {
                 ticker = ticker,
                 name = node["name"]?.asText().orEmpty().trim(),  // 호출부에서 후보 기준으로 최종 보정
                 reason = node["reason"]?.asText().orEmpty().trim(),
-                expectedReturnRate = node["expectedReturnRate"]?.asDouble(),
+                expectedReturnRate = node["expectedReturnRate"]?.takeIf { it.isNumber }?.asDouble()?.takeIf { it.isFinite() },
                 confidence = node["confidence"]?.asInt()?.coerceIn(0, 100) ?: 50,
                 riskNote = node["riskNote"]?.asText().orEmpty().trim(),
             )
