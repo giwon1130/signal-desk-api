@@ -26,6 +26,10 @@ logging:
     com.giwon.signaldesk.features.realtime.PriceTickerHandler: WARN
 
 signal-desk:
+  scheduling:
+    # 요청 없는 시간에는 외부 API 캐시도 미리 데우지 않는다. 필요할 때만 명시적으로 활성화.
+    market-cache-warm:
+      enabled: ${SIGNAL_DESK_MARKET_CACHE_WARM_ENABLED:false}
   store:
     mode: ${SIGNAL_DESK_STORE_MODE:}
     path: ./data/signal-desk-store.json

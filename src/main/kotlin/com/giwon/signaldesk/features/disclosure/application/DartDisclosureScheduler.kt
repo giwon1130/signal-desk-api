@@ -18,9 +18,9 @@ class DartDisclosureScheduler(
 
     /**
      * OpenDART 공시는 평일 07:00 ~ 19:30 사이에 주로 접수됨 (장 외 시간에도 들어옴).
-     * 5분 주기 × 거래일 07-19 시 → 일 ~156 호출. 일일 quota 10,000 대비 매우 안전.
+     * 15분 주기 × 거래일 07-19 시. 다른 DB 작업과 :00/:15/:30/:45에 묶어 Neon 기동 횟수를 줄인다.
      */
-    @Scheduled(cron = "0 */5 7-19 * * MON-FRI", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 */15 7-19 * * MON-FRI", zone = "Asia/Seoul")
     fun runScan() {
         val today = LocalDate.now(ZoneId.of("Asia/Seoul"))
         if (!marketSessionService.isKrTradingDay(today)) {

@@ -175,6 +175,8 @@ curl -s http://localhost:8091/api/v1/market/portfolio
 - Railway 프로젝트에는 `signal-desk-api` 서비스와 `Postgres` 서비스를 함께 둔다.
 - `SIGNAL_DESK_STORE_MODE=jdbc`를 사용하면 Railway PostgreSQL 변수 기준으로 JDBC 저장소가 활성화된다.
 - `DATABASE_URL`, `JDBC_DATABASE_URL`, `PGHOST`, `PGDATABASE`, `PGPORT`, `PGUSER`, `PGPASSWORD` 중 사용 가능한 값을 읽어 접속한다.
+- Neon Free 같은 scale-to-zero DB를 사용할 때는 `SIGNAL_DESK_MARKET_CACHE_WARM_ENABLED=false`(기본값)를 유지한다. 트래픽이 없는 시간에도 외부 시세 캐시를 미리 갱신해야 할 때만 `true`로 켠다.
+- DB 폴링은 비용 절감을 위해 리그 30분, 공시·알림 15분 주기로 동작하며 :00/:15/:30/:45 경계에 맞춘다. 알림 지연 허용 범위를 바꾸려면 해당 스케줄러와 테스트 계약을 함께 수정한다.
 
 자동배포:
 - Railway 대시보드에서 `signal-desk-api` 서비스에 GitHub repo `giwon1130/signal-desk-api`를 연결한다.

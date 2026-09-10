@@ -17,7 +17,8 @@ import java.time.Instant
  *  - OPEN + startedAt 도달 → RUNNING (auto-start)
  *  - RUNNING + endsAt 도달 → 정산 + FINISHED (auto-finish)
  *
- * 매 분 폴링 — 정확도 ±60초 (게임이라 OK).
+ * 30분 폴링 — 개인용 무료 DB가 폴링만으로 계속 깨어 있지 않게 한다.
+ * 상태 전환은 최대 30분 지연될 수 있으며, 모든 주기 작업을 :00/:30에 묶어 DB 기동 횟수를 줄인다.
  */
 @Component
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
@@ -30,8 +31,8 @@ class LeagueSchedulerService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** 매 분 0초. */
-    @Scheduled(cron = "0 * * * * *", zone = "UTC")
+    /** 매시 0분/30분. */
+    @Scheduled(cron = "0 0,30 * * * *", zone = "UTC")
     fun tick() {
         val now = Instant.now()
         runCatching { startReady(now) }.onFailure { log.error("auto-start failed", it) }

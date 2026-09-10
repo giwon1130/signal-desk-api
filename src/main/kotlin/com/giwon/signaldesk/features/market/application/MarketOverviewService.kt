@@ -205,7 +205,6 @@ class MarketOverviewService(
             val generatedAt = LocalDateTime.now(KST)
             val koreaMarketFuture = CompletableFuture.supplyAsync({ krxOfficialClient.loadKoreaMarketSection() ?: emptyKoreaMarket() }, coreFetchPool)
             val vixFuture = CompletableFuture.supplyAsync({ cboeVixClient.fetchVix() }, coreFetchPool)
-            val koreanQuotesFuture = CompletableFuture.supplyAsync({ enrichmentService.loadKoreanQuotes() }, coreFetchPool)
             val usIndicesFuture = CompletableFuture.supplyAsync({ usIndexService.fetchUsIndices() }, coreFetchPool)
             // 위험도용 거시 시세 — 원/달러 환율 + 미 10년물(야후 라이브)
             val macroQuotesFuture = CompletableFuture.supplyAsync({ usIndexService.fetchMacroQuotes() }, coreFetchPool)
@@ -221,9 +220,6 @@ class MarketOverviewService(
             val vixSnapshot = runCatching { vixFuture.joinTimeout() }
                 .onFailure { logger.warn("VIX fetch failed. msg={}", it.message) }
                 .getOrNull()
-            val koreanQuotes = runCatching { koreanQuotesFuture.joinTimeout() }
-                .onFailure { logger.warn("Naver KR quotes fetch failed. msg={}", it.message) }
-                .getOrDefault(emptyMap())
             val usIndicesSnapshot = runCatching { usIndicesFuture.joinTimeout() }
                 .onFailure { logger.warn("US indices (FRED) fetch failed. msg={}", it.message) }
                 .getOrNull()
@@ -237,9 +233,9 @@ class MarketOverviewService(
                 .onFailure { logger.warn("US most_actives (Yahoo screener) fetch failed. msg={}", it.message) }
                 .getOrDefault(emptyList())
 
-            val koreaMarket = koreaMarketBase.copy(
-                leadingStocks = enrichmentService.refreshKoreanLeadingStocks(koreaMarketBase.leadingStocks, koreanQuotes)
-            )
+            // KRX core 응답의 leadingStocks는 비어 있으므로 사용자 워크스페이스를 조회해도 갱신할 값이 없다.
+            // 개인 데이터 조회는 getSummary(userId)에만 남겨 캐시 워밍/공용 core 요청이 DB를 깨우지 않게 한다.
+            val koreaMarket = koreaMarketBase
             val marketSessions = marketSessionService.buildMarketSessions()
             val alternativeSignals = alternativeSignalService.buildAlternativeSignals()
 

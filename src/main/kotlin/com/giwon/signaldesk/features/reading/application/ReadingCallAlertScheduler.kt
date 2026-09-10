@@ -9,7 +9,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * 리딩 콜 "거봐" 알림 스케줄러 — 장중 10분 주기로 목표 도달 콜 스캔.
+ * 리딩 콜 "거봐" 알림 스케줄러 — 장중 15분 주기로 목표 도달 콜 스캔.
  * WatchlistAlertScheduler 와 동일 가드(거래일/휴장).
  */
 @Component
@@ -20,14 +20,14 @@ class ReadingCallAlertScheduler(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    @Scheduled(cron = "0 */10 9-15 * * MON-FRI", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 */15 9-15 * * MON-FRI", zone = "Asia/Seoul")
     fun runKr() {
         if (!marketSessionService.isKrTradingDay(LocalDate.now(ZoneId.of("Asia/Seoul")))) return
         runCatching { alertService.scanAndNotify(marketFilter = "KR") }
             .onFailure { log.error("KR reading call alert scan failed", it) }
     }
 
-    @Scheduled(cron = "0 */10 9-15 * * MON-FRI", zone = "America/New_York")
+    @Scheduled(cron = "0 */15 9-15 * * MON-FRI", zone = "America/New_York")
     fun runUs() {
         if (!marketSessionService.isUsTradingDay(LocalDate.now(ZoneId.of("America/New_York")))) return
         runCatching { alertService.scanAndNotify(marketFilter = "US") }

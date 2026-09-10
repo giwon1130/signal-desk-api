@@ -17,10 +17,10 @@ class SecEdgarDisclosureScheduler(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * SEC 공시는 ET 평일 ~7am-8pm 사이가 피크지만 24시간 들어올 수 있다.
-     * 5분 폴링 (KST 24시간) — SEC fair-access(10 req/sec) 한도 대비 매우 여유.
+     * SEC 공시는 ET 평일 06:00~20:59의 주요 제출 시간대만 15분마다 확인한다.
+     * 다른 DB 작업과 :00/:15/:30/:45에 묶어 Neon 기동 횟수를 줄인다.
      */
-    @Scheduled(cron = "0 */5 * * * *", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 */15 6-20 * * MON-FRI", zone = "America/New_York")
     fun runScan() {
         val today = LocalDate.now(ZoneId.of("America/New_York"))
         if (!marketSessionService.isUsTradingDay(today)) {

@@ -19,6 +19,10 @@ class SignalDeskJdbcConfig {
 
     @Bean(destroyMethod = "close")
     fun signalDeskDataSource(properties: SignalDeskJdbcProperties): DataSource {
+        return HikariDataSource(buildHikariConfig(properties))
+    }
+
+    internal fun buildHikariConfig(properties: SignalDeskJdbcProperties): HikariConfig {
         val config = HikariConfig()
         config.driverClassName = properties.driverClassName
         config.jdbcUrl = properties.resolveJdbcUrl()
@@ -26,10 +30,11 @@ class SignalDeskJdbcConfig {
         config.password = properties.password
         // Railway PG 무료 플랜 커넥션 여유가 작다 — 본인 트래픽엔 5면 충분.
         config.maximumPoolSize = 5
-        config.minimumIdle = 1
+        // 유휴 연결을 상시 유지하지 않아 Neon이 5분 무활동 후 scale-to-zero 할 수 있게 한다.
+        config.minimumIdle = 0
         config.connectionTimeout = 5_000
-        config.idleTimeout = 300_000
-        return HikariDataSource(config)
+        config.idleTimeout = 60_000
+        return config
     }
 
     @Bean
