@@ -150,15 +150,15 @@ class GoogleNewsRssClient(
             "코스피",
             "코스닥",
             "한국 증시",
-            "한국 주식 시장",
-            "KOSPI OR KOSDAQ",
+            "반도체 SK하이닉스 삼성전자 when:1d",
+            "전쟁 공습 휴전 원유 when:1d",
         )
         private val US_QUERIES = listOf(
             "S&P 500",
             "NASDAQ",
-            "Dow Jones",
+            "Treasury yields inflation when:1d",
             "US stock market",
-            "Wall Street",
+            "war ceasefire oil sanctions when:1d",
         )
     }
 }

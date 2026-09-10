@@ -13,19 +13,20 @@ import kotlin.math.roundToInt
  *
  * 데이터 (전부 [YahooQuoteClient], 한국장 시작 전에도 라이브로 받히는 '간밤' 대용 지표):
  *  - MSCI 한국 ETF(EWY) — 간밤 미국장에서 외국인이 본 한국. 주신호(headline).
- *  - 해외상장 삼성: 런던 GDR(SMSN.IL) + 프랑크푸르트(SSU.F) — 한국 대표주 야간 등락.
+ *  - 해외상장 삼성: 런던 GDR(SMSN.IL) — 한국 대표주 해외 등락.
  *  - SK하이닉스 ADR(SKHY) — 나스닥에 상장된 하이닉스 자체의 간밤 등락.
  *  - 마이크론(MU) — 메모리/HBM 업종 흐름을 보완하는 보조 프록시.
  *  - S&P500 선물(ES=F) — 간밤 글로벌 위험선호.
  *
- * 왜 코스피200 야간선물(EUREX)을 직접 안 쓰나: Naver `FUT` 은 정규장(09:00~15:30) 인스트루먼트라
+ * KRX 자체 야간시장은 존재하지만 검증된 시세 피드가 아직 미연결이다. Naver `FUT` 은 주간 인스트루먼트라
  * 야간 세션을 안 태운다 → 새벽엔 어제 주간 종가의 등락률이 굳어 'stale'. 안정적 공개 야간선물 피드가
  * 없어, 한국장 시작 전에 라이브로 갱신되는 위 대용 지표로 방향을 가늠한다.
  * (SK하이닉스는 2026-07 나스닥 ADR(SKHY) 상장으로 직접 야간 시세를 확인할 수 있다. ADR은 한국
  * 보통주와 가격 괴리가 날 수 있으므로, 마이크론·EWY와 함께 결측 정규화 가중으로만 반영한다.)
  *
  * 방향(bias)은 Gemini 없이 룰기반 — MSCI한국 0.35 + 런던삼성 0.25 + 하이닉스ADR 0.20 + 마이크론 0.10 + S&P선물 0.10
- * 가중(결측은 정규화). 프랑크푸르트는 거래가 얇아 표시만 하고 판정엔 안 쓴다. 라이브 시세라 quote-short(45s) 캐시.
+ * 기존 장전 미리보기의 가중(결측은 정규화)은 호환 유지. 관측 시각 검증 후에만 반영하며 신뢰도는 LOW로 제한.
+ * 새 종합 시황의 결측 비중 비재배분 규칙과는 별도이며, quote-short(45s) 캐시를 쓴다.
  */
 @Service
 class PreMarketDirectionService(
@@ -42,13 +43,16 @@ class PreMarketDirectionService(
         "SKHY" to HYNIX_ADR_LABEL,
         "MU" to MICRON_LABEL,
         "ES=F" to SP_FUTURES_LABEL,
-        "SSU.F" to "삼성전자(프랑크푸르트)",
     )
 
     fun current(): PreMarketDirection {
         val asOf = ZonedDateTime.now(KST)
         val raw = runCatching { yahooQuoteClient.fetchLiveIndices(symbols) }.getOrNull().orEmpty()
-        val byLabel = raw.associateBy({ it.label }, { DirectionQuote(it.label, it.changeRate, it.value) })
+        val checked = MarketEvidenceAnalyzer(marketSessionService)
+            .analyze(MarketEvidenceInput(asOf.toInstant(), raw, null, null)).evidence
+            .filter { it.status == "OBSERVED" }.map { it.id }.toSet()
+        val byLabel = raw.filter { it.symbol in checked }
+            .associateBy({ it.label }, { DirectionQuote(it.label, it.changeRate, it.value) })
 
         // headline = MSCI 한국(간밤). overseas = 삼성·하이닉스 ADR·반도체/선물(수집된 것만, 입력 순서).
         val gauge = byLabel[GAUGE_LABEL]
@@ -74,11 +78,12 @@ class PreMarketDirectionService(
             overseas = overseas,
             bias = signal.bias?.name,
             biasLabel = signal.bias?.label ?: "핵심 지표 수집 부족",
-            summary = buildSummary(gauge, london, byLabel[HYNIX_ADR_LABEL], signal),
+            summary = buildSummary(gauge, london, byLabel[HYNIX_ADR_LABEL], signal) +
+                " · 야간선물 실측이 아닌 해외 대체 지표야. 이 단순 가중치는 예측 성능이 검증되지 않았어.",
             sessionActive = false,  // 대용 지표라 야간선물 라이브 세션 개념 없음
             asOf = asOf.toOffsetDateTime().toString(),
             score = signal.score,
-            confidence = signal.confidence.name,
+            confidence = if (signal.bias == null) Confidence.INSUFFICIENT.name else Confidence.LOW.name,
             coverage = (signal.coverage * 100).roundToInt(),
             inputCount = signal.inputCount,
         )
@@ -115,7 +120,7 @@ class PreMarketDirectionService(
             hynixAdrRate?.let { it to 0.20 },
             micronRate?.let { it to 0.10 },
             spRate?.let { it to 0.10 },
-        )
+        ).filter { it.first.isFinite() }
         val coverage = parts.sumOf { it.second }
         if (coverage < MIN_DIRECTION_COVERAGE) {
             return DirectionSignal(null, null, coverage, parts.size, Confidence.INSUFFICIENT)

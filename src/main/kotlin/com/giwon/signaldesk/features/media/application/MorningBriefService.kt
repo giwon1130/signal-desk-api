@@ -15,13 +15,13 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /**
- * 08:30 KST 모닝 브리프 — 야간 미국장 + KR/US 뉴스 + 보유/관심 종목 공시를 Gemini 가 종합.
+ * 08:30 KST 모닝 브리프 — 검증된 시장 지표를 규칙으로 분석하고 보유/관심 공시 알림을 연결.
  *
  * 흐름 (공통 골격은 [BriefPipeline]):
  *   1) 사용자별 보유/관심 KR 종목 stock_code 수집
  *   2) DART seen 테이블에서 어제 + 오늘 공시 중 보유/관심 종목 매칭분 추출
- *   3) VIX / FRED 지수 / 뉴스 헤드라인 + 실적 캘린더 병렬 수집
- *   4) Gemini 1회 호출 (모든 사용자 공통 시장 요약)
+ *   3) 공통 근거 수집·품질 검사·규칙 분석
+ *   4) Gemini는 승인된 한국어 표현만 선택(실패해도 규칙 문장 사용)
  *   5) media_summaries 에 source=MORNING_BRIEF, videoId="brief-YYYY-MM-DD" 로 upsert
  *   6) 알림 ON 사용자에게 푸시 — 본인 보유 공시 갯수 prefix 로 개인화
  *
@@ -31,7 +31,6 @@ import java.util.UUID
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class MorningBriefService(
     private val pipeline: BriefPipeline,
-    private val geminiClient: GeminiClient,
     private val userWatchTickers: UserWatchTickerRepository,
     private val disclosureSeenRepository: DisclosureSeenRepository,
     private val pushRepository: PushRepository,
@@ -64,7 +63,6 @@ class MorningBriefService(
             config = slotConfig,
             today = today,
             force = force,
-            includeEarnings = true,
             prepare = {
                 // 사용자 보유/관심 종목 + 매칭 공시 (어제~오늘 야간 공시만)
                 val userTickers = userWatchTickers.tickersByUser(market = "KR")  // Map<UUID, Set<String>>
@@ -75,18 +73,7 @@ class MorningBriefService(
                 } else emptyList()
                 MorningContext(userTickers, matched)
             },
-            disclosureCount = { it.matchedDisclosures.size },
-            analyze = { ctx, d ->
-                geminiClient.summarizeMorningBrief(
-                    vix = d.vix, indices = d.indices, macro = d.macro, headlines = d.headlines,
-                    disclosureTitles = ctx.disclosureTitles,
-                    investorFlow = d.investorFlow,
-                    upcomingEvents = d.upcomingEvents,
-                    krMarket = d.krMarket, krGainers = d.krGainers, krLosers = d.krLosers,
-                    earningsSymbols = d.earningsSymbols, global = d.global,
-                )
-            },
-            transcriptLength = { ctx, d -> ctx.disclosureTitles.sumOf { it.length } + d.headlines.size },
+            transcriptLength = { ctx -> ctx.disclosureTitles.sumOf { it.length } },
             keyTickers = { ctx -> ctx.matchedDisclosures.map { it.stockCode }.distinct().take(6) },
             dispatchPush = { ctx, analysis -> dispatchPushes(analysis, ctx.matchedDisclosures, ctx.userTickers) },
         )

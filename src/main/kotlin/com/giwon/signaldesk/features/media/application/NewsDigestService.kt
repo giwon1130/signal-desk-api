@@ -1,7 +1,6 @@
 package com.giwon.signaldesk.features.media.application
 
 import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
-import com.giwon.signaldesk.features.market.application.MarketNews
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
@@ -13,7 +12,7 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /**
- * 매일 장 마감 후 한국 시장 뉴스를 종합해 AI 요약을 만든다.
+ * 뉴스 제목과 공통 규칙 시황을 구분해 제공한다. 제목만으로 인과관계를 생성하지 않는다.
  *
  * 입력: GoogleNewsRssClient.fetchMarketNews() 의 KR 뉴스 헤드라인 묶음
  * 출력: MediaSummary (source=NEWS_DIGEST) — 기존 YouTube 요약과 같은 테이블/엔드포인트 공유
@@ -24,7 +23,8 @@ import java.util.UUID
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class NewsDigestService(
     private val newsRssClient: GoogleNewsRssClient,
-    private val geminiClient: GeminiClient,
+    private val briefing: EvidenceBriefingService,
+    private val analyzer: com.giwon.signaldesk.features.market.application.MarketEvidenceAnalyzer,
     private val repository: MediaSummaryRepository,
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul")),
 ) {
@@ -33,11 +33,6 @@ class NewsDigestService(
 
     /** market: "KR" or "US" */
     fun runDigest(market: String, force: Boolean = false): MediaSummary? {
-        if (!geminiClient.isEnabled()) {
-            log.warn("NewsDigestService skipped — GEMINI_API_KEY 미설정")
-            return null
-        }
-
         val today = LocalDate.now(clock)
         val videoId = "news-${today.format(dateFmt)}-$market"
         if (!force && repository.findByVideoId(videoId) != null) {
@@ -45,25 +40,22 @@ class NewsDigestService(
             return null
         }
 
-        val allNews = newsRssClient.fetchMarketNews()
+        val allNews = runCatching { newsRssClient.fetchMarketNews() }.getOrNull()
         if (allNews.isNullOrEmpty()) {
             log.warn("news digest skipped — no news fetched")
             return null
         }
-        val marketNews = allNews.filter { it.market == market }
+        val marketNews = analyzer.recentNews(allNews, clock.instant()).filter { it.market == market }
         if (marketNews.isEmpty()) {
             log.warn("news digest skipped — no $market news in batch")
             return null
         }
 
         val headlines = marketNews.map { Triple(it.source, it.title, it.url) }
-        val analysis = geminiClient.summarizeNewsDigest(market, today.format(dateFmt), headlines) ?: run {
-            log.warn("Gemini analysis returned null. market={}", market)
-            return null
-        }
+        val analysis = briefing.current()
 
         val marketKo = if (market == "KR") "한국 시장" else "미국 시장"
-        val title = "${today.format(DateTimeFormatter.ofPattern("M월 d일"))} $marketKo 마감 종합 (${marketNews.size}개 매체)"
+        val title = "${today.format(DateTimeFormatter.ofPattern("M월 d일"))} $marketKo 마감 종합 (${marketNews.map { it.source }.distinct().size}개 매체)"
         val summary = MediaSummary(
             id = UUID.randomUUID().toString(),
             channelId = "news-digest-$market",
@@ -73,9 +65,10 @@ class NewsDigestService(
             videoUrl = "",
             publishedAt = Instant.now(),
             transcriptLength = headlines.sumOf { it.second.length },
-            summary = analysis.summary,
-            flowAnalysis = analysis.flowAnalysis,
-            keyTickers = analysis.keyTickers,
+            summary = "최근 24시간 뉴스 제목을 모았어. 사건의 확정이나 주가 변동의 원인으로 단정한 내용은 아니야.\n\n" +
+                marketNews.take(8).joinToString("\n") { "[${it.source}] ${it.title} — ${it.url}" },
+            flowAnalysis = analysis.summary + "\n\n" + analysis.keyPoints.joinToString("\n"),
+            keyTickers = emptyList(),
             sentiment = analysis.sentiment,
             hasTranscript = true,
             source = MediaSource.NEWS_DIGEST,

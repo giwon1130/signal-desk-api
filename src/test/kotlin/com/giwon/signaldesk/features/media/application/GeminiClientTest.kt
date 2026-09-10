@@ -112,7 +112,7 @@ class GeminiClientTest {
         byKey["fallbackkey2"] = 200 to insightOk("폴백 성공")
 
         val result = client("primarykey1", fallbacks = "fallbackkey2", baseUrl = baseUrl())
-            .summarizeMarketInsight(vix = null, indices = null, headlines = emptyList())
+            .summarizeYoutubeFlow("test channel", "test title", "test transcript")
 
         assertThat(result).isNotNull
         assertThat(result!!.headline).isEqualTo("폴백 성공")
@@ -125,7 +125,7 @@ class GeminiClientTest {
         byKey["k3"] = 200 to insightOk("세번째 키 성공")
 
         val result = client("k1", fallbacks = " k2 , k3 ", baseUrl = baseUrl())
-            .summarizeMarketInsight(vix = null, indices = null, headlines = emptyList())
+            .summarizeYoutubeFlow("test channel", "test title", "test transcript")
 
         assertThat(result?.headline).isEqualTo("세번째 키 성공")
     }
@@ -136,7 +136,7 @@ class GeminiClientTest {
         byKey["k2"] = 429 to quotaBody
 
         val result = client("k1", fallbacks = "k2", baseUrl = baseUrl())
-            .summarizeMarketInsight(vix = null, indices = null, headlines = emptyList())
+            .summarizeYoutubeFlow("test channel", "test title", "test transcript")
 
         assertThat(result).isNull()
     }
@@ -146,11 +146,11 @@ class GeminiClientTest {
         byKey["k"] = 429 to quotaBody
         val gemini = client("k", baseUrl = baseUrl())
 
-        assertThat(gemini.summarizeMarketInsight(vix = null, indices = null, headlines = emptyList())).isNull()
+        assertThat(gemini.summarizeYoutubeFlow("test channel", "test title", "test transcript")).isNull()
 
         // 쿼터 소진 직후에는 성공 응답으로 바뀌어도 5분간 circuit-open 상태라 외부 호출을 하지 않는다.
         byKey["k"] = 200 to insightOk("회복 전에는 호출하지 않음")
-        assertThat(gemini.summarizeMarketInsight(vix = null, indices = null, headlines = emptyList())).isNull()
+        assertThat(gemini.summarizeYoutubeFlow("test channel", "test title", "test transcript")).isNull()
     }
 
     @Test
@@ -158,17 +158,17 @@ class GeminiClientTest {
         byKey["solo"] = 200 to insightOk("단일 키")
 
         val result = client("solo", fallbacks = "", baseUrl = baseUrl())
-            .summarizeMarketInsight(vix = null, indices = null, headlines = emptyList())
+            .summarizeYoutubeFlow("test channel", "test title", "test transcript")
 
         assertThat(result?.headline).isEqualTo("단일 키")
     }
 
     @Test
-    fun `흐름 리딩 분석을 insight 스키마로 파싱한다`() {
+    fun `외부 방송 요약을 insight 스키마로 파싱한다`() {
         byKey["k"] = 200 to insightOk("반도체 주도 코스피 상방")
 
         val result = client("k", baseUrl = baseUrl())
-            .summarizeFlowReading(slot = "CLOSE", vix = null, indices = null)
+            .summarizeYoutubeFlow("test channel", "test title", "test transcript")
 
         assertThat(result).isNotNull
         assertThat(result!!.headline).isEqualTo("반도체 주도 코스피 상방")

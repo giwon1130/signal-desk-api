@@ -24,7 +24,7 @@ class MarketInsightController(
     @GetMapping("/today")
     fun getToday(): ApiResponse<MarketInsightResponse?> {
         val result = service.getTodayInsight()
-        return ApiResponse(true, result?.let(MarketInsightResponse::from))
+        return ApiResponse(true, MarketInsightResponse.from(result))
     }
 
     /**
@@ -44,6 +44,7 @@ data class MarketInsightResponse(
     val summary: String,
     val sentiment: String,
     val keyPoints: List<String>,
+    val assessment: com.giwon.signaldesk.features.market.application.MarketEvidenceReport? = null,
 ) {
     companion object {
         fun from(a: MarketInsightAnalysis) = MarketInsightResponse(
@@ -51,6 +52,7 @@ data class MarketInsightResponse(
             summary = a.summary,
             sentiment = a.sentiment.name,
             keyPoints = a.keyPoints,
+            assessment = a.assessment,
         )
     }
 }

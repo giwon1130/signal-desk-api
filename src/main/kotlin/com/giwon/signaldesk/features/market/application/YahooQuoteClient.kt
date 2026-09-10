@@ -14,6 +14,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.time.ZoneId
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 
@@ -83,14 +84,9 @@ class YahooQuoteClient(
         if (resp.statusCode() !in 200..299) return null
         val result = runCatching { objectMapper.readTree(resp.body()) }.getOrNull()
             ?.get("chart")?.get("result")?.get(0) ?: return null
-        val meta = result["meta"] ?: return null
-        val price = meta["regularMarketPrice"]?.asDouble() ?: return null
-        // 일간 등락률은 close 배열의 직전 종가로. 지수·선물은 meta.previousClose 가 null 이고,
-        // chartPreviousClose 는 range(5d) 시작 전 종가라 '일간'이 아닌 수일치 변동이 돼버린다(닛케이/항셍/선물 과대표기).
-        val closes = closesOf(result)
-        val prevClose = priorClose(closes, price) ?: (meta["previousClose"] ?: meta["chartPreviousClose"])?.asDouble()
-        val changeRate = if (prevClose != null && prevClose != 0.0) (price - prevClose) / prevClose * 100 else 0.0
-        return GlobalIndex(label = label, value = price, changeRate = changeRate)
+        val series = parseSeries(result, symbol) ?: return null
+        return GlobalIndex(label, series.currentValue, series.changeRate, symbol, series.observedAt,
+            series.source, series.previousValue, series.observationDate, series.previousObservationDate)
     }
 
     /** chart.result[0].indicators.quote[0].close 의 non-null 종가 배열(시간순). */
@@ -190,11 +186,32 @@ class YahooQuoteClient(
         if (resp.statusCode() !in 200..299) return null
         val result = runCatching { objectMapper.readTree(resp.body()) }.getOrNull()
             ?.get("chart")?.get("result")?.get(0) ?: return null
-        val price = result["meta"]?.get("regularMarketPrice")?.asDouble() ?: return null
-        val closes = closesOf(result)
-        val prev = priorClose(closes, price) ?: return null
-        val changeRate = if (prev != 0.0) (price - prev) / prev * 100 else 0.0
-        return FredSeriesSnapshot(currentValue = price, changeRate = changeRate, chart = closes.takeLast(20))
+        return parseSeries(result, symbol)
+    }
+
+    /** Compare different exchange dates, never infer the previous session by price equality. */
+    internal fun parseSeries(result: com.fasterxml.jackson.databind.JsonNode, symbol: String): FredSeriesSnapshot? {
+        val meta = result["meta"] ?: return null
+        if (meta["symbol"]?.asText()?.let { it != symbol } == true) return null
+        val price = meta["regularMarketPrice"]?.takeIf { it.isNumber }?.asDouble()
+            ?.takeIf { it.isFinite() && it > 0 } ?: return null
+        val time = meta["regularMarketTime"]?.takeIf { it.isIntegralNumber }?.asLong()
+            ?.takeIf { it > 0 }?.let(Instant::ofEpochSecond) ?: return null
+        val zone = runCatching { ZoneId.of(meta["exchangeTimezoneName"]?.asText() ?: "") }.getOrNull() ?: return null
+        val date = time.atZone(zone).toLocalDate()
+        val timestamps = result["timestamp"] ?: return null
+        val closes = result["indicators"]?.get("quote")?.get(0)?.get("close") ?: return null
+        val bars = timestamps.mapIndexedNotNull { i, ts ->
+            val value = closes.get(i)?.takeIf { it.isNumber }?.asDouble()
+                ?.takeIf { it.isFinite() && it > 0 } ?: return@mapIndexedNotNull null
+            if (!ts.isIntegralNumber) return@mapIndexedNotNull null
+            Instant.ofEpochSecond(ts.asLong()).atZone(zone).toLocalDate() to value
+        }.sortedBy { it.first }
+        val previous = bars.lastOrNull { it.first < date } ?: return null
+        val change = (price / previous.second - 1) * 100
+        if (!change.isFinite()) return null
+        return FredSeriesSnapshot(price, change, bars.map { it.second }.takeLast(20), previous.second,
+            date.toString(), previous.first.toString(), time.toString(), "Yahoo:$symbol", "DAILY")
     }
 
     companion object {
@@ -204,6 +221,14 @@ class YahooQuoteClient(
             "^HSI" to "항셍",
             "ES=F" to "S&P500 선물",
         )
+        /** Separate sector group: these are correlated proxies, not independent votes or KR night futures. */
+        val BRIEFING_INDICES = linkedMapOf(
+            "^GSPC" to "S&P500", "^IXIC" to "나스닥", "^KS11" to "코스피", "^KQ11" to "코스닥",
+            "ES=F" to "S&P500 선물", "EWY" to "한국 주식 ETF(EWY)",
+            "SOXX" to "미국 반도체 ETF(SOXX)", "MU" to "마이크론", "SKHY" to "SK하이닉스 ADR",
+            "SMSN.IL" to "삼성전자 런던 GDR", "KRW=X" to "원/달러", "CL=F" to "WTI 선물",
+            "^VIX" to "VIX",
+        )
     }
 }
 
@@ -211,6 +236,12 @@ data class GlobalIndex(
     val label: String,
     val value: Double,
     val changeRate: Double,
+    val symbol: String? = null,
+    val observedAt: String? = null,
+    val source: String? = null,
+    val previousValue: Double? = null,
+    val observationDate: String? = null,
+    val previousObservationDate: String? = null,
 )
 
 /** 시즈널리티 백테스트용 일봉(배당·분할 조정 종가). */

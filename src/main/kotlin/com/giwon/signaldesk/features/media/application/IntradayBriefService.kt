@@ -14,7 +14,7 @@ import java.time.ZoneId
  *
  * 모닝 브리프와 차이:
  *  - 보유 공시 매칭 / 실적 캘린더 없음.
- *  - slot 에 따라 프롬프트·source·제목만 달라짐.
+ *  - slot 에 따라 source·제목만 달라지고 판단 규칙은 공유.
  *
  * 공통 골격(게이트/중복 체크/병렬 수집/저장/푸시)은 [BriefPipeline].
  * 앱은 /api/v1/media/summaries/latest 로 최신 브리프를 보여주므로, 시간대별로 가장 최근 브리프가 노출된다.
@@ -23,7 +23,6 @@ import java.time.ZoneId
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class IntradayBriefService(
     private val pipeline: BriefPipeline,
-    private val geminiClient: GeminiClient,
     private val pushRepository: PushRepository,
     private val alertPreferenceService: AlertPreferenceService,
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul")),
@@ -58,15 +57,6 @@ class IntradayBriefService(
             today = today,
             force = force,
             prepare = {},
-            analyze = { _, d ->
-                geminiClient.summarizeIntradayBrief(
-                    slot = slot.name,
-                    vix = d.vix, indices = d.indices, macro = d.macro, headlines = d.headlines,
-                    investorFlow = d.investorFlow, upcomingEvents = d.upcomingEvents,
-                    krMarket = d.krMarket, krGainers = d.krGainers, krLosers = d.krLosers, global = d.global,
-                )
-            },
-            transcriptLength = { _, d -> d.headlines.size },
             dispatchPush = { _, analysis ->
                 runCatching { dispatchPush(slot, analysis) }
                     .onFailure { log.warn("IntradayBrief({}) push failed", slot, it) }

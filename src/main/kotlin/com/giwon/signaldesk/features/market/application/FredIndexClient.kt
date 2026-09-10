@@ -42,7 +42,7 @@ class FredIndexClient(
         val treasury2 = runCatching { fetchSeries("DGS2") }.getOrNull()
         val treasury10 = runCatching { fetchSeries("DGS10") }.getOrNull()
         val krTreasury10 = runCatching { fetchSeries("IRLTLT01KRM156N") }.getOrNull()
-        val wti = runCatching { fetchSeries("WTISPLC") }.getOrNull()
+        val wti = runCatching { fetchSeries("DCOILWTICO") }.getOrNull()
         val gold = runCatching { fetchSeries("GOLDAMGBD228NLBM") }.getOrNull()
         if (cpi == null && fed == null && usdKrw == null && treasury2 == null && treasury10 == null &&
             krTreasury10 == null && wti == null && gold == null
@@ -63,14 +63,19 @@ class FredIndexClient(
 
             if (rows.size < 2) return null
 
-            val currentValue = rows.last()
-            val previousValue = rows[rows.lastIndex - 1]
+            val currentValue = rows.last().second
+            val previousValue = rows[rows.lastIndex - 1].second
             val changeRate = if (previousValue == 0.0) 0.0 else ((currentValue - previousValue) / previousValue) * 100
 
             FredSeriesSnapshot(
                 currentValue = currentValue,
                 changeRate = changeRate,
-                chart = rows.takeLast(20),
+                chart = rows.takeLast(20).map { it.second },
+                previousValue = previousValue,
+                observationDate = rows.last().first.toString(),
+                previousObservationDate = rows[rows.lastIndex - 1].first.toString(),
+                source = "FRED:$seriesId",
+                frequency = if (seriesId in MONTHLY_SERIES) "MONTHLY" else "DAILY",
             )
         }.getOrElse {
             logger.warn("FRED series fetch exception. seriesId={}, message={}", seriesId, it.message)
@@ -78,11 +83,11 @@ class FredIndexClient(
         }
     }
 
-    private fun fetchCsvRows(uri: URI, seriesId: String): List<Double>? {
+    private fun fetchCsvRows(uri: URI, seriesId: String): List<Pair<LocalDate, Double>>? {
         return fetchViaWget(uri, seriesId) ?: fetchViaHttpConnection(uri, seriesId)
     }
 
-    private fun fetchViaHttpConnection(uri: URI, seriesId: String): List<Double>? {
+    private fun fetchViaHttpConnection(uri: URI, seriesId: String): List<Pair<LocalDate, Double>>? {
         return runCatching {
             val connection = uri.toURL().openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
@@ -105,7 +110,7 @@ class FredIndexClient(
         }
     }
 
-    private fun fetchViaWget(uri: URI, seriesId: String): List<Double>? {
+    private fun fetchViaWget(uri: URI, seriesId: String): List<Pair<LocalDate, Double>>? {
         return runCatching {
             // wget 자체 타임아웃(-T 5, 재시도 1회) — 기본값(900초 read timeout)이면 응답이 멈춘
             // FRED 가 스케줄러 스레드/거래 경로를 무한정 묶는다. 타임아웃 시 wget 이 종료되며
@@ -131,15 +136,23 @@ class FredIndexClient(
         }
     }
 
-    private fun parseCsvRows(body: String): List<Double> {
+    internal fun parseCsvRows(body: String): List<Pair<LocalDate, Double>> {
         return body.lineSequence()
             .drop(1)
             .mapNotNull { line ->
                 val parts = line.split(",")
                 if (parts.size < 2) return@mapNotNull null
-                parts[1].toDoubleOrNull()
+                val date = runCatching { LocalDate.parse(parts[0].trim()) }.getOrNull() ?: return@mapNotNull null
+                val value = parts[1].trim().toDoubleOrNull()?.takeIf { it.isFinite() } ?: return@mapNotNull null
+                date to value
             }
+            .distinctBy { it.first }
+            .sortedBy { it.first }
             .toList()
+    }
+
+    companion object {
+        private val MONTHLY_SERIES = setOf("CPIAUCSL", "FEDFUNDS", "IRLTLT01KRM156N", "WTISPLC")
     }
 }
 
@@ -153,6 +166,12 @@ data class FredSeriesSnapshot(
     val currentValue: Double,
     val changeRate: Double,
     val chart: List<Double>,
+    val previousValue: Double? = null,
+    val observationDate: String? = null,
+    val previousObservationDate: String? = null,
+    val observedAt: String? = null,
+    val source: String? = null,
+    val frequency: String? = null,
 )
 
 /** FRED 매크로 스냅샷. 일부 시리즈는 null 가능. */

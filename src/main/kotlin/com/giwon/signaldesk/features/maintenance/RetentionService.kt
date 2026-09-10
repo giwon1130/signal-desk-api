@@ -41,6 +41,9 @@ class RetentionService(
         deleted["market_rounds"] = delete(
             "delete from signal_desk_market_rounds where ends_at < now() - make_interval(days => ?)", MARKET_ROUND_DAYS,
         )
+        deleted["market_evidence"] = delete(
+            "delete from signal_desk_market_evidence where bucket_at < now() - make_interval(days => ?)", 90,
+        )
         val total = deleted.values.sum()
         if (total > 0) log.info("retention 정리 — {} (총 {}건)", deleted.filterValues { it > 0 }, total)
         return deleted

@@ -3,16 +3,7 @@ package com.giwon.signaldesk.features.media.application
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.giwon.signaldesk.features.ai.application.AiPick
 import com.giwon.signaldesk.features.ai.application.PickCandidate
-import com.giwon.signaldesk.features.events.application.MarketEvent
-import com.giwon.signaldesk.features.market.application.InvestorFlowSnapshot
-import com.giwon.signaldesk.features.market.application.MacroSnapshot
-import com.giwon.signaldesk.features.market.application.GlobalIndex
 import com.giwon.signaldesk.features.market.application.MarketNews
-import com.giwon.signaldesk.features.market.application.MarketSection
-import com.giwon.signaldesk.features.market.application.TopMover
-import com.giwon.signaldesk.features.market.application.UsIndicesSnapshot
-import com.giwon.signaldesk.features.market.application.VixSnapshot
-import com.giwon.signaldesk.features.market.application.YahooQuote
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -84,101 +75,9 @@ class GeminiClient(
 
     // ─── public API: 시나리오별 요약 ──────────────────────────────────────────
 
-    fun summarizeMarketInsight(
-        vix: VixSnapshot?,
-        indices: UsIndicesSnapshot?,
-        headlines: List<MarketNews>,
-        upcomingEvents: List<MarketEvent> = emptyList(),
-    ): MarketInsightAnalysis? = callInsight(GeminiPrompts.marketInsight(vix, indices, headlines, upcomingEvents))
-
-    /**
-     * 모닝 브리프 — 야간 미국장 결과 + KR 뉴스 + 보유/관심 종목 공시를 합쳐
-     * 장 시작 전(08:30 KST) 한국 개인 투자자가 오늘 대응을 준비할 수 있게 종합한다.
-     */
-    fun summarizeMorningBrief(
-        vix: VixSnapshot?,
-        indices: UsIndicesSnapshot?,
-        macro: MacroSnapshot?,
-        headlines: List<MarketNews>,
-        disclosureTitles: List<String>,
-        investorFlow: InvestorFlowSnapshot? = null,
-        upcomingEvents: List<MarketEvent> = emptyList(),
-        krMarket: MarketSection? = null,
-        krGainers: List<TopMover> = emptyList(),
-        krLosers: List<TopMover> = emptyList(),
-        earningsSymbols: List<String> = emptyList(),
-        global: List<GlobalIndex> = emptyList(),
-    ): MarketInsightAnalysis? = callInsight(
-        GeminiPrompts.morningBrief(
-            vix, indices, macro, headlines, disclosureTitles, investorFlow, upcomingEvents,
-            krMarket, krGainers, krLosers, earningsSymbols, global,
-        ),
-    )
-
-    /** AI 시황 흐름 리딩 — slot="PREOPEN"|"CLOSE". 섹터·수급·순환매 흐름을 내러티브로. */
-    fun summarizeFlowReading(
-        slot: String,
-        vix: VixSnapshot?,
-        indices: UsIndicesSnapshot?,
-        krMarket: MarketSection? = null,
-        krGainers: List<TopMover> = emptyList(),
-        krLosers: List<TopMover> = emptyList(),
-        investorFlow: InvestorFlowSnapshot? = null,
-        headlines: List<MarketNews> = emptyList(),
-    ): MarketInsightAnalysis? = callInsight(
-        GeminiPrompts.flowReading(slot, vix, indices, krMarket, krGainers, krLosers, investorFlow, headlines),
-    )
-
     /** 유튜브 방송 자막 요약 — 방송이 본 시장 흐름/테마. insight 스키마 재사용. */
     fun summarizeYoutubeFlow(channelLabel: String, videoTitle: String, transcript: String): MarketInsightAnalysis? =
         callInsight(GeminiPrompts.youtubeFlowSummary(channelLabel, videoTitle, transcript))
-
-    /** KR 장중/마감 브리프 — slot="MIDDAY"|"CLOSE". 모닝 브리프와 같은 입력을 KR 관점으로. */
-    fun summarizeIntradayBrief(
-        slot: String,
-        vix: VixSnapshot?,
-        indices: UsIndicesSnapshot?,
-        macro: MacroSnapshot?,
-        headlines: List<MarketNews>,
-        investorFlow: InvestorFlowSnapshot? = null,
-        upcomingEvents: List<MarketEvent> = emptyList(),
-        krMarket: MarketSection? = null,
-        krGainers: List<TopMover> = emptyList(),
-        krLosers: List<TopMover> = emptyList(),
-        global: List<GlobalIndex> = emptyList(),
-    ): MarketInsightAnalysis? = callInsight(
-        GeminiPrompts.intradayBrief(
-            slot, vix, indices, macro, headlines, investorFlow, upcomingEvents,
-            krMarket, krGainers, krLosers, global,
-        ),
-    )
-
-    /**
-     * 미장 이브닝 브리프 — NY 장 마감 직후(06:30 KST). 야간 미국장 결과 + top movers + 실적 + 헤드라인을
-     * 종합해 한국 투자자에게 "어제 미국장 어땠고 오늘 한국장에 어떤 영향 있을지" 한 줄 요약.
-     */
-    fun summarizeEveningBrief(
-        vix: VixSnapshot?,
-        indices: UsIndicesSnapshot?,
-        topGainers: List<YahooQuote>,
-        topLosers: List<YahooQuote>,
-        earningsSymbols: List<String>,
-        headlines: List<MarketNews>,
-    ): MarketInsightAnalysis? = callInsight(
-        GeminiPrompts.eveningBrief(vix, indices, topGainers, topLosers, earningsSymbols, headlines),
-    )
-
-    /**
-     * 마감시황 뉴스 헤드라인 묶음을 종합 요약.
-     * @param marketLabel "KR" 또는 "US"
-     * @param dateLabel "2026-05-15" 같은 날짜
-     * @param headlines (source, title, url) 튜플 리스트
-     */
-    fun summarizeNewsDigest(
-        marketLabel: String,
-        dateLabel: String,
-        headlines: List<Triple<String, String, String>>,
-    ): MediaSummaryAnalysis? = callDigest(GeminiPrompts.newsDigest(marketLabel, dateLabel, headlines))
 
     /**
      * 오늘의 AI 픽 — 후보 종목 universe 안에서 단타 관점 주목 종목 3~5개를 골라 이유와 함께 반환.
@@ -251,14 +150,6 @@ class GeminiClient(
         val body = call(prompt, timeoutSeconds = 30, label = "insight") ?: return null
         return runCatching { GeminiResponseParsing.insight(body, objectMapper) }.getOrElse {
             log.warn("Gemini market insight parse failed", it)
-            null
-        }
-    }
-
-    private fun callDigest(prompt: String): MediaSummaryAnalysis? {
-        val body = call(prompt, timeoutSeconds = 45, label = "news digest") ?: return null
-        return runCatching { GeminiResponseParsing.newsDigest(body, objectMapper) }.getOrElse {
-            log.warn("Gemini news digest parse failed", it)
             null
         }
     }
@@ -424,6 +315,7 @@ data class MarketInsightAnalysis(
     val summary: String,
     val sentiment: MediaSentiment,
     val keyPoints: List<String>,
+    val assessment: com.giwon.signaldesk.features.market.application.MarketEvidenceReport? = null,
 )
 
 data class AiPicksAnalysis(

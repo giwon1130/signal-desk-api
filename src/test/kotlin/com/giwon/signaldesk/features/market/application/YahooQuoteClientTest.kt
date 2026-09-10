@@ -60,9 +60,13 @@ class YahooQuoteClientTest {
     /** 지수처럼 previousClose=null, chartPreviousClose 는 일부러 멀리 둬서 '쓰면 틀리게' 만든다. */
     private fun chartJson(price: Double, closes: List<Double?>, chartPreviousClose: Double): String {
         val closeArr = closes.joinToString(",") { it?.toString() ?: "null" }
+        val base = java.time.Instant.parse("2026-09-01T13:30:00Z").epochSecond
+        val timestamps = closes.indices.joinToString(",") { (base + it * 86400).toString() }
+        val time = base + (closes.size - if (closes.lastOrNull() == price) 1 else 0) * 86400 + 7200
         return """
             {"chart":{"result":[{
-              "meta":{"regularMarketPrice":$price,"previousClose":null,"chartPreviousClose":$chartPreviousClose},
+              "meta":{"regularMarketPrice":$price,"regularMarketTime":$time,"exchangeTimezoneName":"America/New_York","previousClose":null,"chartPreviousClose":$chartPreviousClose},
+              "timestamp":[$timestamps],
               "indicators":{"quote":[{"close":[$closeArr]}]}
             }]}}
         """.trimIndent()
@@ -118,5 +122,26 @@ class YahooQuoteClientTest {
     fun `priorClose - 데이터가 부족하면 null`() {
         assertThat(client.priorClose(emptyList(), price = 100.0)).isNull()
         assertThat(client.priorClose(listOf(100.0), price = 100.0)).isNull() // 마지막==price 인데 직전이 없음
+    }
+
+    @Test
+    fun `same-day partial close is never used as previous session even when price differs`() {
+        val tree = objectMapper.readTree(chartJson(110.0, listOf(100.0, 110.0), 80.0))
+        val result = tree["chart"]["result"][0]
+        (result["meta"] as com.fasterxml.jackson.databind.node.ObjectNode).put("regularMarketPrice", 115.0)
+        val parsed = client.parseSeries(result, "SOXX")!!
+        assertThat(parsed.previousValue).isEqualTo(100.0)
+        assertThat(parsed.changeRate).isCloseTo(15.0, within(.0001))
+        assertThat(parsed.observedAt).isNotNull()
+        assertThat(parsed.source).isEqualTo("Yahoo:SOXX")
+    }
+
+    @Test
+    fun `without quote timestamp or prior dated close no fabricated flat change is returned`() {
+        val tree = objectMapper.readTree(chartJson(110.0, listOf(110.0), 80.0))
+        val result = tree["chart"]["result"][0]
+        assertThat(client.parseSeries(result, "SOXX")).isNull()
+        (result["meta"] as com.fasterxml.jackson.databind.node.ObjectNode).remove("regularMarketTime")
+        assertThat(client.parseSeries(result, "SOXX")).isNull()
     }
 }
