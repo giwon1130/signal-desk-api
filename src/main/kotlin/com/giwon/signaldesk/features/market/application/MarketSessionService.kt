@@ -247,9 +247,15 @@ class MarketSessionService {
             put(LocalDate.of(2026, 2, 17), "설날")
             put(LocalDate.of(2026, 2, 18), "설날 연휴")
             put(LocalDate.of(2026, 3, 2),  "삼일절 대체휴일")  // 3/1 일요일
+            // KRX market-operation notices + broker research calendar (2026), verified 2026-09-10.
+            // https://strn.krx.co.kr/corebbs5/BHPSTRN0401/list
+            // https://securities.miraeasset.com/bbs/download/2144038.pdf?attachmentId=2144038
+            put(LocalDate.of(2026, 5, 1),  "노동절")
             put(LocalDate.of(2026, 5, 5),  "어린이날")
             put(LocalDate.of(2026, 5, 25), "부처님오신날 대체휴일")  // 5/24 일요일
+            put(LocalDate.of(2026, 6, 3),  "전국동시지방선거")
             put(LocalDate.of(2026, 7, 17), "제헌절")
+            put(LocalDate.of(2026, 8, 17), "광복절 대체휴일")
             put(LocalDate.of(2026, 9, 24), "추석 연휴")
             put(LocalDate.of(2026, 9, 25), "추석")
             put(LocalDate.of(2026, 10, 5), "개천절 대체휴일")  // 10/3 토요일

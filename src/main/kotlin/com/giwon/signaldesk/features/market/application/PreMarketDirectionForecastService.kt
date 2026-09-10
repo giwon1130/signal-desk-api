@@ -7,6 +7,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import java.time.LocalDate
+import java.time.Clock
+import java.time.LocalTime
+import java.time.Instant
+import java.sql.Timestamp
 
 /**
  * 장전 방향성의 입력·예측·실제 KOSPI 시초 갭을 날짜 단위로 보존한다.
@@ -22,6 +26,7 @@ class PreMarketDirectionForecastService(
     private val directionService: PreMarketDirectionService,
     private val marketSessionService: MarketSessionService,
     private val naverIndexChartClient: NaverIndexChartClient,
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -34,7 +39,8 @@ class PreMarketDirectionForecastService(
             """
             select prediction_date, correct, actual_gap_rate
             from signal_desk_premarket_direction_forecast
-            where evaluated_at is not null and correct is not null
+            where evaluated_at is not null and correct is not null and rules_version = ?
+              and recorded_at < ((prediction_date + time '09:00') at time zone 'Asia/Seoul')
             order by prediction_date desc
             limit ?
             """.trimIndent(),
@@ -45,7 +51,7 @@ class PreMarketDirectionForecastService(
                     actualGapRate = rs.getDouble("actual_gap_rate").takeUnless { rs.wasNull() },
                 )
             },
-            windowSize.coerceAtLeast(1),
+            directionService.rulesVersion, windowSize.coerceIn(1, 90),
         )
         val last = rows.firstOrNull()
         val correctCount = rows.count { it.correct }
@@ -53,39 +59,56 @@ class PreMarketDirectionForecastService(
             evaluatedCount = rows.size,
             correctCount = correctCount,
             accuracyPct = rows.takeIf { it.isNotEmpty() }?.let { correctCount * 100 / it.size },
-            windowSize = windowSize,
+            windowSize = windowSize.coerceIn(1, 90),
             lastPredictionDate = last?.predictionDate?.toString(),
             lastCorrect = last?.correct,
             lastActualGapRate = last?.actualGapRate,
         )
     }
 
-    fun capture(date: LocalDate = LocalDate.now(KST)): CaptureResult {
-        if (!marketSessionService.isKrTradingDay(date)) return CaptureResult(false, null, null)
+    fun capture(date: LocalDate = clock.instant().atZone(KST).toLocalDate()): CaptureResult {
+        if (!captureAllowed(date, clock.instant())) return CaptureResult(false, null, null)
         val direction = directionService.current()
+        val recordedAt = clock.instant()
+        // A slow fetch crossing 09:00 must not become a pre-open forecast.
+        if (!captureAllowed(date, recordedAt)) return CaptureResult(false, null, null)
+        val asOf = direction.asOf?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        if (direction.bias != null && (asOf == null || !captureAllowed(date, asOf) || asOf > recordedAt))
+            return CaptureResult(false, null, null)
+        if (direction.score?.isFinite() == false) return CaptureResult(false, null, null)
         val inputs = objectMapper.writeValueAsString(
             (listOfNotNull(direction.kospiFutures) + direction.overseas)
                 .map { mapOf("label" to it.label, "changeRate" to it.changeRate, "value" to it.value) },
         )
-        jdbc.update(
+        val saved = jdbc.update(
             """
             insert into signal_desk_premarket_direction_forecast
-                (prediction_date, recorded_at, bias, score, confidence, coverage, input_count, inputs)
-            values (?, now(), ?, ?, ?, ?, ?, ?::jsonb)
-            on conflict (prediction_date) do update set
-                recorded_at = excluded.recorded_at, bias = excluded.bias, score = excluded.score,
-                confidence = excluded.confidence, coverage = excluded.coverage,
-                input_count = excluded.input_count, inputs = excluded.inputs
+                (prediction_date, recorded_at, bias, score, confidence, coverage, input_count, inputs, rules_version)
+            values (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
+            on conflict (prediction_date) do nothing
             """.trimIndent(),
-            java.sql.Date.valueOf(date), direction.bias, direction.score, direction.confidence,
-            direction.coverage, direction.inputCount, inputs,
+            java.sql.Date.valueOf(date), Timestamp.from(recordedAt), direction.bias, direction.score, direction.confidence,
+            direction.coverage, direction.inputCount, inputs, directionService.rulesVersion,
         )
-        log.info("premarket forecast captured — date={} bias={} coverage={}", date, direction.bias, direction.coverage)
-        return CaptureResult(true, direction.bias, direction.coverage)
+        log.info("premarket forecast capture — saved={} date={} bias={} coverage={}", saved == 1, date, direction.bias, direction.coverage)
+        return CaptureResult(saved == 1, direction.bias, direction.coverage)
     }
 
-    fun evaluate(date: LocalDate = LocalDate.now(KST)): EvaluationResult {
+    private fun captureAllowed(date: LocalDate, at: Instant): Boolean {
+        val local = at.atZone(KST)
+        return date == local.toLocalDate() && marketSessionService.isKrTradingDay(date) &&
+            local.toLocalTime() >= LocalTime.of(6, 30) && local.toLocalTime() < LocalTime.of(9, 0)
+    }
+
+    fun evaluate(date: LocalDate = clock.instant().atZone(KST).toLocalDate()): EvaluationResult {
         if (!marketSessionService.isKrTradingDay(date)) return EvaluationResult(false, null, null)
+        if (clock.instant() < date.atTime(9, 10).atZone(KST).toInstant()) return EvaluationResult(false, null, null)
+        val forecastBias = jdbc.query(
+            """select bias from signal_desk_premarket_direction_forecast
+               where prediction_date = ? and rules_version = ? and evaluated_at is null
+                 and recorded_at < ((prediction_date + time '09:00') at time zone 'Asia/Seoul')""".trimIndent(),
+            { rs, _ -> rs.getString("bias") }, java.sql.Date.valueOf(date), directionService.rulesVersion,
+        ).firstOrNull() ?: return EvaluationResult(false, null, null)
         val candles = runCatching {
             naverIndexChartClient.fetchOhlc("KOSPI", NaverIndexChartClient.PeriodType.DAILY, 10)
         }.onFailure { log.warn("premarket forecast KOSPI candle fetch failed", it) }.getOrDefault(emptyList())
@@ -93,23 +116,26 @@ class PreMarketDirectionForecastService(
         val todayKey = date.toString().replace("-", "")
         val todayIndex = candles.indexOfFirst { it.date == todayKey }
         val today = candles.getOrNull(todayIndex) ?: return EvaluationResult(false, null, null)
-        val previous = candles.getOrNull(todayIndex - 1)?.close ?: return EvaluationResult(false, null, null)
-        if (previous <= 0.0 || today.open <= 0.0) return EvaluationResult(false, null, null)
+        val previousCandle = candles.getOrNull(todayIndex - 1) ?: return EvaluationResult(false, null, null)
+        var previousDate = date.minusDays(1)
+        while (!marketSessionService.isKrTradingDay(previousDate)) previousDate = previousDate.minusDays(1)
+        if (previousCandle.date != previousDate.toString().replace("-", "") || candles.count { it.date == todayKey } != 1)
+            return EvaluationResult(false, null, null)
+        val previous = previousCandle.close
+        if (!previous.isFinite() || !today.open.isFinite() || previous <= 0.0 || today.open <= 0.0)
+            return EvaluationResult(false, null, null)
 
         val gapRate = (today.open - previous) / previous * 100
+        if (!gapRate.isFinite()) return EvaluationResult(false, null, null)
         val actualBias = biasOf(gapRate)
-        val forecastBias = jdbc.query(
-            "select bias from signal_desk_premarket_direction_forecast where prediction_date = ?",
-            { rs, _ -> rs.getString("bias") }, java.sql.Date.valueOf(date),
-        ).firstOrNull()
-        val correct = forecastBias?.let { it == actualBias.name }
+        val correct = forecastBias == actualBias.name
         val updated = jdbc.update(
             """
             update signal_desk_premarket_direction_forecast
             set previous_close = ?, actual_open = ?, actual_gap_rate = ?, actual_bias = ?, correct = ?, evaluated_at = now()
-            where prediction_date = ?
+            where prediction_date = ? and rules_version = ? and evaluated_at is null
             """.trimIndent(),
-            previous, today.open, gapRate, actualBias.name, correct, java.sql.Date.valueOf(date),
+            previous, today.open, gapRate, actualBias.name, correct, java.sql.Date.valueOf(date), directionService.rulesVersion,
         )
         if (updated == 0) return EvaluationResult(false, gapRate, null)
         log.info("premarket forecast evaluated — date={} gap={} actual={} correct={}", date, gapRate, actualBias, correct)

@@ -67,8 +67,10 @@ class EvidenceNarrator(private val gemini: GeminiClient, private val mapper: Obj
                         if (it.status == "DELAYED") " (${it.observationDate} 공표치, 실시간 아님)." else " (${it.observationDate} 관측)."
                 } ?: "")
             }
+        val nightText = if (evidence["KR_NIGHT"]?.status == "OBSERVED")
+            "야간선물은 검증된 관측값만 반영했어." else "야간선물 실측은 미연결 또는 유효 관측 부족 상태야."
         val summary = listOf(phrase("opening"), drivers, riskText,
-            "야간선물 실측은 미연결 상태야. 이 내용은 매매 지시나 수익률 예측이 아니야.")
+            "$nightText 이 내용은 매매 지시나 수익률 예측이 아니야.")
             .filter { it.isNotBlank() }.joinToString("\n\n")
         return MarketInsightAnalysis(report.headline, summary,
             when (report.regime) {

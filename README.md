@@ -17,7 +17,7 @@
 - 한국 시장: `KRX` 지수/수급/차트, `DART OpenAPI` 공시 5분 폴링
 - 미국 시장: `Yahoo Finance` 지수(어젯밤 종가, 1순위) → `FRED` 폴백 + `FRED` 매크로(금리·CPI 등) + `CBOE VIX`
 - **합성 위험도(`compositeRisk`)** — PizzINT(0.3) + VIX(0.5) + 뉴스 키워드(0.2) 가중으로 1~10 산출. score≥8 시 08:32 KST 푸시 알림 (V15 마이그레이션 `composite_risk_enabled` 토글)
-- **모닝 브리프(08:30 KST)** — 야간 미국장(Yahoo 지수·VIX) + 글로벌 지수·선물(닛케이·항셍·S&P선물) + 전일 한국 지수·급등락·외인/기관 수급 + 매크로(금리·환율·유가·금) + 오늘 미국 실적 발표 + 보유/관심 종목 DART 공시 + 뉴스를 Gemini로 종합. 캐시 + 503 재시도
+- **근거 기반 시황·브리프** — 관측 시각을 검증한 한국/미국 지수, 반도체·해외 상장 프록시, 환율, 미 국채 금리, 유가·VIX, 최근 뉴스로 고정 규칙 분석. Gemini는 허용된 동의어 문구만 선택하며 방향·숫자를 바꾸지 않는다. 키가 없어도 규칙 기반 문장을 제공한다.
 - **시간대별 브리프** — 마감(15:40 KST)·US 이브닝(06:30 KST) 브리프. 각각 알림 토글 (모닝=`premarket_enabled`, 마감=`close_brief_enabled` 기본 ON, 이브닝=`evening_brief_enabled`). 장중(12:30 KST) 정기 브리프는 제거됨(`MIDDAY` 슬롯은 수동 refresh 용으로만 잔존)
 - **모의투자 리그** — 친구끼리 가상 자본으로 매매 경쟁. immutable trade 원장 + derived position, 리더보드. (`/api/v1/league/**`)
 - **리딩(애널리스트 콜)** — 리더가 종목 콜을 게시(작성 시점 시세 `entry_price` 박제), 구독자 피드 + 성과 추적. (`/api/v1/reading/**`)
@@ -55,7 +55,9 @@
 - `GET /api/v1/market/portfolio`
 - `GET /api/v1/market/ai-recommendations`
 - `GET /api/v1/market/top-movers?limit=10`
-- `GET /api/v1/media/morning-brief` — 모닝 브리프 (Gemini 종합)
+- `GET /api/v1/media/morning-brief` — 모닝 브리프 (공통 근거 기반 분석)
+- `GET /api/v1/insights/today` — 근거·관측 시각·누락 상태·규칙 버전 포함 시황
+- `GET /api/v1/insights/evaluation?days=30` — 운영자 JWT 전용, JDBC 모드의 읽기 전용 재생/탐색 평가 (1~90일)
 - `GET /api/v1/disclosures/recent` — DART 공시 (5분 폴링, 보유/관심 종목)
 
 전체 엔드포인트 목록은 [`docs/엔지니어링/API명세.md`](docs/엔지니어링/API명세.md) 참고.
@@ -88,7 +90,22 @@
 - 글로벌 지수·선물(닛케이·항셍·S&P선물): `Yahoo Finance` v8 chart
 - 미국 공포지표: `CBOE VIX`
 - 뉴스: `Google News RSS`
-- Gemini API: 모닝 브리프 자연어 종합 (`GEMINI_API_KEY`)
+- Gemini API: 시황의 허용 문구 선택 (`GEMINI_API_KEY`, 선택 사항)
+
+## 시황 검증과 야간선물 연결 상태
+
+`market-evidence-v2`는 수익률 예측 모델이 아닌 현재 조건 설명 규칙이다. 결측 비중을 재배분하지 않으며, 월간·무시각·합성 자료를 단기 방향 판단에서 제외한다.
+
+- JDBC에서는 시간당 첫 입력/규칙 결과를 변경 없이 90일 보관한다. 평가 API는 최대 2,160건을 재생하며 절단 여부, 동일 버전 재현 실패, 지표별 누락·지연 상태를 반환한다. 실시간 시세나 Gemini로 과거 입력을 보충하지 않는다.
+- 탐색 평가는 한국 거래일 06:30~09:00의 마지막 기록을 날짜당 한 번만 사용한다. 해당 일의 정규장 종료 후 실제 Naver 일봉의 시초가/직전 거래일 종가와 비교하며, 중립·자료 부족·위험 경보는 판단 보류로 집계한다. 원본 뉴스/입력은 관리자 응답에도 포함하지 않는다.
+- 방향 표본 30일 미만 또는 조회 절단 시 일치율을 숨긴다. 이후에도 탐색적 일치율, Wilson 구간, 항상 상승으로 보는 기준선만 제시하며 가중치를 자동 변경하지 않는다. 테스트의 합성 입력은 실전 성과가 아니다.
+- 기존 장전 프록시 예측은 별도 모델이다. V48부터 09:00 이후 기록·기존 기록 덮어쓰기·다른 규칙 버전의 통계 혼합을 막는다. 과거 기록은 삭제하지 않고 기존 통계에서 분리한다.
+
+한국 야간선물은 **실제 수신 미연결** 상태다. `KrxNightFuturesFeed`는 읽기 전용 포트이며 운영 빈이 기본 등록되지 않는다. 한국투자증권의 [공식 H0MFCNT0 계약](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_futureoption/krx_ngt_futures_ccnl/krx_ngt_futures_ccnl.py)에 따른 디코더와 세션·시각·가격·만기 검증만 구현되어 있다. 인증/웹소켓/월물 마스터 연결은 아직 하지 않았다.
+
+원문에는 시간이 있지만 날짜가 없으므로 수신기가 확인한 세션 시작일과 정확한 코스피200 계약/만기 정보가 필수다. 야간 휴장 여부는 [KRX 안내](https://open.krx.co.kr/contents/OPN/01/01041401/Guide_to_Night_Session_in_KRX_Derivatives_Market.pdf)의 시작일 기준이며, 현재 야간 검증의 휴장일 달력은 2026년만 허용한다. 2027년은 공식 달력 갱신 전까지 제외한다.
+
+실제 연결 전에는 제공사의 계정·시세 권한과 앱 이용자에게 제공할 권한을 확인해야 한다. [KRX 시장정보 안내](https://data.krx.co.kr/inc/datasale/Market%20Data%20Product%20Brochure.pdf?v=20250732)는 내부 이용과 외부 재배포의 계약을 구분한다. 개인 API 키 보유가 앱 재배포 권한을 의미하지 않는다. 이 모듈에는 계좌/주문 기능이 없으며 비밀값을 보관하거나 로그로 출력하지 않는다.
 
 ## 합성 위험도(Composite Risk) 구조
 - `CompositeRiskService` — PizzINT + VIX + 뉴스 키워드를 VIX 중심 가중(0.5/0.3/0.2)으로 종합해 1~10 점수 산출

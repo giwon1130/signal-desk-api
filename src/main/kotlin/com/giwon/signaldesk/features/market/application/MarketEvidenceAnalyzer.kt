@@ -12,6 +12,7 @@ data class MarketEvidenceInput(
     val quotes: List<GlobalIndex>,
     val macro: MacroSnapshot?,
     val headlines: List<MarketNews>?,
+    val nightFutures: KrxNightFuturesObservation? = null,
 )
 
 data class MetricEvidence(
@@ -26,7 +27,7 @@ data class EvidenceFactor(
 )
 
 data class MarketEvidenceReport(
-    val rulesVersion: String = "market-evidence-v1",
+    val rulesVersion: String = MarketEvidenceAnalyzer.RULES_VERSION,
     val asOf: String, val horizon: String, val regime: String, val riskLevel: String,
     val coveragePercent: Int, val balanceScore: Double?,
     val headline: String, val conclusion: String,
@@ -110,9 +111,7 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
         }
         rate("DGS2", "미 국채 2년물", input.macro?.treasury2y)
         rate("DGS10", "미 국채 10년물", input.macro?.treasury10y)
-        evidence["KR_NIGHT"] = MetricEvidence("KR_NIGHT", "코스피200 야간선물", null,
-            "https://global.krx.co.kr/contents/GLB/02/0201/0201041003/GLB0201041003.jsp", null, null,
-            "MISSING", null, null, "PERCENT_CHANGE", "코스피200 야간선물: 검증된 시세 피드가 연결되지 않아 제외했어. EWY와 미국 선물은 야간선물 값이 아니야.")
+        evidence["KR_NIGHT"] = KrxNightFuturesEvidence(sessions).assess(input.nightFutures, now)
 
         fun usable(id: String) = evidence[id]?.takeIf { it.status in setOf("OBSERVED", "DELAYED") }
         val stockWeak = listOf("^GSPC", "^IXIC").mapNotNull { usable(it)?.change }.let { it.size == 2 && it.average() <= -0.5 }
@@ -181,7 +180,8 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
         val warnings = buildList {
             add("이 분석은 현재 조건 설명이야. 상승 확률·예상 수익률·매수/매도 지시가 아니야.")
             add("관측 시각이 다른 시장의 자료를 함께 비교했어. Yahoo 시세는 비공식 지연 시세일 수 있고, 휴장 때는 최근 거래일 값이야.")
-            add("야간선물 실측 미연결 · 해외 ETF/ADR에는 환율·거래시간·괴리율 영향이 있어.")
+            if (usable("KR_NIGHT") == null) add("야간선물 실측 미연결 또는 유효 관측 부족: 해당 비중은 제외했어.")
+            add("해외 ETF/ADR에는 환율·거래시간·괴리율 영향이 있어.")
             add("수급 순위만으로 시장 전체 순매수 규모를 추정하지 않았어. 관측 시각 없는 수급과 월간 지표는 단기 점수에서 제외했어.")
             if (yield2 != null && yield10 != null && yield2.observationDate == yield10.observationDate) {
                 val spread = (yield10.value!! - yield2.value!!) * 100
@@ -244,4 +244,6 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
     private fun parseDate(value: String?): LocalDate? = value?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     private fun fmt(value: Double) = String.format(Locale.US, "%.2f", value)
     private fun signed(value: Double) = String.format(Locale.US, "%+.2f", value)
+
+    companion object { const val RULES_VERSION = "market-evidence-v2" }
 }

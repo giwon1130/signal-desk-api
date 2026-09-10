@@ -47,7 +47,7 @@ class EvidenceBriefingIntegrationTest {
         MarketEvidenceArchive(jdbc, mapper).save(input, report)
         val invocation = mockingDetails(jdbc).invocations.single()
         assertThat(invocation.arguments[0].toString()).contains("on conflict (bucket_at, rules_version) do nothing")
-        assertThat(invocation.arguments.joinToString()).contains("market-evidence-v1", "collectedAt", "INSUFFICIENT_DATA")
+        assertThat(invocation.arguments.joinToString()).contains(MarketEvidenceAnalyzer.RULES_VERSION, "collectedAt", "INSUFFICIENT_DATA")
     }
 
     @Test fun `source failures and no Gemini key still produce a persisted scheduled brief`() {
@@ -85,5 +85,30 @@ class EvidenceBriefingIntegrationTest {
         com.giwon.signaldesk.features.maintenance.RetentionService(jdbc).runRetention()
         val call = mockingDetails(jdbc).invocations.single { it.arguments[0].toString().contains("signal_desk_market_evidence") }
         assertThat(call.arguments[1]).isEqualTo(90)
+    }
+
+    @Test fun `unconfigured or failing night feed cannot prevent the deterministic briefing`() {
+        val provider = DefaultListableBeanFactory().getBeanProvider(MarketEvidenceArchive::class.java)
+        val narrator = EvidenceNarrator(GeminiClient(ObjectMapper(), "", "", "http://unused", "test"), mapper)
+        val service = EvidenceBriefingService(mock(YahooQuoteClient::class.java), mock(FredIndexClient::class.java),
+            mock(GoogleNewsRssClient::class.java), MarketEvidenceAnalyzer(MarketSessionService()), narrator, provider,
+            KrxNightFuturesFeed { throw IllegalStateException("test feed failure") })
+        val result = service.current()
+        assertThat(result.assessment?.evidence?.single { it.id == "KR_NIGHT" }?.status).isEqualTo("MISSING")
+        assertThat(result.summary).contains("미연결")
+    }
+
+    @Test fun `validated night observation survives archive serialization and is not narrated as disconnected`() {
+        val observed = Instant.parse("2026-09-09T21:00:00Z")
+        val night = KrxNightFuturesObservation("TEST_CONTRACT", LocalDate.parse("2026-09-10"), LocalDate.parse("2026-09-09"),
+            observed, observed, 404.0, 400.0, 1.0, KisNightFuturesDecoder.SOURCE)
+        val withNight = input.copy(nightFutures = night)
+        val decoded = mapper.readValue(mapper.writeValueAsString(withNight), MarketEvidenceInput::class.java)
+        assertThat(decoded).isEqualTo(withNight)
+        val assessed = MarketEvidenceAnalyzer(MarketSessionService()).analyze(decoded)
+        val narrator = EvidenceNarrator(GeminiClient(ObjectMapper(), "", "", "http://unused", "test"), mapper)
+        val result = narrator.narrate(assessed)
+        assertThat(result.summary).contains("야간선물은 검증된 관측값만 반영")
+        assertThat(result.summary).doesNotContain("야간선물 실측은 미연결")
     }
 }

@@ -35,6 +35,7 @@ class PreMarketDirectionService(
     @Value("\${signal-desk.premarket.bias-threshold:0.3}") private val biasThreshold: Double,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+    val rulesVersion: String get() = "premarket-proxy-v2-threshold-$biasThreshold"
 
     /** Yahoo 심볼 → 표시 라벨. 첫 항목(MSCI 한국)이 headline, 라벨로 다시 식별한다. */
     private val symbols = linkedMapOf(
