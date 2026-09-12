@@ -43,7 +43,7 @@ class MarketEvidenceAnalyzerTest {
         assertThat(r.regime).isEqualTo("SUPPORTIVE")
         assertThat(r.coveragePercent).isEqualTo(90)
         assertThat(r.evidence.single { it.id == "KR_NIGHT" }.status).isEqualTo("MISSING")
-        assertThat(r.warnings.joinToString()).contains("매수/매도 지시가 아니야", "미연결")
+        assertThat(r.warnings.joinToString()).contains("매수·매도 지시를 제공하지 않습니다", "연결되지 않았")
     }
 
     @Test fun `single ADR never replaces a sector and missing weights are not redistributed`() {
@@ -95,7 +95,7 @@ class MarketEvidenceAnalyzerTest {
     @Test fun `falling rates with falling equities are not treated as bullish`() {
         val r = report(all().map { if (it.symbol in setOf("^GSPC", "^IXIC")) q(it.symbol!!, -2.0) else it })
         assertThat(r.factors.single { it.id == "rates" }.score).isEqualTo(0.0)
-        assertThat(r.warnings.joinToString()).contains("금리 하락을 호재로 가산하지 않았어")
+        assertThat(r.warnings.joinToString()).contains("금리 하락을 호재로 가산하지 않았습니다")
     }
 
     @Test fun `conflicting groups are mixed despite positive arithmetic balance`() {

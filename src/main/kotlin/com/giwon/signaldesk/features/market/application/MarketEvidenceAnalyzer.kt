@@ -68,7 +68,7 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
             }
             val detail = if (status == "OBSERVED") {
                 "$label ${fmt(q!!.value)}${if (id == "KRW=X") "원" else ""}, 이전 거래일 대비 ${signed(q.changeRate)}% · 관측 ${q.observedAt}"
-            } else "$label: ${qualityLabel(status)} — 방향 판단에서 제외했어. 관측 ${q?.observedAt ?: "시각 미확인"}"
+            } else "$label: ${qualityLabel(status)} — 방향 판단에서 제외했습니다. 관측 ${q?.observedAt ?: "시각 미확인"}"
             return MetricEvidence(id, label, q?.source, "https://finance.yahoo.com/quote/${java.net.URLEncoder.encode(id, java.nio.charset.StandardCharsets.UTF_8)}/",
                 q?.observedAt, q?.observationDate, status, q?.value?.takeIf { it.isFinite() },
                 q?.changeRate?.takeIf { it.isFinite() }, "PERCENT_CHANGE", detail).also { evidence[id] = it }
@@ -107,7 +107,7 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
             return MetricEvidence(id, label, s?.source, "https://fred.stlouisfed.org/series/$id", null,
                 s?.observationDate, status, s?.currentValue?.takeIf { it.isFinite() }, delta?.takeIf { it.isFinite() }, "BASIS_POINTS",
                 if (status == "DELAYED") "$label ${fmt(s!!.currentValue)}%, 이전 관측 대비 ${signed(delta!!)}bp · ${s.observationDate} 일간 공표치(실시간 아님)"
-                else "$label: ${qualityLabel(status)} — 방향 판단에서 제외했어. 관측 ${s?.observationDate ?: "날짜 미확인"}").also { evidence[id] = it }
+                else "$label: ${qualityLabel(status)} — 방향 판단에서 제외했습니다. 관측 ${s?.observationDate ?: "날짜 미확인"}").also { evidence[id] = it }
         }
         rate("DGS2", "미 국채 2년물", input.macro?.treasury2y)
         rate("DGS10", "미 국채 10년물", input.macro?.treasury10y)
@@ -122,10 +122,10 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
             // Fixed member weights; a lone ADR cannot take over the whole semiconductor bucket.
             val score = available.entries.sumOf { (key, w) -> transform(usable(key)!!.change!! / scale).coerceIn(-1.0, 1.0) * w }
             val interpretation = when {
-                coverage < 0.5 -> "자료가 부족해서 묶음 방향을 정하지 않았어."
-                score >= 0.2 -> "이 묶음은 주식시장에 우호적인 조건을 보여줘."
-                score <= -0.2 -> "이 묶음은 주식시장에 부담이 되는 조건을 보여줘."
-                else -> "이 묶음의 방향은 뚜렷하지 않거나 서로 엇갈려."
+                coverage < 0.5 -> "자료가 부족해 이 영역의 방향을 판단하지 않았습니다."
+                score >= 0.2 -> "주식시장에 우호적인 흐름을 보이고 있습니다."
+                score <= -0.2 -> "주식시장에 부담을 주는 흐름을 보이고 있습니다."
+                else -> "방향이 뚜렷하지 않거나 서로 엇갈리고 있습니다."
             }
             return EvidenceFactor(id, label, weight, score.takeIf { coverage >= 0.5 }, coverage,
                 members.keys.toList(), interpretation)
@@ -171,34 +171,34 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
             else -> "MIXED"
         }
         val headline = when (regime) {
-            "INSUFFICIENT_DATA" -> "시황 판단에 필요한 최신 자료가 부족해"
-            "RISK_CAUTION" -> "방향보다 위험 요인을 먼저 확인할 때야"
-            "SUPPORTIVE" -> "우호적인 지표가 우세하지만 확인이 필요해"
-            "PRESSURED" -> "주식시장에 부담을 주는 지표가 우세해"
-            else -> "우호 요인과 부담 요인이 엇갈리고 있어"
+            "INSUFFICIENT_DATA" -> "시황 판단에 필요한 최신 자료가 부족합니다"
+            "RISK_CAUTION" -> "시장 방향보다 위험 요인을 먼저 확인할 때입니다"
+            "SUPPORTIVE" -> "시장에 우호적인 지표가 우세합니다"
+            "PRESSURED" -> "주식시장에 부담을 주는 지표가 우세합니다"
+            else -> "긍정 요인과 부담 요인이 엇갈리고 있습니다"
         }
         val warnings = buildList {
-            add("이 분석은 현재 조건 설명이야. 상승 확률·예상 수익률·매수/매도 지시가 아니야.")
-            add("관측 시각이 다른 시장의 자료를 함께 비교했어. Yahoo 시세는 비공식 지연 시세일 수 있고, 휴장 때는 최근 거래일 값이야.")
-            if (usable("KR_NIGHT") == null) add("야간선물 실측 미연결 또는 유효 관측 부족: 해당 비중은 제외했어.")
-            add("해외 ETF/ADR에는 환율·거래시간·괴리율 영향이 있어.")
-            add("수급 순위만으로 시장 전체 순매수 규모를 추정하지 않았어. 관측 시각 없는 수급과 월간 지표는 단기 점수에서 제외했어.")
+            add("이 분석은 현재 시장 조건을 설명하며 상승 확률, 예상 수익률 또는 매수·매도 지시를 제공하지 않습니다.")
+            add("관측 시각이 다른 시장의 자료를 함께 비교했습니다. Yahoo 시세는 비공식 지연 시세일 수 있으며 휴장 시에는 최근 거래일 값이 사용됩니다.")
+            if (usable("KR_NIGHT") == null) add("야간선물 실측이 연결되지 않았거나 유효한 관측값이 부족해 이번 분석에서 제외했습니다.")
+            add("해외 ETF와 ADR에는 환율, 거래시간 및 괴리율의 영향이 있습니다.")
+            add("수급 순위만으로 시장 전체 순매수 규모를 추정하지 않았습니다. 관측 시각이 없는 수급과 월간 지표는 단기 판단에서 제외했습니다.")
             if (yield2 != null && yield10 != null && yield2.observationDate == yield10.observationDate) {
                 val spread = (yield10.value!! - yield2.value!!) * 100
-                add("미 국채 장단기 금리차(10년−2년)는 ${signed(spread)}bp야(${yield10.observationDate}). 경기·정책 배경 지표로만 보고 당일 주가 방향으로 단정하지 않았어.")
+                add("미 국채 장단기 금리차(10년−2년)는 ${signed(spread)}bp입니다(${yield10.observationDate}). 경기와 정책의 배경 지표로만 사용하며 당일 주가 방향으로 단정하지 않았습니다.")
             }
             if (stockWeak && listOf("DGS2", "DGS10").any { (usable(it)?.change ?: 0.0) < 0 })
-                add("주가와 금리가 함께 내려 금리 하락을 호재로 가산하지 않았어. 경기 우려 가능성도 확인해야 해.")
-            if (input.headlines == null) add("뉴스 수집 실패: 지정학 위험이 낮다는 뜻은 아니야.")
-            else if (news.isEmpty()) add("최근 24시간의 유효 뉴스가 없어 지정학 위험을 확정하지 않았어.")
-            if (escalation.isNotEmpty()) add("최근 24시간 지정학 긴장 관련 교차 보도: ${escalation.size}건·${sources}개 출처. 제목 기반 경보이며 사건의 사실 확인이나 전쟁 확률은 아니야.")
-            if (news.any { isDeescalation(it.title) } && escalation.isNotEmpty()) add("긴장 완화·휴전 보도도 함께 있어. 전쟁 악화로 단정하지 않았어.")
-            if (risk == "UNKNOWN") add("위험 자료가 일부 없어 위험 수준을 확정하지 않았어.")
+                add("주가와 금리가 함께 내려 금리 하락을 호재로 가산하지 않았습니다. 경기 우려 가능성도 함께 확인해야 합니다.")
+            if (input.headlines == null) add("뉴스를 수집하지 못했으며, 이것이 지정학 위험이 낮다는 의미는 아닙니다.")
+            else if (news.isEmpty()) add("최근 24시간의 유효 뉴스가 없어 지정학 위험을 확정하지 않았습니다.")
+            if (escalation.isNotEmpty()) add("최근 24시간 지정학 긴장 관련 교차 보도는 ${escalation.size}건, ${sources}개 출처입니다. 제목 기반 경보이며 사건의 사실 확인이나 전쟁 확률을 의미하지 않습니다.")
+            if (news.any { isDeescalation(it.title) } && escalation.isNotEmpty()) add("긴장 완화와 휴전 보도도 함께 있어 전쟁 악화로 단정하지 않았습니다.")
+            if (risk == "UNKNOWN") add("일부 위험 자료가 부족해 위험 수준을 확정하지 않았습니다.")
         }
         return MarketEvidenceReport(asOf = now.toString(), horizon = "CURRENT_CONDITIONS_KR_WITH_GLOBAL_CONTEXT",
             regime = regime, riskLevel = risk, coveragePercent = (coverage * 100).roundToInt(),
             balanceScore = (balance * 100).takeIf { regime != "INSUFFICIENT_DATA" }, headline = headline,
-            conclusion = "$headline. 유효 입력 비중은 ${(coverage * 100).roundToInt()}%이고, 누락 지표의 비중을 다른 지표에 더하지 않았어.",
+            conclusion = "$headline. 수집 대상 중 ${(coverage * 100).roundToInt()}%를 분석에 반영했으며, 누락된 지표의 비중은 다른 지표에 더하지 않았습니다.",
             factors = factors, evidence = evidence.values.toList(), warnings = warnings, newsEvidence = escalation.take(8))
     }
 

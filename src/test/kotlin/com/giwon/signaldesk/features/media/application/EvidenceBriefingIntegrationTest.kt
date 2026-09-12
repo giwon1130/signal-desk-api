@@ -87,6 +87,25 @@ class EvidenceBriefingIntegrationTest {
         assertThat(call.arguments[1]).isEqualTo(90)
     }
 
+    @Test fun `brief push is short action oriented and omits internal scoring language`() {
+        val pipeline = BriefPipeline(mock(EvidenceBriefingService::class.java), mock(MediaSummaryRepository::class.java), mock(ExpoPushClient::class.java))
+        val pressured = report.copy(
+            regime = "PRESSURED",
+            factors = listOf(EvidenceFactor(
+                id = "semiconductors", label = "반도체 동행 지표", weight = .2, score = -.8,
+                coverage = 1.0, evidenceIds = listOf("SOXX"), interpretation = "주식시장에 부담을 주는 흐름을 보이고 있습니다.",
+            )),
+        )
+        val content = pipeline.briefPushContent(
+            MarketInsightAnalysis("시장에 부담을 주는 흐름이 우세합니다", "긴 앱 본문", MediaSentiment.BEARISH, emptyList(), pressured),
+            "마감 브리프",
+        )
+        assertThat(content.first).contains("시장 부담이 커지고 있습니다")
+        assertThat(content.second).contains("반도체 관련 지표가 약세입니다", "확인해 주세요")
+        assertThat(content.second).doesNotContain("유효 입력", "관측", "점수")
+        assertThat(content.second.length).isLessThanOrEqualTo(180)
+    }
+
     @Test fun `unconfigured or failing night feed cannot prevent the deterministic briefing`() {
         val provider = DefaultListableBeanFactory().getBeanProvider(MarketEvidenceArchive::class.java)
         val narrator = EvidenceNarrator(GeminiClient(ObjectMapper(), "", "", "http://unused", "test"), mapper)
@@ -95,7 +114,8 @@ class EvidenceBriefingIntegrationTest {
             KrxNightFuturesFeed { throw IllegalStateException("test feed failure") })
         val result = service.current()
         assertThat(result.assessment?.evidence?.single { it.id == "KR_NIGHT" }?.status).isEqualTo("MISSING")
-        assertThat(result.summary).contains("미연결")
+        assertThat(result.summary).doesNotContain("미연결", "유효 입력", "관측 시각")
+        assertThat(result.keyPoints.joinToString()).contains("미연결")
     }
 
     @Test fun `validated night observation survives archive serialization and is not narrated as disconnected`() {
@@ -108,7 +128,7 @@ class EvidenceBriefingIntegrationTest {
         val assessed = MarketEvidenceAnalyzer(MarketSessionService()).analyze(decoded)
         val narrator = EvidenceNarrator(GeminiClient(ObjectMapper(), "", "", "http://unused", "test"), mapper)
         val result = narrator.narrate(assessed)
-        assertThat(result.summary).contains("야간선물은 검증된 관측값만 반영")
-        assertThat(result.summary).doesNotContain("야간선물 실측은 미연결")
+        assertThat(result.summary).doesNotContain("야간선물 실측", "관측값만 반영")
+        assertThat(result.keyPoints.joinToString()).doesNotContain("야간선물 실측이 연결되지 않았거나")
     }
 }

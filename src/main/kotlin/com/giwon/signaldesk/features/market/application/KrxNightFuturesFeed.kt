@@ -90,7 +90,7 @@ class KrxNightFuturesEvidence(private val sessions: MarketSessionService) {
         val detail = if (status == "OBSERVED") {
             "코스피200 야간선물(${q!!.contractCode}) ${String.format(Locale.US, "%.2f", q.value)}, " +
                 "제공사 전일 기준 대비 ${String.format(Locale.US, "%+.2f", q.changeRate)}% · 관측 ${q.observedAt}"
-        } else "코스피200 야간선물: ${if (status == "MISSING") "검증된 시세 피드 미연결" else "세션·계약·시각 검증 미통과($status)"} — 방향 판단에서 제외했어. EWY와 미국 선물은 야간선물 값이 아니야."
+        } else "코스피200 야간선물: ${if (status == "MISSING") "검증된 시세 피드 미연결" else "세션·계약·시각 검증 미통과($status)"} — 방향 판단에서 제외했습니다. EWY와 미국 선물은 야간선물 값이 아닙니다."
         return MetricEvidence("KR_NIGHT", "코스피200 야간선물", q?.source,
             "https://apiportal.koreainvestment.com/apiservice", q?.observedAt?.toString(),
             q?.observedAt?.atZone(KisNightFuturesDecoder.KOREA)?.toLocalDate()?.toString(), status,
