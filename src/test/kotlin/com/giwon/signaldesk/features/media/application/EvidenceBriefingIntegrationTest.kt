@@ -106,6 +106,27 @@ class EvidenceBriefingIntegrationTest {
         assertThat(content.second.length).isLessThanOrEqualTo(180)
     }
 
+    @Test fun `morning push uses the same action style and keeps disclosure context`() {
+        val pipeline = BriefPipeline(mock(EvidenceBriefingService::class.java), mock(MediaSummaryRepository::class.java), mock(ExpoPushClient::class.java))
+        val supportive = report.copy(
+            regime = "SUPPORTIVE",
+            factors = listOf(EvidenceFactor(
+                id = "kr_night", label = "코스피200 야간선물", weight = .2, score = .8,
+                coverage = 1.0, evidenceIds = listOf("KR_NIGHT"), interpretation = "국내 증시에 우호적인 흐름입니다.",
+            )),
+        )
+        val content = pipeline.briefPushContent(
+            MarketInsightAnalysis("내부 분석형 제목", "긴 앱 본문", MediaSentiment.BULLISH, emptyList(), supportive),
+            fallbackTitle = "오늘의 모닝 브리프",
+            leadingContext = "보유종목 공시 1건(삼성전자)도 확인해 주세요.",
+        )
+        assertThat(content.first).contains("우호적인 흐름이 나타나고 있습니다").doesNotContain("내부 분석형 제목")
+        assertThat(content.second).startsWith("보유종목 공시 1건(삼성전자)도 확인해 주세요.")
+        assertThat(content.second).contains("코스피200 야간선물이 강세입니다", "확인한 뒤 대응해 주세요")
+        assertThat(content.second).doesNotContain("점수", "유효 입력", "관측")
+        assertThat(content.second.length).isLessThanOrEqualTo(180)
+    }
+
     @Test fun `unconfigured or failing night feed cannot prevent the deterministic briefing`() {
         val provider = DefaultListableBeanFactory().getBeanProvider(MarketEvidenceArchive::class.java)
         val narrator = EvidenceNarrator(GeminiClient(ObjectMapper(), "", "", "http://unused", "test"), mapper)

@@ -114,12 +114,14 @@ class MorningBriefService(
         analysis: MarketInsightAnalysis,
         myDisclosures: List<Disclosure>,
     ): Pair<String, String> {
-        val title = "${pipeline.sentimentEmoji(analysis.sentiment)} ${analysis.headline.ifBlank { "오늘의 모닝 브리프" }}"
-        val prefix = if (myDisclosures.isNotEmpty()) {
+        val disclosureContext = if (myDisclosures.isNotEmpty()) {
             val names = myDisclosures.map { it.corpName }.distinct().take(2).joinToString(", ")
-            "📢 보유 ${myDisclosures.size}건(${names}) · "
-        } else ""
-        val body = (prefix + analysis.summary).take(180)
-        return title to body
+            "보유종목 공시 ${myDisclosures.size}건(${names})도 확인해 주세요."
+        } else null
+        return pipeline.briefPushContent(
+            analysis = analysis,
+            fallbackTitle = "오늘의 모닝 브리프",
+            leadingContext = disclosureContext,
+        )
     }
 }

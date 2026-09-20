@@ -90,11 +90,16 @@ class BriefPipeline(
      * 공통 푸시 (title, body).
      * 앱 본문의 해설을 그대로 자르지 않고, 규칙 엔진의 결론을 짧은 행동 중심 알림으로 바꾼다.
      */
-    fun briefPushContent(analysis: MarketInsightAnalysis, fallbackTitle: String): Pair<String, String> {
+    fun briefPushContent(
+        analysis: MarketInsightAnalysis,
+        fallbackTitle: String,
+        leadingContext: String? = null,
+    ): Pair<String, String> {
         val assessment = analysis.assessment
         if (assessment == null) {
             val title = "${sentimentEmoji(analysis.sentiment)} ${analysis.headline.ifBlank { fallbackTitle }}"
-            return title to analysis.summary.take(180)
+            return title to listOfNotNull(leadingContext, analysis.summary)
+                .joinToString(" ").take(180)
         }
         val titleText = when (assessment.regime) {
             "RISK_CAUTION" -> "위험 신호를 먼저 확인해 주세요"
@@ -121,7 +126,7 @@ class BriefPipeline(
             "MIXED" -> "방향이 확인될 때까지 무리한 진입은 피해 주세요."
             else -> "일부 지표만으로 단정하지 말고 장 흐름을 확인해 주세요."
         }
-        return "${sentimentEmoji(analysis.sentiment)} $titleText" to listOfNotNull(driver, guidance)
+        return "${sentimentEmoji(analysis.sentiment)} $titleText" to listOfNotNull(leadingContext, driver, guidance)
             .joinToString(" ").take(180)
     }
 
