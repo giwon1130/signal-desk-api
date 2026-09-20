@@ -127,6 +127,18 @@ class EvidenceBriefingIntegrationTest {
         assertThat(content.second.length).isLessThanOrEqualTo(180)
     }
 
+    @Test fun `missing or insufficient assessment cannot turn free text into a push claim`() {
+        val pipeline = BriefPipeline(mock(EvidenceBriefingService::class.java), mock(MediaSummaryRepository::class.java), mock(ExpoPushClient::class.java))
+        for (assessment in listOf(null, report)) {
+            val content = pipeline.briefPushContent(
+                MarketInsightAnalysis("외국인 매수로 상승", "실적 기대가 상승 원인입니다", MediaSentiment.BULLISH, emptyList(), assessment),
+                "모닝 브리프",
+            )
+            assertThat(content.second).contains("근거가 충분하지 않습니다").doesNotContain("외국인", "실적 기대", "상승 원인")
+            assertThat(content.first).isEqualTo("모닝 브리프")
+        }
+    }
+
     @Test fun `unconfigured or failing night feed cannot prevent the deterministic briefing`() {
         val provider = DefaultListableBeanFactory().getBeanProvider(MarketEvidenceArchive::class.java)
         val narrator = EvidenceNarrator(GeminiClient(ObjectMapper(), "", "", "http://unused", "test"), mapper)

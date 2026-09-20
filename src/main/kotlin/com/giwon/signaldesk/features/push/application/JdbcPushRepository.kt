@@ -82,7 +82,7 @@ class JdbcPushRepository(
             values (?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?, ?)
             on conflict (user_id, ticker, direction, alert_date) do update set
                 change_rate = excluded.change_rate,
-                reason      = coalesce(excluded.reason, signal_desk_push_alert_log.reason),
+                reason      = excluded.reason,
                 name        = excluded.name,
                 sent_at     = now(),
                 read_at     = null

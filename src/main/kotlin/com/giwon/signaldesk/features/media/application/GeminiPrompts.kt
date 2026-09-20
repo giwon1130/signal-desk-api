@@ -32,45 +32,6 @@ internal object GeminiPrompts {
         """.trimIndent()
     }
 
-    /**
-     * 급등/급락 종목별 사유 — 각 종목에 매칭된 최근 뉴스 헤드라인을 근거로
-     * "왜 올랐나/내렸나" 를 한국어 한 문장으로 짧게 설명한다.
-     */
-    fun moverReasons(
-        dateLabel: String,
-        movers: List<MoverReasonInput>,
-    ): String {
-        val blocks = movers.joinToString("\n\n") { m ->
-            val sign = if (m.changeRate >= 0) "+" else ""
-            val newsLines = if (m.headlines.isEmpty()) {
-                "  관련뉴스: (매칭된 헤드라인 없음)"
-            } else {
-                m.headlines.joinToString("\n") { "  - $it" }
-            }
-            "- [${m.market}] [${m.ticker}] ${m.name} (${sign}${"%.1f".format(m.changeRate)}%, ${m.direction})\n$newsLines"
-        }
-        return """
-            당신은 한국 주식 시황 분석가입니다.
-            아래는 $dateLabel 자 급등·급락한 종목들과, 각 종목에 매칭된 최근 뉴스 헤드라인입니다.
-            각 종목이 왜 그렇게 움직였는지 한국 개인 투자자가 이해하기 쉽게 한국어 한 문장(40자 이내)으로 설명하세요.
-            모든 문장은 한국어 하십시오체(~습니다체)로 작성하세요.
-
-            규칙:
-            - 매칭된 뉴스가 있으면 그 내용을 근거로 구체적으로 설명.
-            - 매칭된 뉴스가 없으면 "뚜렷한 뉴스 없이 수급·차트 모멘텀으로 추정" 처럼 단정하지 말고 추정으로 표현.
-            - 과장/투자권유 금지. 사실 위주로 담백하게.
-
-            스키마:
-            {
-              "reasons": [
-                { "ticker": "종목코드 또는 티커(입력 그대로)", "reason": "한 문장 사유(40자 이내)" }
-              ]
-            }
-
-            종목:
-            $blocks
-        """.trimIndent()
-    }
 
     fun aiPicks(
         candidates: List<PickCandidate>,

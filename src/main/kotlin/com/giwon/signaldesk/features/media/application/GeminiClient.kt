@@ -94,22 +94,6 @@ class GeminiClient(
         }
     }
 
-    /**
-     * 급등/급락 종목별 사유 — 종목+매칭 헤드라인을 한 번에 배치로 보내 종목별 한 줄 사유를 받는다.
-     * 실패/비활성 시 빈 리스트 (호출부에서 캐시 유지).
-     */
-    fun summarizeMoverReasons(
-        dateLabel: String,
-        movers: List<MoverReasonInput>,
-    ): List<MoverReasonAnalysis> {
-        if (movers.isEmpty()) return emptyList()
-        val body = call(GeminiPrompts.moverReasons(dateLabel, movers), timeoutSeconds = 30, label = "mover reasons")
-            ?: return emptyList()
-        return runCatching { GeminiResponseParsing.moverReasons(body, objectMapper) }.getOrElse {
-            log.warn("Gemini mover reasons parse failed", it)
-            emptyList()
-        }
-    }
 
     /**
      * 어시스턴트 등 자유 질문용 — 프롬프트 → 평문 응답 텍스트 (실패 시 null).
@@ -321,20 +305,4 @@ data class MarketInsightAnalysis(
 data class AiPicksAnalysis(
     val summary: String,
     val picks: List<AiPick>,
-)
-
-/** 급등락 사유 생성 입력 — 종목 + 매칭된 헤드라인. */
-data class MoverReasonInput(
-    val market: String,
-    val ticker: String,
-    val name: String,
-    val changeRate: Double,
-    val direction: String,
-    val headlines: List<String>,
-)
-
-/** 급등락 사유 생성 결과 — 종목별 한 줄 사유. */
-data class MoverReasonAnalysis(
-    val ticker: String,
-    val reason: String,
 )

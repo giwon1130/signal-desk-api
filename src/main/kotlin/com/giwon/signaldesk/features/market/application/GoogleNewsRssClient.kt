@@ -71,7 +71,7 @@ class GoogleNewsRssClient(
     fun fetchByQuery(market: String, query: String): List<MarketNews> {
         if (!enabled || query.isBlank()) return emptyList()
         // US 종목은 en-US 로케일이 마이크로캡 사유 헤드라인을 훨씬 잘 잡는다(ko는 시세 페이지만 반환).
-        // 표시용 fetchMarketNews 는 ko 유지 — 여기 영문 헤드라인은 Gemini 입력일 뿐 사용자에게 노출 안 됨.
+        // 최신성/종목 일치 검증을 통과한 제목만 원문 관련 보도로 인용한다.
         val locale = if (market == "US") LOCALE_EN else LOCALE_KO
         return runCatching { fetchRss(market = market, query = query, impact = "$query 관련 뉴스", locale = locale) }
             .getOrElse { emptyList() }

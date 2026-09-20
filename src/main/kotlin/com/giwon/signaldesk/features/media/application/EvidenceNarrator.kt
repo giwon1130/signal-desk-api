@@ -22,19 +22,17 @@ class EvidenceNarrator(private val gemini: GeminiClient, private val mapper: Obj
         val fallback = fallbackSummary(facts)
         val rewritten = if (gemini.isEnabled() && report.regime != "INSUFFICIENT_DATA") runCatching {
             val prompt = """
-                당신은 투자 판단을 하는 분석가가 아니라, 확정된 시황 사실을 쉽게 풀어쓰는 한국어 문장 편집기입니다.
-                아래 facts의 의미를 모두 유지해 일반 투자자가 한 번에 이해할 수 있는 2~4문장으로 정리하세요.
+                당신은 확정된 시황 사실을 전달하는 한국어 문장 편집기입니다.
+                아래 approvedSummaries 중 일반 투자자가 가장 자연스럽게 읽을 수 있는 문안을 하나 선택하세요.
 
                 작성 규칙:
-                - 모든 문장은 자연스러운 한국어 존댓말(~습니다, ~입니다)로 작성합니다.
-                - facts에 없는 숫자, 지표, 종목, 사건, 원인, 전망을 추가하지 않습니다.
-                - 점수 계산법, 데이터 반영률, 관측 시각, 누락 처리 방식은 본문에 설명하지 않습니다.
-                - 매수·매도 권유, 가격 전망, 수익률 예측, 확정적인 표현은 쓰지 않습니다.
-                - primary를 먼저 설명하고 counter는 '다만'처럼 자연스럽게 연결합니다.
+                - summary는 선택한 문안을 그대로 복사합니다. 문장 추가, 삭제, 바꿔쓰기를 하지 않습니다.
+                - 지표가 함께 움직였다는 사실을 주가 변동의 원인으로 해석하지 않습니다.
                 - 응답은 JSON 객체 하나만 반환합니다.
                 - usedFactIds에는 아래 fact id를 빠짐없이 한 번씩 넣습니다.
 
                 facts: ${mapper.writeValueAsString(facts)}
+                approvedSummaries: ${mapper.writeValueAsString(approvedSummaries(facts))}
                 응답 스키마: {"summary":"존댓말 시황 해설", "usedFactIds":["fact_id"]}
             """.trimIndent()
             gemini.generateText(prompt, timeoutSeconds = 15, maxOutputTokens = 512)
@@ -99,15 +97,20 @@ class EvidenceNarrator(private val gemini: GeminiClient, private val mapper: Obj
         val usedIds = idsNode.map { it.asText() }
         val expectedIds = facts.map { it.id }
         if (usedIds.size != expectedIds.size || usedIds.toSet() != expectedIds.toSet()) return null
-        if (summary.length !in 30..420 || summary.contains(Regex("[0-9%]"))) return null
-        if (FORBIDDEN_CLAIMS.containsMatchIn(summary) || INFORMAL_ENDINGS.containsMatchIn(summary)) return null
-        val allowedText = facts.joinToString(" ") { it.text }
-        if (UNSUPPORTED_FACT_TERMS.findAll(summary).any { it.value !in allowedText }) return null
-        if (facts.any { fact -> requiredAnchors(fact.id).none { it in summary } }) return null
-        val sentences = summary.split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
-        if (sentences.size !in 1..4 || sentences.any { !FORMAL_ENDING.containsMatchIn(it.trim()) }) return null
-        summary
+        // 단어/ID가 맞아도 방향 반전이나 새 인과관계가 끼어들 수 있다. 승인된 전체 문장만 통과시킨다.
+        approvedSummaries(facts).firstOrNull { it == summary }
     }.getOrNull()
+
+    internal fun approvedSummaries(facts: List<NarrativeFact>): List<String> = listOf(
+        fallbackSummary(facts),
+        facts.mapIndexed { index, fact ->
+            when {
+                fact.role == "counter" -> "다만 ${fact.text}"
+                index > 0 && fact.role == "primary" -> "또한 ${fact.text}"
+                else -> fact.text
+            }
+        }.joinToString(" "),
+    ).distinct()
 
     internal fun fallbackSummary(facts: List<NarrativeFact>): String = facts.joinToString(" ") { fact ->
         if (fact.role == "counter") "다만 ${fact.text}" else fact.text
@@ -145,55 +148,31 @@ class EvidenceNarrator(private val gemini: GeminiClient, private val mapper: Obj
         return when (factor.id) {
             "kr_cash" -> if (supportive) "국내 증시는 비교적 강한 흐름을 보이고 있습니다."
                 else "국내 증시는 전반적으로 약한 흐름을 보이고 있습니다."
-            "us_equity" -> if (supportive) "미국 증시는 국내 시장에 힘을 보태는 흐름입니다."
-                else "미국 증시의 약세가 국내 시장에도 부담으로 작용하고 있습니다."
-            "us_futures" -> if (supportive) "미국 선물은 시장에 힘을 보태는 방향으로 움직이고 있습니다."
-                else "미국 선물의 약세가 투자 심리에 부담을 주고 있습니다."
-            "kr_proxy" -> if (supportive) "미국 시장의 한국 관련 ETF는 국내 증시에 우호적인 흐름을 보이고 있습니다."
-                else "미국 시장의 한국 관련 ETF가 약세를 보여 국내 증시에도 부담이 되고 있습니다."
-            "semiconductors" -> if (supportive) "반도체 관련 지표가 시장에 힘을 보태고 있습니다."
-                else "반도체 관련 지표가 함께 약세를 보여 시장에 부담을 주고 있습니다."
-            "fx" -> if (supportive) "원·달러 환율 흐름은 국내 증시의 부담을 덜어주고 있습니다."
-                else "원·달러 환율 흐름이 국내 증시에 부담으로 작용하고 있습니다."
-            "rates" -> if (supportive) "미국 금리 흐름은 주식시장의 부담을 덜어주고 있습니다."
-                else "미국 금리 흐름이 주식시장에 부담으로 작용하고 있습니다."
-            "kr_night" -> if (supportive) "국내 야간선물은 증시에 우호적인 흐름을 보이고 있습니다."
-                else "국내 야간선물은 증시에 부담이 되는 흐름을 보이고 있습니다."
+            "us_equity" -> if (supportive) "미국 증시는 최근 거래에서 강세를 보였습니다."
+                else "미국 증시는 최근 거래에서 약세를 보였습니다."
+            "us_futures" -> if (supportive) "미국 선물은 강세를 보이고 있습니다."
+                else "미국 선물은 약세를 보이고 있습니다."
+            "kr_proxy" -> if (supportive) "미국 시장의 한국 관련 ETF는 최근 거래에서 강세를 보였습니다."
+                else "미국 시장의 한국 관련 ETF는 최근 거래에서 약세를 보였습니다."
+            "semiconductors" -> if (supportive) "확인된 반도체 관련 지표는 전반적으로 강세입니다."
+                else "확인된 반도체 관련 지표는 전반적으로 약세입니다."
+            "fx" -> if (supportive) "원·달러 환율은 최근 비교 시점보다 하락했습니다."
+                else "원·달러 환율은 최근 비교 시점보다 상승했습니다."
+            "rates" -> if (supportive) "미국 금리 지표는 주식시장의 부담을 덜어줄 수 있는 방향입니다."
+                else "미국 금리 지표는 주식시장에 부담이 될 수 있는 방향입니다."
+            "kr_night" -> if (supportive) "국내 야간선물은 최근 거래에서 강세를 보였습니다."
+                else "국내 야간선물은 최근 거래에서 약세를 보였습니다."
             else -> if (supportive) "${factor.label}은 시장에 우호적인 흐름을 보이고 있습니다."
                 else "${factor.label}은 시장에 부담이 되는 흐름을 보이고 있습니다."
         }
     }
 
     private fun riskSentence(riskLevel: String): String? = when (riskLevel) {
-        "HIGH" -> "변동성과 뉴스 흐름에서도 강한 위험 신호가 확인되어 주의가 필요합니다."
-        "ELEVATED" -> "변동성이나 뉴스 흐름에서 주의가 필요한 신호가 확인되고 있습니다."
+        "HIGH" -> "확인된 위험 지표에서 강한 경고 신호가 나타나 주의가 필요합니다."
+        "ELEVATED" -> "확인된 위험 지표에서 주의가 필요한 신호가 나타나고 있습니다."
         "UNKNOWN" -> "위험 판단에 필요한 일부 자료가 부족해 안정적인 구간이라고 단정하기 어렵습니다."
         "NORMAL" -> "현재 확인된 변동성과 위험 지표는 과도한 불안 국면을 가리키고 있지 않습니다."
         else -> null
     }
 
-    private fun requiredAnchors(id: String): List<String> = when {
-        "kr_cash" in id -> listOf("국내 증시")
-        "us_equity" in id -> listOf("미국 증시")
-        "us_futures" in id -> listOf("미국 선물")
-        "kr_proxy" in id -> listOf("한국 관련 ETF", "한국 관련 상장지수펀드")
-        "semiconductors" in id -> listOf("반도체")
-        "fx" in id -> listOf("환율")
-        "rates" in id -> listOf("금리")
-        "kr_night" in id -> listOf("야간선물")
-        id.startsWith("risk_") -> listOf("위험", "변동성", "불안")
-        id == "data_shortage" -> listOf("자료", "데이터")
-        id == "wait_for_data" -> listOf("방향", "시장 흐름")
-        else -> listOf("시장")
-    }
-
-    companion object {
-        private val FORBIDDEN_CLAIMS = Regex(
-            "매수|매도|목표가|손절|수익률|상승\\s*확률|반드시|확실(?:히|한)?|급등할|급락할|오를\\s*것|내릴\\s*것",
-            RegexOption.IGNORE_CASE,
-        )
-        private val INFORMAL_ENDINGS = Regex("(?:해|야|줘|있어|없어|보여|않았어)[.!?]?(?:\\s|$)")
-        private val UNSUPPORTED_FACT_TERMS = Regex("외국인|기관|거래량|실적|공시|기업|정책|전쟁|휴전|유가|원유|원자재")
-        private val FORMAL_ENDING = Regex("(?:습|합|입|됩)니다[.!?]$")
-    }
 }

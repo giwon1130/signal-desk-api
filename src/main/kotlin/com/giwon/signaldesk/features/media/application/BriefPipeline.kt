@@ -96,9 +96,9 @@ class BriefPipeline(
         leadingContext: String? = null,
     ): Pair<String, String> {
         val assessment = analysis.assessment
-        if (assessment == null) {
-            val title = "${sentimentEmoji(analysis.sentiment)} ${analysis.headline.ifBlank { fallbackTitle }}"
-            return title to listOfNotNull(leadingContext, analysis.summary)
+        if (assessment == null || assessment.regime == "INSUFFICIENT_DATA") {
+            // 근거 구조가 없는 오래된/외부 분석의 자유 문장을 푸시 원인으로 재사용하지 않는다.
+            return fallbackTitle to listOfNotNull(leadingContext, "시황을 판단할 최신 근거가 충분하지 않습니다. 자료가 확인되면 안내하겠습니다.")
                 .joinToString(" ").take(180)
         }
         val titleText = when (assessment.regime) {

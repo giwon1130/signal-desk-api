@@ -108,10 +108,10 @@ class WatchlistAlertService(
         val candidates = detector.detect(refreshed, alreadySent, today, recentMaxRate)
         if (candidates.isEmpty()) return
 
-        // 급등/급락 후보엔 '왜 움직였나' 한 줄 사유를 붙인다. 티커 dedupe → 종목당 Gemini 1회(배치).
+        // 급등락은 원인 미확인을 명시하고, 검증된 최신 관련 보도가 있을 때만 함께 전달한다.
         val moveTargets = candidates
             .filter { it.direction == AlertDirection.UP || it.direction == AlertDirection.DOWN }
-            .distinctBy { it.ticker }
+            .distinctBy { it.market to it.ticker }
             .map { com.giwon.signaldesk.features.market.application.MoverReasonTarget(it.market, it.ticker, it.name, it.changeRate) }
         val reasonByTicker = if (moveTargets.isNotEmpty()) {
             runCatching { moverReasonService.reasonsForTickers(moveTargets) }
@@ -120,14 +120,17 @@ class WatchlistAlertService(
 
         val messages = candidates.flatMap { c ->
             val devices = devicesByUser[c.userId].orEmpty()
-            devices.map { d -> buildMessage(d.expoToken, c, reasonByTicker[c.ticker]) }
+            devices.map { d -> buildMessage(d.expoToken, c, reasonByTicker[c.market to c.ticker]) }
         }
         expoPushClient.send(messages)
         // 한 candidate 의 record 실패가 다른 candidate 나 전체 scan 을 막지 않도록 개별 격리.
         // (과거 direction varchar(8) 오버플로로 한 건 예외가 전체 scan 을 깨뜨려 dedup 무력화된 적 있음)
         candidates.forEach { c ->
             runCatching {
-                pushRepository.recordAlert(c.userId, c.market, c.ticker, c.name, c.direction, today, c.changeRate, reasonByTicker[c.ticker])
+                val reason = if (c.direction in setOf(AlertDirection.UP, AlertDirection.DOWN))
+                    reasonByTicker[c.market to c.ticker] ?: com.giwon.signaldesk.features.market.application.MoverNewsEvidence.UNKNOWN_CAUSE
+                else null
+                pushRepository.recordAlert(c.userId, c.market, c.ticker, c.name, c.direction, today, c.changeRate, reason)
                 // 목표가/손절 도달 알림은 1회 발송 후 자동 해제 — 재설정 전까진 재알림 X.
                 when (c.direction) {
                     AlertDirection.PRICE_ABOVE -> pushRepository.clearPriceAlert(c.userId, c.ticker, clearAbove = true)
@@ -139,18 +142,18 @@ class WatchlistAlertService(
         log.info("Watchlist alert dispatched. candidates={}, messages={}", candidates.size, messages.size)
     }
 
-    private fun buildMessage(token: String, c: AlertCandidate, reason: String? = null): ExpoPushClient.Message {
+    internal fun buildMessage(token: String, c: AlertCandidate, reason: String? = null): ExpoPushClient.Message {
         val priceStr = krwFmt.format(c.currentPrice)
-        // 사유가 있으면 "왜 움직였나"를 본문 앞에, 없으면 기존 일반 멘트.
-        val why = reason?.takeIf { it.isNotBlank() }?.let { if (it.endsWith(".") || it.endsWith("다") || it.endsWith("요")) "$it " else "$it. " }
+        val why = reason?.takeIf { it.isNotBlank() }
+            ?: com.giwon.signaldesk.features.market.application.MoverNewsEvidence.UNKNOWN_CAUSE
         val (title, body) = when (c.direction) {
             AlertDirection.UP -> {
                 val signed = String.format("%+.2f%%", c.changeRate)
-                "🚀 ${c.name} $signed" to "${priceStr}원 · ${why ?: "단기 급등 — "}익절 라인을 짚고 가세요."
+                "🚀 ${c.name} $signed" to "${priceStr}원 · $why"
             }
             AlertDirection.DOWN -> {
                 val signed = String.format("%+.2f%%", c.changeRate)
-                "⚠️ ${c.name} $signed" to "${priceStr}원 · ${why ?: "급락 — "}손절선을 확인하고 추가 매수는 신중하게 해 주세요."
+                "⚠️ ${c.name} $signed" to "${priceStr}원 · $why"
             }
             AlertDirection.PRICE_BELOW -> {
                 val threshStr = krwFmt.format(c.thresholdPrice)
