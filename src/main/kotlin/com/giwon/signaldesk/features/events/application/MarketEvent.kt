@@ -16,6 +16,9 @@ data class MarketEvent(
     val description: String? = null,
     val importance: Importance = Importance.MEDIUM,
     val tickers: List<String> = emptyList(),
+    val dateTimezone: String = "Asia/Seoul",
+    val sourceUrl: String? = null,
+    val verifiedAt: String? = null,
 )
 
 enum class EventCategory { FOMC, EARNINGS, POLICY, ECONOMIC_DATA, HOLIDAY, OTHER }

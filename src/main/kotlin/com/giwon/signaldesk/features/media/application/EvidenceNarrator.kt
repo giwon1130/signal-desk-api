@@ -156,6 +156,7 @@ class EvidenceNarrator(private val gemini: GeminiClient, private val mapper: Obj
                 else "미국 시장의 한국 관련 ETF는 최근 거래에서 약세를 보였습니다."
             "semiconductors" -> if (supportive) "확인된 반도체 관련 지표는 전반적으로 강세입니다."
                 else "확인된 반도체 관련 지표는 전반적으로 약세입니다."
+            "dollar" -> if (supportive) "달러 강세 부담이 완화되는 흐름입니다." else "달러 강세가 미국 기업의 해외 매출에 부담이 될 수 있습니다."
             "fx" -> if (supportive) "원·달러 환율은 최근 비교 시점보다 하락했습니다."
                 else "원·달러 환율은 최근 비교 시점보다 상승했습니다."
             "rates" -> if (supportive) "미국 금리 지표는 주식시장의 부담을 덜어줄 수 있는 방향입니다."

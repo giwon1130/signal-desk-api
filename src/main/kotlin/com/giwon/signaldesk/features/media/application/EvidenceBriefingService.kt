@@ -11,10 +11,12 @@ class EvidenceBriefingService(
     private val evidence: MarketEvidenceService,
     private val narrator: EvidenceNarrator,
 ) {
-    private var cached: MarketInsightAnalysis? = null
-    private var lastRewriteAt = Instant.EPOCH
-    @Synchronized fun current(): MarketInsightAnalysis {
-        val report = evidence.current()
+    private val cache = mutableMapOf<String, MarketInsightAnalysis>()
+    private val rewrites = mutableMapOf<String, Instant>()
+    @Synchronized fun current(market: String = "KR"): MarketInsightAnalysis {
+        val report = evidence.current(market)
+        val cached = cache[market]
+        val lastRewriteAt = rewrites[market] ?: Instant.EPOCH
         cached?.takeIf { it.assessment == report }?.let { return it }
         val facts = narrator.narrativeFacts(report)
         val previous = cached
@@ -22,8 +24,8 @@ class EvidenceBriefingService(
             previous?.assessment?.let { narrator.narrativeFacts(it) == facts } == true -> narrator.render(report, previous.summary)
             Duration.between(lastRewriteAt, Instant.now()) < Duration.ofMinutes(15) ->
                 narrator.render(report, narrator.fallbackSummary(facts))
-            else -> narrator.narrate(report).also { lastRewriteAt = Instant.now() }
+            else -> narrator.narrate(report).also { rewrites[market] = Instant.now() }
         }
-        return result.also { cached = it }
+        return result.also { cache[market] = it }
     }
 }

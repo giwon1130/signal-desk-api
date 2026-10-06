@@ -6,7 +6,7 @@ data class WatchItem(
     val market: String,
     val ticker: String,
     val name: String,
-    val price: Int,
+    val price: Double,
     val changeRate: Double,
     val sector: String,
     val stance: String,
@@ -16,30 +16,38 @@ data class WatchItem(
     val technical: TechnicalSignal? = null,
     val volume: Long = 0L,
     val volumeRatio: Double? = null,
+    val quoteInfo: QuoteInfo? = null,
+    val alertBelow: Double? = null,
+    val alertAbove: Double? = null,
+    val volumeAlert: Boolean = false,
 )
 
 data class PortfolioSummary(
-    val totalCost: Long,
-    val totalValue: Long,
-    val totalProfit: Long,
-    val totalProfitRate: Double,
+    val totalCost: Double?,
+    val totalValue: Double?,
+    val totalProfit: Double?,
+    val totalProfitRate: Double?,
     val positions: List<HoldingPosition>,
+    val currencyTotals: List<CurrencyPortfolioTotal> = emptyList(),
+    val totalCurrency: String? = null,
 )
 
 data class HoldingPosition(
     val market: String,
     val ticker: String,
     val name: String,
-    val buyPrice: Int,
-    val currentPrice: Int,
-    val quantity: Int,
-    val profitAmount: Long,
-    val evaluationAmount: Long,
+    val buyPrice: Double,
+    val currentPrice: Double,
+    val quantity: Double,
+    val profitAmount: Double,
+    val evaluationAmount: Double,
     val profitRate: Double,
     val source: String = "BASE",
     val id: String = "",
-    val targetPrice: Int? = null,
-    val stopLossPrice: Int? = null,
+    val targetPrice: Double? = null,
+    val stopLossPrice: Double? = null,
+    val quoteInfo: QuoteInfo? = null,
+    val changeRate: Double? = null,
 )
 
 data class AIRecommendationSection(
@@ -81,8 +89,8 @@ data class RecommendationTrackRecord(
     val market: String,
     val ticker: String,
     val name: String,
-    val entryPrice: Int,
-    val latestPrice: Int,
+    val entryPrice: Double,
+    val latestPrice: Double,
     val realizedReturnRate: Double,
     val success: Boolean,
     val source: String = "BASE",
@@ -110,8 +118,7 @@ data class RecommendationExecutionLog(
      *  · stopLoss:  손절 라인 (entry × (1 - 0.025), -2.5% 고정)
      *  · takeProfit: 목표가 (entry × (1 + expectedReturnRate/100), 3~20% 클램프)
      */
-    val entryPrice: Int? = null,
-    val stopLoss: Int? = null,
-    val takeProfit: Int? = null,
+    val entryPrice: Double? = null,
+    val stopLoss: Double? = null,
+    val takeProfit: Double? = null,
 )
-

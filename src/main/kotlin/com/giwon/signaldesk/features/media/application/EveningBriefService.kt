@@ -23,7 +23,7 @@ class EveningBriefService(
         val targets = devices.filterKeys { it in enabled }
         pipeline.run(
             config = BriefPipeline.SlotConfig("EveningBrief", "evening", "evening-brief",
-                "미국장 마감 브리프", "미국장 마감 브리프", MediaSource.EVENING_BRIEF),
+                "미국장 마감 브리프", "미국장 마감 브리프", MediaSource.EVENING_BRIEF, market = "US"),
             today = LocalDate.now(clock), force = false, prepare = {},
             dispatchPush = { _, analysis ->
                 if (targets.isNotEmpty()) {

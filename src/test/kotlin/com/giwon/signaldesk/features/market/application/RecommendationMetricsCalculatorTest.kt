@@ -90,7 +90,7 @@ class RecommendationMetricsCalculatorTest {
     ) = RecommendationTrackRecord(
         recommendedDate = dateString,
         market = "KR", ticker = "005930", name = "삼성전자",
-        entryPrice = 80000, latestPrice = 80000 + (realizedReturnRate * 800).toInt(),
+        entryPrice = 80000.0, latestPrice = 80000.0 + realizedReturnRate * 800,
         realizedReturnRate = realizedReturnRate, success = success,
     )
 }

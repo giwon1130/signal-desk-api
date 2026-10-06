@@ -63,7 +63,7 @@ data class TickerSnapshot(
     val ticker: String,
     val name: String,
     val sector: String,
-    val price: Int,
+    val price: Double,
     val changeRate: Double,
     val stance: String,
 )

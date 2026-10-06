@@ -39,7 +39,7 @@ data class AlertCandidate(
     val market: String,
     val changeRate: Double,
     val direction: AlertDirection,
-    val currentPrice: Int = 0,
-    val thresholdPrice: Int? = null,
+    val currentPrice: Double = 0.0,
+    val thresholdPrice: Double? = null,
     val volumeRatio: Double? = null,
 )

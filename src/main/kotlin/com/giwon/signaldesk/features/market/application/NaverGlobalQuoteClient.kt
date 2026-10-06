@@ -1,6 +1,8 @@
 package com.giwon.signaldesk.features.market.application
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.benmanes.caffeine.cache.Caffeine
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -9,79 +11,63 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import java.time.Instant
+import java.time.OffsetDateTime
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 
-/**
- * Naver 금융 "해외주식" 조회 API 로 미국 주식 단일 티커 현재가를 가져온다.
- *
- * 공식 문서는 없지만 naver stock 모바일 앱이 쓰는 엔드포인트를 사용:
- *   GET https://api.stock.naver.com/stock/{TICKER}.O/basic   (NASDAQ/OTC 계열)
- *   GET https://api.stock.naver.com/stock/{TICKER}.K/basic   (NYSE 계열이 실제로는 .K 가 아님 — 주로 .O 로도 커버됨)
- *
- * 실전적으로 대부분의 주요 미국 종목은 `.O` suffix 로 응답이 온다.
- * 응답 예:
- *   { "closePrice": "204.15", "compareToPreviousClosePrice": "0.81", "fluctuationsRatio": "0.40", ... }
- *
- * 여러 티커를 한 번에 조회하는 엔드포인트는 없어서 병렬(CompletableFuture)로 호출.
- */
+/** Resolve the provider's actual exchange identifier; never guess NASDAQ/NYSE suffixes. */
 @Component
 class NaverGlobalQuoteClient(
     private val objectMapper: ObjectMapper,
     @Value("\${signal-desk.integrations.naver-global.enabled:true}") private val enabled: Boolean,
     @Value("\${signal-desk.integrations.naver-global.base-url:https://api.stock.naver.com}") private val baseUrl: String,
     @org.springframework.beans.factory.annotation.Qualifier("httpFetchExecutor") private val httpFetchExecutor: ExecutorService,
+    private val searchClient: NaverStockSearchClient,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(3))
-        .build()
+    private val httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()
+    private val cache = Caffeine.newBuilder().maximumSize(2_000)
+        .expireAfterWrite(Duration.ofSeconds(45)).build<String, StockQuote>()
 
-    @org.springframework.cache.annotation.Cacheable(cacheNames = ["quote-short"], key = "'us:' + new java.util.TreeSet(#tickers).toString()", unless = "#result.isEmpty()")
     fun fetchUsQuotes(tickers: Collection<String>): Map<String, StockQuote> {
-        if (!enabled || tickers.isEmpty()) return emptyMap()
-
-        val futures = tickers.distinct().map { ticker ->
-            CompletableFuture.supplyAsync({
-                runCatching { fetchOne(ticker) }
-                    .onFailure { log.debug("Naver global quote failed. ticker={}, err={}", ticker, it.message) }
-                    .getOrNull()
-            }, httpFetchExecutor)
-        }
-        return futures
-            .mapNotNull { it.join() }
-            .associateBy { it.ticker }
+        if (!enabled) return emptyMap()
+        return tickers.map { it.uppercase() }.distinct()
+            .filter { it.matches(Regex("[A-Z0-9][A-Z0-9.\\-]{0,14}")) }
+            .map { ticker ->
+                CompletableFuture.supplyAsync({
+                    runCatching { cache.get(ticker) { fetchOne(it) } }
+                        .onFailure { log.debug("US quote unavailable: ticker={}", ticker) }.getOrNull()
+                }, httpFetchExecutor)
+            }.mapNotNull { it.join() }.associateBy { it.ticker }
     }
 
     private fun fetchOne(ticker: String): StockQuote? {
-        // NASDAQ/OTC 가 대부분이고 실패하면 .K 로 한 번 더 시도.
-        return fetchSuffixed(ticker, "O") ?: fetchSuffixed(ticker, "K")
+        val symbol = searchClient.search(ticker, 50)
+            .firstOrNull { it.market == "US" && it.ticker.equals(ticker, true) }
+            ?.providerSymbol?.takeIf { it.matches(Regex("[A-Za-z0-9.\\-]{1,32}")) } ?: return null
+        val request = HttpRequest.newBuilder().uri(URI.create("$baseUrl/stock/$symbol/basic"))
+            .timeout(Duration.ofSeconds(4)).header("User-Agent", "Mozilla/5.0")
+            .header("Accept", "application/json").header("Referer", "https://m.stock.naver.com/")
+            .GET().build()
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        if (response.statusCode() !in 200..299) return null
+        return parseQuote(objectMapper.readTree(response.body()), ticker, symbol)
     }
 
-    private fun fetchSuffixed(ticker: String, suffix: String): StockQuote? {
-        val request = HttpRequest.newBuilder()
-            .uri(URI.create("$baseUrl/stock/$ticker.$suffix/basic"))
-            .timeout(Duration.ofSeconds(4))
-            .header("User-Agent", "Mozilla/5.0")
-            .header("Accept", "application/json")
-            .header("Referer", "https://m.stock.naver.com/")
-            .GET()
-            .build()
-
-        val response = runCatching { httpClient.send(request, HttpResponse.BodyHandlers.ofString()) }.getOrNull() ?: return null
-        if (response.statusCode() !in 200..299) return null
-
-        val root = runCatching { objectMapper.readTree(response.body()) }.getOrNull() ?: return null
-        val close = root["closePrice"]?.asText()?.replace(",", "")?.toDoubleOrNull() ?: return null
-        val rate = root["fluctuationsRatio"]?.asText()?.replace(",", "")?.toDoubleOrNull() ?: 0.0
-
-        // currentPrice(Int)는 표시/Int 도메인용 반올림 값 — toInt() 절단이 아니라 반올림.
-        // 체결가·수익률 계산은 exactPrice 로 센트를 보존한다.
-        return StockQuote(
-            ticker = ticker,
-            currentPrice = Math.round(close).toInt(),
-            changeRate = rate,
-            exactPrice = close,
-        )
+    internal fun parseQuote(root: JsonNode, ticker: String, symbol: String, now: Instant = Instant.now()): StockQuote? {
+        if (!root.path("symbolCode").asText().equals(ticker, true) ||
+            root.path("reutersCode").asText() != symbol ||
+            root.path("currencyType").path("code").asText() != "USD" ||
+            root.path("stockExchangeType").path("nationCode").asText() != "USA") return null
+        fun number(name: String) = root.path(name).asText().replace(",", "").toDoubleOrNull()?.takeIf { it.isFinite() }
+        val close = number("closePrice")?.takeIf { it > 0 } ?: return null
+        val rate = number("fluctuationsRatio") ?: return null
+        val observed = runCatching { OffsetDateTime.parse(root.path("localTradedAt").asText()).toInstant() }.getOrNull() ?: return null
+        if (observed > now.plusSeconds(60)) return null
+        val delay = root.path("delayTime").takeIf { it.isIntegralNumber }?.asInt()?.takeIf { it >= 0 }
+        return StockQuote(ticker, Math.round(close).toInt(), rate, close,
+            quoteInfo = QuoteInfo(observedAt = observed.toString(), currency = "USD",
+                session = root.path("marketStatus").asText("UNKNOWN"), delayMinutes = delay))
     }
 }

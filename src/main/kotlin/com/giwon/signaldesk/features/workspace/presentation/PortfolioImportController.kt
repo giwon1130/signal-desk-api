@@ -44,9 +44,9 @@ data class PortfolioImportPositionRequest(
     @field:NotBlank val market: String,
     @field:NotBlank val ticker: String,
     @field:NotBlank val name: String,
-    @field:Positive val buyPrice: Int,
-    @field:Positive val currentPrice: Int,
-    @field:Positive val quantity: Int,
+    @field:Positive val buyPrice: Double,
+    @field:Positive val currentPrice: Double,
+    @field:Positive val quantity: Double,
 ) {
     fun toDraft() = PortfolioImportPositionDraft(
         market = market.trim().uppercase(),

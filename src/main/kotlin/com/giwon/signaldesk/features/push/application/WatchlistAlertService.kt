@@ -40,11 +40,13 @@ class WatchlistAlertService(
     private val expoPushClient: ExpoPushClient,
     private val moverReasonService: com.giwon.signaldesk.features.market.application.MoverReasonService,
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul")),
+    private val marketSessions: com.giwon.signaldesk.features.market.application.MarketSessionService = com.giwon.signaldesk.features.market.application.MarketSessionService(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val krwFmt = NumberFormat.getNumberInstance(Locale.KOREA)
 
     fun scanAndNotify(market: String = "KR") {
+        if (!marketSessions.isRegularSession(market, clock.instant())) return
         val allDevices = pushRepository.listAllDevicesGroupedByUser()
         if (allDevices.isEmpty()) return
 
@@ -92,9 +94,13 @@ class WatchlistAlertService(
 
         val refreshed = watchRows.mapNotNull { r ->
             val q = quotes[r.ticker] ?: return@mapNotNull null
+            if (!AlertQuotePolicy.usable(market, q, clock.instant())) {
+                log.debug("Watch alert skipped: stale or unverified quote, market={}, ticker={}", market, r.ticker)
+                return@mapNotNull null
+            }
             r.copy(
                 changeRate = q.changeRate,
-                currentPrice = q.currentPrice,
+                currentPrice = q.exactPrice,
                 volumeRatio = volumeRatioByTicker[r.ticker],
             )
         }
@@ -143,8 +149,12 @@ class WatchlistAlertService(
     }
 
     internal fun buildMessage(token: String, c: AlertCandidate, reason: String? = null): ExpoPushClient.Message {
-        val priceStr = krwFmt.format(c.currentPrice)
-        val price = if (c.market == "US") "\$$priceStr" else "${priceStr}원"
+        fun priceLabel(value: Double?): String = when {
+            value == null || !value.isFinite() || value <= 0 -> "가격 확인 중"
+            c.market == "US" -> "\$" + String.format(Locale.US, "%,.2f", value)
+            else -> krwFmt.format(value) + "원"
+        }
+        val price = priceLabel(c.currentPrice)
         val why = reason?.takeIf { it.isNotBlank() }
         // A failed lookup is not a cause. Keep the push useful with the observed price alone.
         val contextBody = if (why == null || why == com.giwon.signaldesk.features.market.application.StockMoveContextBuilder.UNAVAILABLE)
@@ -161,16 +171,16 @@ class WatchlistAlertService(
                 "⚠️ ${c.name} $signed" to contextBody
             }
             AlertDirection.PRICE_BELOW -> {
-                val threshStr = krwFmt.format(c.thresholdPrice)
-                "📉 ${c.name} 손절 도달" to "${priceStr}원 — 설정 손절가 ${threshStr}원 이하입니다. 들고 갈지, 빠질지 지금 결정해 주세요."
+                val threshold = priceLabel(c.thresholdPrice)
+                "${c.name} 하한 가격 도달" to "$price · 설정한 하한 가격 $threshold 이하입니다. 최신 시세를 확인해 주세요."
             }
             AlertDirection.PRICE_ABOVE -> {
-                val threshStr = krwFmt.format(c.thresholdPrice)
-                "🎯 ${c.name} 목표 도달" to "${priceStr}원 — 설정 목표가 ${threshStr}원 돌파. 일부 익절을 검토해 보세요."
+                val threshold = priceLabel(c.thresholdPrice)
+                "${c.name} 목표가 도달" to "$price · 설정한 목표가 $threshold 이상입니다. 최신 시세를 확인해 주세요."
             }
             AlertDirection.VOLUME_SPIKE -> {
                 val ratioStr = c.volumeRatio?.let { String.format("%.1f", it) } ?: "?"
-                "🔥 ${c.name} 거래량 ${ratioStr}배" to "${priceStr}원 · 이상 거래 — 뉴스/공시를 1분만 확인해 주세요."
+                "${c.name} 거래량 ${ratioStr}배" to "$price · 평소보다 거래량이 많습니다. 관련 공시와 뉴스를 확인해 주세요."
             }
         }
         return ExpoPushClient.Message(
@@ -204,8 +214,8 @@ class WatchlistAlertService(
                     ticker = rs.getString("ticker"),
                     name = rs.getString("name"),
                     changeRate = rs.getDouble("change_rate"),
-                    alertBelow = rs.getObject("alert_below") as Int?,
-                    alertAbove = rs.getObject("alert_above") as Int?,
+                    alertBelow = (rs.getObject("alert_below") as? Number)?.toDouble(),
+                    alertAbove = (rs.getObject("alert_above") as? Number)?.toDouble(),
                     volumeAlert = rs.getBoolean("volume_alert"),
                 )
             }, market, *userArgs,
@@ -227,8 +237,8 @@ class WatchlistAlertService(
                     ticker = rs.getString("ticker"),
                     name = rs.getString("name"),
                     changeRate = 0.0,
-                    alertBelow = rs.getObject("stop_loss_price") as Int?,
-                    alertAbove = rs.getObject("target_price") as Int?,
+                    alertBelow = (rs.getObject("stop_loss_price") as? Number)?.toDouble(),
+                    alertAbove = (rs.getObject("target_price") as? Number)?.toDouble(),
                     volumeAlert = false,
                 )
             }, market, *userArgs,

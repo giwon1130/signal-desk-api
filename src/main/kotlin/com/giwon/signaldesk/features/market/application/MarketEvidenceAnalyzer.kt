@@ -13,6 +13,7 @@ data class MarketEvidenceInput(
     val macro: MacroSnapshot?,
     val headlines: List<MarketNews>?,
     val nightFutures: KrxNightFuturesObservation? = null,
+    val market: String = "KR",
 )
 
 data class MetricEvidence(
@@ -43,6 +44,8 @@ data class MarketEvidenceReport(
 @Component
 class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
     fun analyze(input: MarketEvidenceInput): MarketEvidenceReport {
+        require(input.market in setOf("KR", "US"))
+        val isUs = input.market == "US"
         val now = input.collectedAt
         val evidence = linkedMapOf<String, MetricEvidence>()
         val quotes = input.quotes.groupBy { it.symbol }.mapValues { (_, xs) ->
@@ -86,6 +89,7 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
         quote("KRW=X", "원/달러", "FX", 30)
         quote("CL=F", "WTI 선물", "FUTURES", 30)
         quote("^VIX", "VIX", "US")
+        if (isUs) quote("DX-Y.NYB", "달러 인덱스", "FX", 30)
 
         fun rate(id: String, label: String, s: FredSeriesSnapshot?): MetricEvidence {
             val date = parseDate(s?.observationDate)
@@ -132,7 +136,15 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
             return EvidenceFactor(id, label, weight, score.takeIf { coverage >= 0.5 }, coverage,
                 members.keys.toList(), interpretation)
         }
-        val factors = listOf(
+        val factors = if (isUs) listOf(
+            group("us_equity", "미국 주식", .40, mapOf("^GSPC" to .6, "^IXIC" to .4), 1.5),
+            group("us_futures", "미국 선물", .15, mapOf("ES=F" to 1.0), 1.0),
+            group("semiconductors", "미국 반도체", .15, mapOf("SOXX" to .8, "MU" to .2), 2.0),
+            group("rates", "미국 금리 부담", .20, mapOf("DGS2" to .4, "DGS10" to .6), 10.0) {
+                if (it < 0 && stockWeak) 0.0 else (-it).coerceAtMost(.5)
+            },
+            group("dollar", "달러 강세 부담", .10, mapOf("DX-Y.NYB" to 1.0), .7) { -it },
+        ) else listOf(
             group("kr_cash", "한국 현물", .10, mapOf("^KS11" to .6, "^KQ11" to .4), 1.5),
             group("us_equity", "미국 주식", .15, mapOf("^GSPC" to .6, "^IXIC" to .4), 1.5),
             group("us_futures", "미국 선물", .10, mapOf("ES=F" to 1.0), 1.0),
@@ -182,8 +194,9 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
         val warnings = buildList {
             add("이 분석은 현재 시장 조건을 설명하며 상승 확률, 예상 수익률 또는 매수·매도 지시를 제공하지 않습니다.")
             add("관측 시각이 다른 시장의 자료를 함께 비교했습니다. Yahoo 시세는 비공식 지연 시세일 수 있으며 휴장 시에는 최근 거래일 값이 사용됩니다.")
-            if (usable("KR_NIGHT") == null) add("야간선물 실측이 연결되지 않았거나 유효한 관측값이 부족해 이번 분석에서 제외했습니다.")
-            add("해외 ETF와 ADR에는 환율, 거래시간 및 괴리율의 영향이 있습니다.")
+            if (!isUs && usable("KR_NIGHT") == null) add("야간선물 실측이 연결되지 않았거나 유효한 관측값이 부족해 이번 분석에서 제외했습니다.")
+            if (!isUs) add("해외 ETF와 ADR에는 환율, 거래시간 및 괴리율의 영향이 있습니다.")
+            else add("미국장 전용 설명 규칙입니다. 한국 현물·야간선물·원/달러와 한국 ADR은 미국장 방향 점수에 포함하지 않습니다.")
             add("수급 순위만으로 시장 전체 순매수 규모를 추정하지 않았습니다. 관측 시각이 없는 수급과 월간 지표는 단기 판단에서 제외했습니다.")
             if (yield2 != null && yield10 != null && yield2.observationDate == yield10.observationDate) {
                 val spread = (yield10.value!! - yield2.value!!) * 100
@@ -197,11 +210,12 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
             if (news.any { isDeescalation(it.title) } && escalation.isNotEmpty()) add("긴장 완화와 휴전 보도도 함께 있어 전쟁 악화로 단정하지 않았습니다.")
             if (risk == "UNKNOWN") add("일부 위험 자료가 부족해 위험 수준을 확정하지 않았습니다.")
         }
-        return MarketEvidenceReport(asOf = now.toString(), horizon = "CURRENT_CONDITIONS_KR_WITH_GLOBAL_CONTEXT",
+        return MarketEvidenceReport(rulesVersion = if (isUs) US_RULES_VERSION else RULES_VERSION,
+            asOf = now.toString(), horizon = if (isUs) "CURRENT_CONDITIONS_US" else "CURRENT_CONDITIONS_KR_WITH_GLOBAL_CONTEXT",
             regime = regime, riskLevel = risk, coveragePercent = (coverage * 100).roundToInt(),
             balanceScore = (balance * 100).takeIf { regime != "INSUFFICIENT_DATA" }, headline = headline,
             conclusion = "$headline. 수집 대상 중 ${(coverage * 100).roundToInt()}%를 분석에 반영했으며, 누락된 지표의 비중은 다른 지표에 더하지 않았습니다.",
-            factors = factors, evidence = evidence.values.toList(), warnings = warnings, newsEvidence = escalation.take(8))
+            factors = factors, evidence = evidence.values.filter { !isUs || it.id in factors.flatMap { factor -> factor.evidenceIds } + listOf("^VIX", "CL=F") }, warnings = warnings, newsEvidence = escalation.take(8))
     }
 
     internal fun expectedSession(now: Instant, market: String): LocalDate {
@@ -247,5 +261,5 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
     private fun fmt(value: Double) = String.format(Locale.US, "%.2f", value)
     private fun signed(value: Double) = String.format(Locale.US, "%+.2f", value)
 
-    companion object { const val RULES_VERSION = "market-evidence-v3" }
+    companion object { const val RULES_VERSION = "market-evidence-v3"; const val US_RULES_VERSION = "market-evidence-us-v1" }
 }

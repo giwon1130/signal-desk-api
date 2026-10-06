@@ -17,13 +17,13 @@ class PortfolioBulkImportServiceTest {
         val service = PortfolioBulkImportService(repository, WorkspaceService(repository))
 
         val saved = service.save(userId, listOf(
-            PortfolioImportPositionDraft("KR", "005930", "삼성전자", 70_000, 75_000, 10),
+            PortfolioImportPositionDraft("KR", "005930", "삼성전자", 70_000.0, 75_000.0, 10.0),
         ))
 
         assertThat(saved).hasSize(1)
         assertThat(saved[0].id).isEqualTo("existing")
-        assertThat(saved[0].targetPrice).isEqualTo(90_000)
-        assertThat(saved[0].stopLossPrice).isEqualTo(60_000)
+        assertThat(saved[0].targetPrice).isEqualTo(90_000.0)
+        assertThat(saved[0].stopLossPrice).isEqualTo(60_000.0)
     }
 
     @Test
@@ -33,8 +33,8 @@ class PortfolioBulkImportServiceTest {
         val service = PortfolioBulkImportService(repository, WorkspaceService(repository), plan)
 
         service.save(userId, listOf(
-            PortfolioImportPositionDraft("KR", "000660", "SK하이닉스", 200_000, 190_000, 2),
-            PortfolioImportPositionDraft("US", "NVDA", "NVIDIA", 150, 145, 3),
+            PortfolioImportPositionDraft("KR", "000660", "SK하이닉스", 200_000.0, 190_000.0, 2.0),
+            PortfolioImportPositionDraft("US", "NVDA", "NVIDIA", 150.0, 145.0, 3.0),
         ))
 
         verify(plan).assertCanAdd(userId, PlanService.Resource.HOLDINGS, 1)
@@ -44,9 +44,9 @@ class PortfolioBulkImportServiceTest {
     private fun holding(id: String, ticker: String, target: Int? = null, stop: Int? = null) =
         WorkspaceHoldingPosition(
             id = id, market = "KR", ticker = ticker, name = ticker,
-            buyPrice = 100, currentPrice = 100, quantity = 1,
-            profitAmount = 0, evaluationAmount = 100, profitRate = 0.0,
-            targetPrice = target, stopLossPrice = stop,
+            buyPrice = 100.0, currentPrice = 100.0, quantity = 1.0,
+            profitAmount = 0.0, evaluationAmount = 100.0, profitRate = 0.0,
+            targetPrice = target?.toDouble(), stopLossPrice = stop?.toDouble(),
         )
 }
 

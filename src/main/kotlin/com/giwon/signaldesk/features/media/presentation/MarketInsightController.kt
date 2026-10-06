@@ -22,8 +22,8 @@ class MarketInsightController(
 ) {
 
     @GetMapping("/today")
-    fun getToday(): ApiResponse<MarketInsightResponse?> {
-        val result = service.getTodayInsight()
+    fun getToday(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "KR") market: String = "KR"): ApiResponse<MarketInsightResponse?> {
+        val result = service.getTodayInsight(market.uppercase())
         return ApiResponse(true, MarketInsightResponse.from(result))
     }
 

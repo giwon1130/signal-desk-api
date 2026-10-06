@@ -13,6 +13,33 @@ import java.time.temporal.TemporalAdjusters
 @Service
 class MarketSessionService {
 
+    fun isRegularSession(market: String, now: java.time.Instant = java.time.Instant.now()): Boolean =
+        buildMarketSessions(now.atZone(ZoneId.of("UTC"))).any { it.market == market && it.phase == "REGULAR" }
+
+    /** Absolute timestamps keep each scheduled date correct across DST and device time zones. */
+    fun upcomingSessions(now: java.time.Instant = java.time.Instant.now(), days: Int = 28): TradingCalendar {
+        val sessions = listOf("KR", "US").flatMap { market ->
+            val zone = ZoneId.of(if (market == "KR") "Asia/Seoul" else "America/New_York")
+            val first = now.atZone(zone).toLocalDate()
+            (0 until days.coerceIn(1, 28)).mapNotNull { offset ->
+                val date = first.plusDays(offset.toLong())
+                // KRX lunar/special-day coverage is verified only through 2026.
+                if (market == "KR" && date.year != 2026) return@mapNotNull null
+                // Exam day is confirmed by MOE, but KRX special opening notice is not yet verified.
+                // Do not schedule a misleading 09:00 reminder on that date.
+                if (market == "KR" && date == LocalDate.of(2026, 11, 19)) return@mapNotNull null
+                if (!(if (market == "KR") isKrTradingDay(date) else isUsTradingDay(date))) return@mapNotNull null
+                val open = date.atTime(if (market == "KR") LocalTime.of(9, 0) else LocalTime.of(9, 30)).atZone(zone).toInstant()
+                if (open <= now) return@mapNotNull null
+                val closeTime = if (market == "KR") LocalTime.of(15, 30) else findUsEarlyClose(date)?.closeTime ?: LocalTime.of(16, 0)
+                TradingSession(market, date.toString(), open.toString(), date.atTime(closeTime).atZone(zone).toInstant().toString(),
+                    market == "US" && closeTime == LocalTime.of(13, 0))
+            }
+        }.sortedBy { it.opensAt }
+        return TradingCalendar(now.toString(), sessions,
+            mapOf("KR" to "2026-12-31", "US" to now.atZone(ZoneId.of("America/New_York")).toLocalDate().plusDays(27).toString()))
+    }
+
     fun buildMarketSessions(nowUtc: ZonedDateTime = ZonedDateTime.now(ZoneId.of("UTC"))): List<MarketSessionStatus> {
         val koreaNow = nowUtc.withZoneSameInstant(ZoneId.of("Asia/Seoul"))
         val usNow = nowUtc.withZoneSameInstant(ZoneId.of("America/New_York"))
@@ -275,3 +302,6 @@ class MarketSessionService {
         }
     }
 }
+
+data class TradingSession(val market: String, val tradingDate: String, val opensAt: String, val closesAt: String, val earlyClose: Boolean)
+data class TradingCalendar(val generatedAt: String, val sessions: List<TradingSession>, val coverageThrough: Map<String, String>)

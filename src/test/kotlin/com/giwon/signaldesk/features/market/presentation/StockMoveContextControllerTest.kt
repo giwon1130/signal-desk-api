@@ -18,7 +18,7 @@ class StockMoveContextControllerTest {
     }
 
     @Test fun `search must resolve exact market and ticker before lookup`() {
-        `when`(search.search("005930", "KR", 20)).thenReturn(listOf(StockSearchResult("005935", "삼성전자우", "KR", "", 100, 5.0, "WATCH")))
+        `when`(search.search("005930", "KR", 20)).thenReturn(listOf(StockSearchResult("005935", "삼성전자우", "KR", "", 100.0, 5.0, "WATCH")))
         assertThat(controller.context("KR", "005930").data).isNull()
         verifyNoInteractions(reasons)
     }

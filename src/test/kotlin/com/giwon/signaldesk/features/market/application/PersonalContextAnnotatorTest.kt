@@ -143,18 +143,18 @@ class PersonalContextAnnotatorTest {
     )
 
     private fun watchItem(market: String, ticker: String, name: String = "종목", sector: String = "") = WatchItem(
-        market = market, ticker = ticker, name = name, price = 10000,
+        market = market, ticker = ticker, name = name, price = 10000.0,
         changeRate = 0.0, sector = sector, stance = "", note = "",
     )
 
     private fun position(market: String, ticker: String, name: String = "종목") = HoldingPosition(
         market = market, ticker = ticker, name = name,
-        buyPrice = 10000, currentPrice = 10200, quantity = 10,
-        profitAmount = 2_000L, evaluationAmount = 102_000L, profitRate = 2.0,
+        buyPrice = 10000.0, currentPrice = 10200.0, quantity = 10.0,
+        profitAmount = 2_000.0, evaluationAmount = 102_000.0, profitRate = 2.0,
     )
 
     private fun portfolioOf(vararg positions: HoldingPosition) = PortfolioSummary(
-        totalCost = positions.sumOf { (it.buyPrice * it.quantity).toLong() },
+        totalCost = positions.sumOf { it.buyPrice * it.quantity },
         totalValue = positions.sumOf { it.evaluationAmount },
         totalProfit = positions.sumOf { it.profitAmount },
         totalProfitRate = 2.0,
@@ -162,7 +162,7 @@ class PersonalContextAnnotatorTest {
     )
 
     private fun emptyPortfolio() = PortfolioSummary(
-        totalCost = 0L, totalValue = 0L, totalProfit = 0L, totalProfitRate = 0.0,
+        totalCost = 0.0, totalValue = 0.0, totalProfit = 0.0, totalProfitRate = 0.0,
         positions = emptyList(),
     )
 

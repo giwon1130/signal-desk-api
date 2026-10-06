@@ -10,9 +10,9 @@ data class PortfolioImportPositionDraft(
     val market: String,
     val ticker: String,
     val name: String,
-    val buyPrice: Int,
-    val currentPrice: Int,
-    val quantity: Int,
+    val buyPrice: Double,
+    val currentPrice: Double,
+    val quantity: Double,
 )
 
 @Service
@@ -33,6 +33,8 @@ class PortfolioBulkImportService(
         unique.forEach {
             require(it.market in setOf("KR", "US") && it.ticker.isNotBlank() && it.name.isNotBlank()) { "종목 정보를 확인해 주세요." }
             require(it.buyPrice > 0 && it.currentPrice > 0 && it.quantity > 0) { "매수가·현재가·수량은 0보다 커야 해요." }
+            com.giwon.signaldesk.features.market.application.PortfolioValuation.validate(it.market, it.buyPrice, it.quantity)
+            com.giwon.signaldesk.features.market.application.PortfolioValuation.validate(it.market, it.currentPrice, it.quantity)
         }
 
         val existing = repository.loadPortfolioPositions(userId)

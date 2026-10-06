@@ -44,7 +44,7 @@ internal object MarketStaticEvents {
             importance = Importance.HIGH,
         ),
         MarketEvent(
-            id = "fomc-2026-12", date = "2026-12-17", time = "04:00 KST",
+            id = "fomc-2026-12", date = "2026-12-10", time = "04:00 KST",
             market = "US", category = EventCategory.FOMC,
             title = "FOMC 성명 발표 (12월)", description = "정책금리 결정 + SEP 점도표 공개",
             importance = Importance.HIGH,
@@ -52,13 +52,13 @@ internal object MarketStaticEvents {
 
         // ─── CPI 2026 — BLS 발표일 (월 평균 13일 부근, 21:30~22:30 KST) ─────
         MarketEvent(
-            id = "cpi-2026-05", date = "2026-06-11", time = "21:30 KST",
+            id = "cpi-2026-05", date = "2026-06-10", time = "21:30 KST",
             market = "US", category = EventCategory.ECONOMIC_DATA,
             title = "미국 5월 CPI 발표", description = "헤드라인·코어 소비자물가지수",
             importance = Importance.HIGH,
         ),
         MarketEvent(
-            id = "cpi-2026-06", date = "2026-07-15", time = "21:30 KST",
+            id = "cpi-2026-06", date = "2026-07-14", time = "21:30 KST",
             market = "US", category = EventCategory.ECONOMIC_DATA,
             title = "미국 6월 CPI 발표", description = "헤드라인·코어 소비자물가지수",
             importance = Importance.HIGH,
@@ -70,19 +70,19 @@ internal object MarketStaticEvents {
             importance = Importance.HIGH,
         ),
         MarketEvent(
-            id = "cpi-2026-08", date = "2026-09-10", time = "21:30 KST",
+            id = "cpi-2026-08", date = "2026-09-11", time = "21:30 KST",
             market = "US", category = EventCategory.ECONOMIC_DATA,
             title = "미국 8월 CPI 발표", description = "헤드라인·코어 소비자물가지수",
             importance = Importance.HIGH,
         ),
         MarketEvent(
-            id = "cpi-2026-09", date = "2026-10-15", time = "21:30 KST",
+            id = "cpi-2026-09", date = "2026-10-14", time = "21:30 KST",
             market = "US", category = EventCategory.ECONOMIC_DATA,
             title = "미국 9월 CPI 발표", description = "헤드라인·코어 소비자물가지수",
             importance = Importance.HIGH,
         ),
         MarketEvent(
-            id = "cpi-2026-10", date = "2026-11-12", time = "22:30 KST",
+            id = "cpi-2026-10", date = "2026-11-10", time = "22:30 KST",
             market = "US", category = EventCategory.ECONOMIC_DATA,
             title = "미국 10월 CPI 발표", description = "헤드라인·코어 소비자물가지수",
             importance = Importance.HIGH,
@@ -126,7 +126,7 @@ internal object MarketStaticEvents {
             importance = Importance.HIGH,
         ),
         MarketEvent(
-            id = "pce-2026-09", date = "2026-10-30", time = "21:30 KST",
+            id = "pce-2026-09", date = "2026-10-29", time = "21:30 KST",
             market = "US", category = EventCategory.ECONOMIC_DATA,
             title = "미국 9월 PCE 물가지수", description = "Fed 가 가장 중시하는 인플레 지표 (코어 PCE)",
             importance = Importance.HIGH,
@@ -145,5 +145,13 @@ internal object MarketStaticEvents {
             title = "잭슨홀 경제정책 심포지엄 시작", description = "캔자스시티 연은 주최 — 의장 연설 등 통화정책 시그널 주목",
             importance = Importance.HIGH,
         ),
-    )
+    ).map { event ->
+        val source = when {
+            event.id.startsWith("cpi-") -> "https://www.bls.gov/schedule/news_release/cpi.htm"
+            event.id.startsWith("fomc-") -> "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+            event.id in setOf("pce-2026-09", "pce-2026-10") -> "https://www.bea.gov/news/schedule"
+            else -> null
+        }
+        event.copy(sourceUrl = source, verifiedAt = source?.let { "2026-10-06" })
+    }
 }

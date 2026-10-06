@@ -13,10 +13,14 @@ class WorkspaceEnrichmentService(
     private val naverFinanceQuoteClient: NaverFinanceQuoteClient,
     private val refresher: WorkspaceQuoteRefresher,
     private val workspaceStore: SignalDeskWorkspaceRepository,
+    private val usQuotes: NaverGlobalQuoteClient,
 ) {
 
-    fun loadKoreanQuotes(userId: UUID? = null): Map<String, StockQuote> =
-        naverFinanceQuoteClient.fetchKoreanQuotes(buildQuoteUniverse(userId))
+    fun loadMarketQuotes(userId: UUID? = null): Map<String, StockQuote> {
+        val universe = buildQuoteUniverse(userId)
+        return runCatching { naverFinanceQuoteClient.fetchKoreanQuotes(universe["KR"].orEmpty()) }.getOrDefault(emptyMap()) +
+            runCatching { usQuotes.fetchUsQuotes(universe["US"].orEmpty()) }.getOrDefault(emptyMap())
+    }
 
     fun buildWorkspaceCounts(userId: UUID? = null) = WorkspaceCounts(
         watchlistCount = workspaceStore.loadWatchlist(userId).size,
@@ -24,16 +28,17 @@ class WorkspaceEnrichmentService(
         aiPickCount = workspaceStore.loadAiPicks(userId).size,
     )
 
-    fun getWatchlist(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): WatchlistResponse {
+    fun getWatchlist(userId: UUID? = null, quotes: Map<String, StockQuote> = loadMarketQuotes(userId)): WatchlistResponse {
         val items = workspaceStore.loadWatchlist(userId).map {
             WatchItem(id = it.id, market = it.market, ticker = it.ticker, name = it.name,
                 price = it.price, changeRate = it.changeRate, sector = it.sector,
-                stance = it.stance, note = it.note, source = "USER")
+                stance = it.stance, note = it.note, source = "USER",
+                alertBelow = it.alertBelow, alertAbove = it.alertAbove, volumeAlert = it.volumeAlert)
         }
         return WatchlistResponse(LocalDateTime.now(KST).toString(), refresher.refreshWatchlist(items, quotes))
     }
 
-    fun getPortfolio(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): PortfolioResponse {
+    fun getPortfolio(userId: UUID? = null, quotes: Map<String, StockQuote> = loadMarketQuotes(userId)): PortfolioResponse {
         val userPositions = workspaceStore.loadPortfolioPositions(userId).map {
             HoldingPosition(id = it.id, market = it.market, ticker = it.ticker, name = it.name,
                 buyPrice = it.buyPrice, currentPrice = it.currentPrice, quantity = it.quantity,
@@ -45,7 +50,7 @@ class WorkspaceEnrichmentService(
         return PortfolioResponse(LocalDateTime.now(KST).toString(), refresher.refreshPortfolio(merged, quotes))
     }
 
-    fun getAiRecommendations(userId: UUID? = null, quotes: Map<String, StockQuote> = loadKoreanQuotes(userId)): AiRecommendationsResponse {
+    fun getAiRecommendations(userId: UUID? = null, quotes: Map<String, StockQuote> = loadMarketQuotes(userId)): AiRecommendationsResponse {
         val userPicks = workspaceStore.loadAiPicks(userId).map {
             RecommendationPick(market = it.market, ticker = it.ticker, name = it.name,
                 basis = it.basis, confidence = it.confidence, note = it.note,
@@ -76,14 +81,7 @@ class WorkspaceEnrichmentService(
 
     private fun mergePortfolio(base: PortfolioSummary, workspace: List<HoldingPosition>): PortfolioSummary {
         val positions = (base.positions + workspace).sortedWith(compareBy({ it.market }, { it.name }))
-        val totalCost = positions.sumOf { it.buyPrice.toLong() * it.quantity }
-        val totalValue = positions.sumOf { it.currentPrice.toLong() * it.quantity }
-        val totalProfit = totalValue - totalCost
-        return base.copy(
-            totalCost = totalCost, totalValue = totalValue, totalProfit = totalProfit,
-            totalProfitRate = if (totalCost == 0L) 0.0 else (totalProfit.toDouble() / totalCost) * 100,
-            positions = positions,
-        )
+        return PortfolioValuation.summarize(positions)
     }
 
     private fun mergeAiRecommendations(
@@ -102,7 +100,7 @@ class WorkspaceEnrichmentService(
     // ─── Empty defaults (사용자 워크스페이스가 비어있을 때) ───────────────────
 
     private fun emptyPortfolio() = PortfolioSummary(
-        totalCost = 0L, totalValue = 0L, totalProfit = 0L, totalProfitRate = 0.0, positions = emptyList(),
+        totalCost = 0.0, totalValue = 0.0, totalProfit = 0.0, totalProfitRate = 0.0, positions = emptyList(),
     )
 
     private fun emptyAiRecommendations() = AIRecommendationSection(
@@ -113,11 +111,10 @@ class WorkspaceEnrichmentService(
         executionLogs = emptyList(),
     )
 
-    private fun buildQuoteUniverse(userId: UUID?): List<String> {
-        return (workspaceStore.loadWatchlist(userId).asSequence().map { it.ticker } +
-            workspaceStore.loadPortfolioPositions(userId).asSequence().map { it.ticker } +
-            workspaceStore.loadAiTrackRecords(userId).asSequence().map { it.ticker })
-            .filter { it.all(Char::isDigit) }
-            .map { it.trim() }.filter { it.isNotBlank() }.distinct().toList()
+    private fun buildQuoteUniverse(userId: UUID?): Map<String, List<String>> {
+        return (workspaceStore.loadWatchlist(userId).map { it.market to it.ticker } +
+            workspaceStore.loadPortfolioPositions(userId).map { it.market to it.ticker } +
+            workspaceStore.loadAiTrackRecords(userId).map { it.market to it.ticker })
+            .filter { it.second.isNotBlank() }.distinct().groupBy({ it.first }, { it.second.trim() })
     }
 }

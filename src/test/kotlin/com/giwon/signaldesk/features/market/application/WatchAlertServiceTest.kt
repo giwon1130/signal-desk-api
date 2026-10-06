@@ -151,7 +151,7 @@ class WatchAlertServiceTest {
         changeRate: Double = 0.0,
     ) = WatchItem(
         market = market, ticker = ticker, name = name,
-        price = 70000, changeRate = changeRate,
+        price = 70000.0, changeRate = changeRate,
         sector = "반도체", stance = "중립", note = "",
         source = "test",
     )
@@ -162,16 +162,16 @@ class WatchAlertServiceTest {
     )
 
     private fun emptyPortfolio() = PortfolioSummary(
-        totalCost = 0L, totalValue = 0L, totalProfit = 0L, totalProfitRate = 0.0,
+        totalCost = 0.0, totalValue = 0.0, totalProfit = 0.0, totalProfitRate = 0.0,
         positions = emptyList(),
     )
 
     private fun portfolioWithPosition(market: String, ticker: String, profitRate: Double) = PortfolioSummary(
-        totalCost = 1_000_000L, totalValue = 1_000_000L, totalProfit = 0L, totalProfitRate = profitRate,
+        totalCost = 1_000_000.0, totalValue = 1_000_000.0, totalProfit = 0.0, totalProfitRate = profitRate,
         positions = listOf(
             HoldingPosition(
-                market = market, ticker = ticker, name = "테스트", buyPrice = 10000, currentPrice = 10000,
-                quantity = 100, profitAmount = 0L, evaluationAmount = 1_000_000L,
+                market = market, ticker = ticker, name = "테스트", buyPrice = 10000.0, currentPrice = 10000.0,
+                quantity = 100.0, profitAmount = 0.0, evaluationAmount = 1_000_000.0,
                 profitRate = profitRate, source = "test",
             )
         ),

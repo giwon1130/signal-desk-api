@@ -88,7 +88,7 @@ class TopMoversClient(
 
                 if (code.isBlank() || name.isBlank()) return@mapNotNull null
                 if (rateSign !in expectColors) return@mapNotNull null
-                val price = priceStr.toDoubleOrNull()?.toInt() ?: 0
+                val price = priceStr.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 } ?: return@mapNotNull null
                 val rate = rateStr.toDoubleOrNull() ?: return@mapNotNull null
                 val signed = if (rateSign == "blue01" || rateSign == "nv01") -rate else rate
 
@@ -116,7 +116,7 @@ data class TopMover(
     val market: String,      // "KR" / "US"
     val ticker: String,
     val name: String,
-    val price: Int,
+    val price: Double,
     val changeRate: Double,
 )
 

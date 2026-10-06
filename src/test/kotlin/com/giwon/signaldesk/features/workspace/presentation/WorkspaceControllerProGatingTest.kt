@@ -32,8 +32,8 @@ class WorkspaceControllerProGatingTest {
 
     private fun watch(ticker: String, alertBelow: Int? = null, alertAbove: Int? = null) =
         WorkspaceWatchItem(id = UUID.randomUUID().toString(), market = "KR", ticker = ticker,
-            name = ticker, price = 1000, changeRate = 0.0, sector = "", stance = "관찰", note = "",
-            alertBelow = alertBelow, alertAbove = alertAbove)
+            name = ticker, price = 1000.0, changeRate = 0.0, sector = "", stance = "관찰", note = "",
+            alertBelow = alertBelow?.toDouble(), alertAbove = alertAbove?.toDouble())
 
     init {
         `when`(authContext.optionalUserId(auth)).thenReturn(uid)
@@ -45,7 +45,7 @@ class WorkspaceControllerProGatingTest {
         `when`(store.loadWatchlist(uid)).thenReturn(existing)
         `when`(planService.isPro(uid)).thenReturn(false)
 
-        controller.saveWatchlistItem(auth, SaveWatchlistItemRequest(market = "KR", ticker = "005930", name = "삼성", price = 70000, changeRate = 0.0))
+        controller.saveWatchlistItem(auth, SaveWatchlistItemRequest(market = "KR", ticker = "005930", name = "삼성", price = 70000.0, changeRate = 0.0))
 
         verify(planService).assertCanAdd(uid, PlanService.Resource.WATCHLIST, 3)
     }
@@ -58,7 +58,7 @@ class WorkspaceControllerProGatingTest {
 
         // 이미 담긴 005930 재저장(수정) — 상한이 꽉 차도 통과해야 한다.
         assertThatCode {
-            controller.saveWatchlistItem(auth, SaveWatchlistItemRequest(market = "KR", ticker = "005930", name = "삼성", price = 70000, changeRate = 0.0))
+            controller.saveWatchlistItem(auth, SaveWatchlistItemRequest(market = "KR", ticker = "005930", name = "삼성", price = 70000.0, changeRate = 0.0))
         }.doesNotThrowAnyException()
     }
 
@@ -68,7 +68,7 @@ class WorkspaceControllerProGatingTest {
         `when`(planService.isPro(uid)).thenReturn(false)
 
         assertThatThrownBy {
-            controller.saveWatchlistItem(auth, SaveWatchlistItemRequest(market = "KR", ticker = "005930", name = "삼성", price = 70000, changeRate = 0.0, alertBelow = 60000))
+            controller.saveWatchlistItem(auth, SaveWatchlistItemRequest(market = "KR", ticker = "005930", name = "삼성", price = 70000.0, changeRate = 0.0, alertBelow = 60000.0))
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
@@ -76,14 +76,14 @@ class WorkspaceControllerProGatingTest {
     fun `신규 보유종목은 상한 검사`() {
         val existing = (1..10).map {
             WorkspaceHoldingPosition(id = UUID.randomUUID().toString(), market = "KR", ticker = "t$it", name = "t$it",
-                buyPrice = 100, currentPrice = 100, quantity = 1, profitAmount = 0, evaluationAmount = 100, profitRate = 0.0)
+                buyPrice = 100.0, currentPrice = 100.0, quantity = 1.0, profitAmount = 0.0, evaluationAmount = 100.0, profitRate = 0.0)
         }
         `when`(store.loadPortfolioPositions(uid)).thenReturn(existing)
         doThrow(IllegalArgumentException("보유 상한")).`when`(planService)
             .assertCanAdd(uid, PlanService.Resource.HOLDINGS, 10)
 
         assertThatThrownBy {
-            controller.savePortfolioPosition(auth, SavePortfolioPositionRequest(market = "KR", ticker = "005930", name = "삼성", buyPrice = 70000, currentPrice = 70000, quantity = 1))
+            controller.savePortfolioPosition(auth, SavePortfolioPositionRequest(market = "KR", ticker = "005930", name = "삼성", buyPrice = 70000.0, currentPrice = 70000.0, quantity = 1.0))
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
 }

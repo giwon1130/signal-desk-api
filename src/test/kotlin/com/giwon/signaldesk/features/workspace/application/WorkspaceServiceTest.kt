@@ -2,6 +2,7 @@ package com.giwon.signaldesk.features.workspace.application
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.Test
 import java.util.UUID
 
@@ -15,25 +16,25 @@ class WorkspaceServiceTest {
     fun `evaluationAmount = currentPrice * quantity`() {
         val result = service.savePortfolioPosition(
             id = "", market = "KR", ticker = "005930", name = "삼성전자",
-            buyPrice = 70_000, currentPrice = 75_000, quantity = 10,
+            buyPrice = 70_000.0, currentPrice = 75_000.0, quantity = 10.0,
         )
-        assertEquals(750_000L, result.evaluationAmount)
+        assertEquals(750_000.0, result.evaluationAmount)
     }
 
     @Test
     fun `profitAmount = (currentPrice - buyPrice) * quantity`() {
         val result = service.savePortfolioPosition(
             id = "", market = "KR", ticker = "005930", name = "삼성전자",
-            buyPrice = 70_000, currentPrice = 75_000, quantity = 10,
+            buyPrice = 70_000.0, currentPrice = 75_000.0, quantity = 10.0,
         )
-        assertEquals(50_000L, result.profitAmount)
+        assertEquals(50_000.0, result.profitAmount)
     }
 
     @Test
     fun `profitRate = profitAmount 나누기 costAmount * 100`() {
         val result = service.savePortfolioPosition(
             id = "", market = "KR", ticker = "005930", name = "삼성전자",
-            buyPrice = 100_000, currentPrice = 110_000, quantity = 5,
+            buyPrice = 100_000.0, currentPrice = 110_000.0, quantity = 5.0,
         )
         assertEquals(10.0, result.profitRate, 0.001)
     }
@@ -42,19 +43,30 @@ class WorkspaceServiceTest {
     fun `손실 포지션 - profitAmount 음수 profitRate 음수`() {
         val result = service.savePortfolioPosition(
             id = "", market = "US", ticker = "AAPL", name = "Apple",
-            buyPrice = 200, currentPrice = 180, quantity = 10,
+            buyPrice = 200.0, currentPrice = 180.0, quantity = 10.0,
         )
-        assertEquals(-200L, result.profitAmount)
+        assertEquals(-200.0, result.profitAmount)
         assertTrue(result.profitRate < 0)
     }
 
     @Test
-    fun `buyPrice 0이면 profitRate 0`() {
-        val result = service.savePortfolioPosition(
+    fun `buyPrice 0이면 잘못된 입력으로 거절`() {
+        assertThrows<IllegalArgumentException> { service.savePortfolioPosition(
             id = "", market = "KR", ticker = "005930", name = "삼성전자",
-            buyPrice = 0, currentPrice = 70_000, quantity = 1,
+            buyPrice = 0.0, currentPrice = 70_000.0, quantity = 1.0,
         )
-        assertEquals(0.0, result.profitRate, 0.001)
+        }
+    }
+
+    @Test
+    fun `미국 소수점 가격과 수량을 보존한다`() {
+        val result = service.savePortfolioPosition(
+            id = "", market = "US", ticker = "AAPL", name = "Apple",
+            buyPrice = 200.15, currentPrice = 201.25, quantity = 0.5,
+        )
+        assertEquals(0.5, result.quantity)
+        assertEquals(100.625, result.evaluationAmount)
+        assertEquals(0.55, result.profitAmount, 0.0000001)
     }
 }
 

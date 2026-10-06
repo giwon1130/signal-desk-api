@@ -49,7 +49,7 @@ data class MarketEvidenceEvaluation(
 class MarketEvidenceEvaluator(private val analyzer: MarketEvidenceAnalyzer, private val sessions: MarketSessionService) {
     fun evaluate(rows: List<ArchivedMarketEvidence>, candles: List<IndexCandle>, from: Instant, now: Instant): MarketEvidenceEvaluation {
         require(from < now)
-        val bounded = rows.take(2160)
+        val bounded = rows.filter { it.input?.market != "US" }.take(2160)
         val valid = bounded.filter { row ->
             val input = row.input
             input != null && row.report != null && input.collectedAt == row.observedAt &&

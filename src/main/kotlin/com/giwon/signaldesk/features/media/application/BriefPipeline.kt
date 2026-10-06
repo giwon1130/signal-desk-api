@@ -25,6 +25,7 @@ class BriefPipeline(
     data class SlotConfig(
         val logLabel: String, val videoPrefix: String, val channelId: String,
         val channelTitle: String, val titleSuffix: String, val source: MediaSource,
+        val market: String = "KR",
     )
 
     fun <C> run(
@@ -39,7 +40,7 @@ class BriefPipeline(
         val videoId = "${config.videoPrefix}-${today.format(dateFmt)}"
         if (!force && repository.findByVideoId(videoId) != null) return null
         val context = prepare()
-        val analysis = briefing.current()
+        val analysis = briefing.current(config.market)
         val saved = repository.save(buildSummary(
             videoId = videoId, channelId = config.channelId, channelTitle = config.channelTitle,
             videoTitle = "${today.format(titleFmt)} ${config.titleSuffix}",
@@ -138,6 +139,7 @@ class BriefPipeline(
             "us_futures" -> if (supportive) "미국 선물이 강세입니다." else "미국 선물이 약세입니다."
             "kr_proxy" -> if (supportive) "한국 관련 해외 ETF가 강세입니다." else "한국 관련 해외 ETF가 약세입니다."
             "semiconductors" -> if (supportive) "반도체 관련 지표가 강세입니다." else "반도체 관련 지표가 약세입니다."
+            "dollar" -> if (supportive) "달러 강세 부담이 완화되는 흐름입니다." else "달러 강세가 미국 기업의 해외 매출에 부담이 될 수 있습니다."
             "fx" -> if (supportive) "환율 부담이 완화되고 있습니다." else "환율 흐름이 부담스럽습니다."
             "rates" -> if (supportive) "미국 금리 부담이 완화되고 있습니다." else "미국 금리 흐름이 부담스럽습니다."
             "kr_night" -> if (supportive) "코스피200 야간선물이 강세입니다." else "코스피200 야간선물이 약세입니다."

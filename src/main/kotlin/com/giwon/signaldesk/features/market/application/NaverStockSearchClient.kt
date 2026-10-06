@@ -89,9 +89,10 @@ class NaverStockSearchClient(private val mapper: ObjectMapper) {
                 name       = name,
                 market     = market,
                 sector     = sector,
-                price      = 0,            // 가격은 StockSearchService에서 enrich
+                price      = 0.0,            // 가격은 StockSearchService에서 enrich
                 changeRate = 0.0,
                 stance     = "동적 검색 결과",
+                providerSymbol = node.path("reutersCode").asText().takeIf { it.isNotBlank() },
             )
         }
     }

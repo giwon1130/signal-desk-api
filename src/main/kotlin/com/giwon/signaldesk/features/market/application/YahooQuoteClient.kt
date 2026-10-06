@@ -227,7 +227,7 @@ class YahooQuoteClient(
             "ES=F" to "S&P500 선물", "EWY" to "한국 주식 ETF(EWY)",
             "SOXX" to "미국 반도체 ETF(SOXX)", "MU" to "마이크론", "SKHY" to "SK하이닉스 ADR",
             "SMSN.IL" to "삼성전자 런던 GDR", "KRW=X" to "원/달러", "CL=F" to "WTI 선물",
-            "^VIX" to "VIX",
+            "^VIX" to "VIX", "DX-Y.NYB" to "달러 인덱스",
         )
     }
 }

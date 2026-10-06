@@ -15,59 +15,47 @@ class WorkspaceQuoteRefresher(
     fun refreshKoreanLeadingStocks(stocks: List<TickerSnapshot>, quotes: Map<String, StockQuote>): List<TickerSnapshot> =
         stocks.map { stock ->
             quotes[stock.ticker]?.let { quote ->
-                stock.copy(price = quote.currentPrice, changeRate = quote.changeRate)
+                stock.copy(price = quote.exactPrice, changeRate = quote.changeRate)
             } ?: stock
         }
 
     fun refreshWatchlist(items: List<WatchItem>, quotes: Map<String, StockQuote>): List<WatchItem> =
         items.map { item ->
-            if (item.market != "KR") return@map item
             val quote = quotes[item.ticker] ?: return@map item
-            val bars = chartClient.fetchDailyBars(item.ticker, count = 30)
+            val bars = if (item.market == "KR") chartClient.fetchDailyBars(item.ticker, count = 30) else emptyList()
             val technical = technicalCalculator.calculate(bars)
             val volumeRatio = technicalCalculator.volumeRatio(bars)
             item.copy(
-                price = quote.currentPrice,
+                price = quote.exactPrice,
                 changeRate = quote.changeRate,
                 technical = technical,
                 volume = bars.lastOrNull()?.volume ?: 0L,
                 volumeRatio = volumeRatio,
+                quoteInfo = quote.quoteInfo,
             )
         }.sortedWith(compareBy({ it.market }, { it.name }))
 
     fun refreshPortfolio(portfolio: PortfolioSummary, quotes: Map<String, StockQuote>): PortfolioSummary {
-        val previousEvaluation = portfolio.positions.associateBy({ it.ticker }) { it.evaluationAmount }
         val positions = portfolio.positions.map { position ->
-            if (position.market != "KR") return@map position
             val quote = quotes[position.ticker] ?: return@map position
-            val evaluationAmount = quote.currentPrice.toLong() * position.quantity
-            val costAmount = position.buyPrice.toLong() * position.quantity
+            val evaluationAmount = PortfolioValuation.amount(quote.exactPrice, position.quantity)
+            val costAmount = PortfolioValuation.amount(position.buyPrice, position.quantity)
             val profitAmount = evaluationAmount - costAmount
             position.copy(
-                currentPrice = quote.currentPrice, profitAmount = profitAmount,
-                evaluationAmount = evaluationAmount,
-                profitRate = if (costAmount == 0L) 0.0 else (profitAmount.toDouble() / costAmount) * 100,
+                currentPrice = quote.exactPrice, profitAmount = profitAmount,
+                evaluationAmount = evaluationAmount, quoteInfo = quote.quoteInfo, changeRate = quote.changeRate,
+                profitRate = if (costAmount == 0.0) 0.0 else (profitAmount.toDouble() / costAmount) * 100,
             )
         }
-        val delta = positions.sumOf { position ->
-            position.evaluationAmount - (previousEvaluation[position.ticker] ?: position.evaluationAmount)
-        }
-        val totalValue = portfolio.totalValue + delta
-        val totalProfit = totalValue - portfolio.totalCost
-        return portfolio.copy(
-            totalValue = totalValue, totalProfit = totalProfit,
-            totalProfitRate = if (portfolio.totalCost == 0L) 0.0 else (totalProfit.toDouble() / portfolio.totalCost) * 100,
-            positions = positions.sortedWith(compareBy({ it.market }, { it.name })),
-        )
+        return PortfolioValuation.summarize(positions.sortedWith(compareBy({ it.market }, { it.name })))
     }
 
     fun refreshAiRecommendations(section: AIRecommendationSection, quotes: Map<String, StockQuote>): AIRecommendationSection {
         val refreshedTrackRecords = section.trackRecords.map { record ->
-            if (record.market != "KR") return@map record
             val quote = quotes[record.ticker] ?: return@map record
-            val realizedReturnRate = if (record.entryPrice == 0) 0.0
-            else ((quote.currentPrice - record.entryPrice).toDouble() / record.entryPrice) * 100
-            record.copy(latestPrice = quote.currentPrice, realizedReturnRate = realizedReturnRate, success = realizedReturnRate >= 0)
+            val realizedReturnRate = if (record.entryPrice == 0.0) 0.0
+            else ((quote.exactPrice - record.entryPrice).toDouble() / record.entryPrice) * 100
+            record.copy(latestPrice = quote.exactPrice, realizedReturnRate = realizedReturnRate, success = realizedReturnRate >= 0)
         }
         return section.copy(
             trackRecords = refreshedTrackRecords,
@@ -121,13 +109,13 @@ class WorkspaceQuoteRefresher(
         ticker: String,
         expectedReturnRate: Double?,
         quotes: Map<String, StockQuote>,
-    ): Triple<Int?, Int?, Int?> {
+    ): Triple<Double?, Double?, Double?> {
         if (market != "KR") return Triple(null, null, null)
-        val entry = quotes[ticker]?.currentPrice?.takeIf { it > 0 } ?: return Triple(null, null, null)
-        val stop = (entry * (1.0 - 0.025)).toInt()
+        val entry = quotes[ticker]?.exactPrice?.takeIf { it > 0 } ?: return Triple(null, null, null)
+        val stop = (entry * (1.0 - 0.025))
         val target = expectedReturnRate?.let {
             val pct = it.coerceIn(3.0, 20.0)
-            (entry * (1.0 + pct / 100.0)).toInt()
+            (entry * (1.0 + pct / 100.0))
         }
         return Triple(entry, stop, target)
     }

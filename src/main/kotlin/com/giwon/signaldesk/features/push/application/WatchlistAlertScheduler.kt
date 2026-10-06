@@ -20,7 +20,7 @@ class WatchlistAlertScheduler(
     @Scheduled(cron = "0 */15 9-15 * * MON-FRI", zone = "Asia/Seoul")
     fun runKr() {
         val today = LocalDate.now(ZoneId.of("Asia/Seoul"))
-        if (!marketSessionService.isKrTradingDay(today)) {
+        if (!marketSessionService.isRegularSession("KR")) {
             log.debug("KR watchlist alert skipped — non-trading day {}", today)
             return
         }
@@ -32,7 +32,7 @@ class WatchlistAlertScheduler(
     @Scheduled(cron = "0 */15 9-15 * * MON-FRI", zone = "America/New_York")
     fun runUs() {
         val today = LocalDate.now(ZoneId.of("America/New_York"))
-        if (!marketSessionService.isUsTradingDay(today)) {
+        if (!marketSessionService.isRegularSession("US")) {
             log.debug("US watchlist alert skipped — non-trading day {}", today)
             return
         }

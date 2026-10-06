@@ -56,7 +56,7 @@ class WatchlistAlertDetectorTest {
         volumeAlert: Boolean = false, volumeRatio: Double? = null,
     ) = WatchlistAlertDetector.WatchRow(
         userId = user, market = "KR", ticker = ticker, name = ticker, changeRate = 0.0,
-        currentPrice = currentPrice, alertBelow = alertBelow, alertAbove = alertAbove,
+        currentPrice = currentPrice.toDouble(), alertBelow = alertBelow?.toDouble(), alertAbove = alertAbove?.toDouble(),
         volumeAlert = volumeAlert, volumeRatio = volumeRatio,
     )
 

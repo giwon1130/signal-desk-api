@@ -22,14 +22,17 @@ class MarketEvidenceService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     @Volatile private var cached: MarketEvidenceReport? = null
+    private var cachedUs: MarketEvidenceReport? = null
 
     /** Enrichment must not fan out another market scan from every stock notification. */
     fun recentSnapshot(): MarketEvidenceReport? = cached?.takeIf {
         Duration.between(Instant.parse(it.asOf), Instant.now()).seconds in 0..120
     }
 
-    @Synchronized fun current(): MarketEvidenceReport {
-        cached?.takeIf { Duration.between(Instant.parse(it.asOf), Instant.now()).seconds in 0..59 }?.let { return it }
+    @Synchronized fun current(market: String = "KR"): MarketEvidenceReport {
+        require(market in setOf("KR", "US"))
+        val selected = if (market == "US") cachedUs else cached
+        selected?.takeIf { Duration.between(Instant.parse(it.asOf), Instant.now()).seconds in 0..59 }?.let { return it }
         // Parents must not occupy the bounded executor used by the clients' child requests.
         val quotes = CompletableFuture.supplyAsync { runCatching { yahoo.fetchIndices(YahooQuoteClient.BRIEFING_INDICES) }.getOrDefault(emptyList()) }.orTimeout(12, TimeUnit.SECONDS)
         val macro = CompletableFuture.supplyAsync { runCatching { fred.fetchMacro() }.getOrNull() }.orTimeout(12, TimeUnit.SECONDS)
@@ -46,9 +49,12 @@ class MarketEvidenceService(
             ?.map { it.copy(title = it.title.take(300), impact = "") }
         val input = MarketEvidenceInput(now, collectedQuotes, collectedMacro, boundedNews, night)
         val report = analyzer.analyze(input)
-        runCatching { archive.ifAvailable?.save(input, report) }
+        val usInput = input.copy(market = "US")
+        val usReport = analyzer.analyze(usInput)
+        runCatching { archive.ifAvailable?.let { it.save(input, report); it.save(usInput, usReport) } }
             .onFailure { log.warn("Market evidence archive unavailable ({})", it.javaClass.simpleName) }
         cached = report
-        return report
+        cachedUs = usReport
+        return if (market == "US") usReport else report
     }
 }

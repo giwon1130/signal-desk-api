@@ -85,7 +85,7 @@ class MarketOverviewService(
         val core = getCoreSnapshot()
         val conditions = listOf("KR", "US").map { MarketConditionBuilder(marketSessionService).build(evidence, it) }
         val validMetrics = MarketConditionBuilder(marketSessionService).metrics(evidence)
-        val quotes = enrichmentService.loadKoreanQuotes(userId)
+        val quotes = enrichmentService.loadMarketQuotes(userId)
         val snapshot = enrichmentService.buildWorkspaceSnapshot(quotes, userId)
         val annotatedAi = personalContextAnnotator.annotateRecommendations(
             snapshot.aiRecommendations, snapshot.watchlist, snapshot.portfolio,
@@ -313,7 +313,7 @@ class MarketOverviewService(
             val quote = usBigtechQuotes[entry.ticker] ?: return@mapNotNull null
             TickerSnapshot(
                 ticker = entry.ticker, name = entry.name, sector = entry.sector,
-                price = quote.currentPrice, changeRate = quote.changeRate,
+                price = quote.exactPrice, changeRate = quote.changeRate,
                 stance = usStance(quote.changeRate),
             )
         }
@@ -323,7 +323,7 @@ class MarketOverviewService(
                 ticker = q.ticker,
                 name = q.name,
                 sector = q.exchange.ifBlank { "US Stock" },
-                price = q.price.roundToInt(),
+                price = q.price,
                 changeRate = q.changeRate,
                 stance = usStance(q.changeRate),
             )

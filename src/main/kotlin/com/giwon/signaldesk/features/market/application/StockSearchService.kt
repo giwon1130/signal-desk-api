@@ -7,9 +7,11 @@ data class StockSearchResult(
     val name: String,
     val market: String,
     val sector: String,
-    val price: Int,
+    val price: Double,
     val changeRate: Double,
     val stance: String,
+    val providerSymbol: String? = null,
+    val quoteInfo: QuoteInfo? = null,
 )
 
 @Service
@@ -39,7 +41,7 @@ class StockSearchService(
 
         return raw.map { item ->
             val quote = if (item.market == "KR") krQuotes[item.ticker] else usQuotes[item.ticker]
-            quote?.let { item.copy(price = it.currentPrice, changeRate = it.changeRate) } ?: item
+            quote?.let { item.copy(price = it.exactPrice, changeRate = it.changeRate, quoteInfo = it.quoteInfo) } ?: item
         }
     }
 }

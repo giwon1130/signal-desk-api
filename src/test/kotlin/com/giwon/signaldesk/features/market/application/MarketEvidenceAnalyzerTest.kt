@@ -137,4 +137,24 @@ class MarketEvidenceAnalyzerTest {
         val input = MarketEvidenceInput(now, all(), macro(), emptyList())
         assertThat(analyzer.analyze(input)).isEqualTo(analyzer.analyze(input))
     }
+
+    @Test fun `US assessment never votes on KR overnight FX or ADR inputs`() {
+        val input = MarketEvidenceInput(now, all(), macro(), listOf(news("경제 일정 대기")), market = "US")
+        val us = analyzer.analyze(input)
+        assertThat(us.rulesVersion).isEqualTo(MarketEvidenceAnalyzer.US_RULES_VERSION)
+        assertThat(us.horizon).isEqualTo("CURRENT_CONDITIONS_US")
+        assertThat(us.factors.map { it.id }).containsExactly("us_equity", "us_futures", "semiconductors", "rates", "dollar")
+        assertThat(us.evidence.map { it.id }).doesNotContain("^KS11", "^KQ11", "KR_NIGHT", "SKHY", "SMSN.IL", "EWY", "KRW=X")
+        assertThat(us.factors.sumOf { it.weight }).isCloseTo(1.0, offset(1e-9))
+        val noKr = input.copy(quotes = input.quotes.filterNot { it.symbol in setOf("^KS11", "^KQ11", "SKHY", "SMSN.IL", "EWY", "KRW=X") })
+        assertThat(analyzer.analyze(noKr)).isEqualTo(us)
+    }
+
+    @Test fun `US missing rates are not compensated by extra equity weight`() {
+        val input = MarketEvidenceInput(now, all(), macro(), listOf(news("경제 일정 대기")), market = "US")
+        val full = analyzer.analyze(input)
+        val missing = analyzer.analyze(input.copy(macro = null))
+        assertThat(full.coveragePercent - missing.coveragePercent).isEqualTo(20)
+        assertThat(missing.factors.single { it.id == "rates" }.score).isNull()
+    }
 }

@@ -92,4 +92,13 @@ data class StockQuote(
     val exactPrice: Double = currentPrice.toDouble(),
     /** 상장주식수(KR). 시가총액 = exactPrice * listedShares. 미제공 시 0. */
     val listedShares: Long = 0L,
+    val quoteInfo: QuoteInfo? = null,
+)
+
+data class QuoteInfo(
+    val source: String = "NAVER_FINANCE",
+    val observedAt: String,
+    val currency: String,
+    val session: String,
+    val delayMinutes: Int? = null,
 )

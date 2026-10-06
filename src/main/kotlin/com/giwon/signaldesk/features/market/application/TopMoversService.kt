@@ -50,7 +50,7 @@ class TopMoversService(
         market = "US",
         ticker = ticker,
         name = name,
-        price = price.roundToInt(),
+        price = price,
         changeRate = changeRate,
     )
 }

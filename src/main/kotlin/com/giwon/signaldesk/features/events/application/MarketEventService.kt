@@ -40,7 +40,7 @@ class MarketEventService(
      */
     private fun fetchBigtechEarnings(from: LocalDate, until: LocalDate): List<MarketEvent> {
         val tickers = listOf("NVDA", "MSFT", "AAPL", "AMZN", "TSLA", "META", "GOOGL")
-        val fromStr = from.toString()
+        val fromStr = from.minusDays(1).toString()
         val toStr = until.toString()
         return tickers.flatMap { ticker ->
             finnhubClient.fetchEarningsCalendar(fromStr, toStr, ticker)
@@ -49,6 +49,8 @@ class MarketEventService(
                 MarketEvent(
                     id = "us-earnings-${e.symbol}-${e.date}",
                     date = e.date,
+                    dateTimezone = "America/New_York",
+                    sourceUrl = "https://finnhub.io/",
                     time = when (e.hour) {
                         "bmo" -> "장 시작 전 (ET)"
                         "amc" -> "장 마감 후 (ET)"
@@ -58,7 +60,7 @@ class MarketEventService(
                     market = "US",
                     category = EventCategory.EARNINGS,
                     title = "${e.symbol} 실적 발표 (Q${e.quarter})",
-                    description = e.epsEstimate?.let { "EPS 컨센서스 ${"%.2f".format(it)}" },
+                    description = listOfNotNull("미 동부 날짜 기준 · 발표 시각은 변경될 수 있습니다", e.epsEstimate?.let { "EPS 예상 ${"%.2f".format(it)} USD" }).joinToString(" · "),
                     importance = Importance.HIGH,
                     tickers = listOf(e.symbol),
                 )
@@ -85,6 +87,8 @@ class MarketEventService(
             if (!marketSessionService.isUsTradingDay(d) && d.dayOfWeek.value < 6) {
                 out += MarketEvent(
                     id = "us-holiday-$d",
+                    dateTimezone = "America/New_York",
+                    sourceUrl = "https://www.nyse.com/trade/hours-calendars",
                     date = d.toString(),
                     time = null,
                     market = "US",

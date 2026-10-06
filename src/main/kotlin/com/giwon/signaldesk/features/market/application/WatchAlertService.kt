@@ -205,11 +205,13 @@ class WatchAlertService {
     }
 
     private fun buildConcentrationAlerts(portfolio: PortfolioSummary): List<WatchAlert> {
-        if (portfolio.positions.isEmpty() || portfolio.totalValue <= 0) return emptyList()
+        if (portfolio.positions.isEmpty()) return emptyList()
+        // Without an explicit FX rate there is no meaningful cross-currency concentration.
+        val totalValue = portfolio.totalValue?.takeIf { it > 0 } ?: return emptyList()
         val alerts = mutableListOf<WatchAlert>()
 
         portfolio.positions.forEach { position ->
-            val weight = position.evaluationAmount.toDouble() / portfolio.totalValue * 100
+            val weight = position.evaluationAmount / totalValue * 100
             if (weight >= 40.0) {
                 alerts += WatchAlert(
                     severity = if (weight >= 60) "high" else "medium",
@@ -225,7 +227,7 @@ class WatchAlertService {
 
         val sectorGroups = portfolio.positions.groupBy { it.market }
         sectorGroups.forEach { (market, positions) ->
-            val marketWeight = positions.sumOf { it.evaluationAmount }.toDouble() / portfolio.totalValue * 100
+            val marketWeight = positions.sumOf { it.evaluationAmount } / totalValue * 100
             if (marketWeight >= 80.0 && portfolio.positions.size >= 3) {
                 alerts += WatchAlert(
                     severity = "medium", category = "concentration",

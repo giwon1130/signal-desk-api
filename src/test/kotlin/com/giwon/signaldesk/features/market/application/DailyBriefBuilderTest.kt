@@ -82,8 +82,8 @@ class DailyBriefBuilderTest {
             base = baseBriefing(),
             watchAlerts = emptyList(),
             portfolio = PortfolioSummary(
-                totalCost = 10_000_000L, totalValue = 10_230_000L,
-                totalProfit = 230_000L, totalProfitRate = 2.3, positions = listOf(samplePosition()),
+                totalCost = 10_000_000.0, totalValue = 10_230_000.0,
+                totalProfit = 230_000.0, totalProfitRate = 2.3, positions = listOf(samplePosition()),
             ),
             aiRecommendations = emptyAi(),
             marketSummary = emptyList(),
@@ -161,7 +161,7 @@ class DailyBriefBuilderTest {
     )
 
     private fun emptyPortfolio() = PortfolioSummary(
-        totalCost = 0L, totalValue = 0L, totalProfit = 0L, totalProfitRate = 0.0,
+        totalCost = 0.0, totalValue = 0.0, totalProfit = 0.0, totalProfitRate = 0.0,
         positions = emptyList(),
     )
 
@@ -172,8 +172,8 @@ class DailyBriefBuilderTest {
 
     private fun samplePosition() = HoldingPosition(
         market = "KR", ticker = "005930", name = "삼성전자",
-        buyPrice = 80000, currentPrice = 81840, quantity = 100,
-        profitAmount = 184_000L, evaluationAmount = 8_184_000L,
+        buyPrice = 80000.0, currentPrice = 81840.0, quantity = 100.0,
+        profitAmount = 184_000.0, evaluationAmount = 8_184_000.0,
         profitRate = 2.3, source = "test",
     )
 }

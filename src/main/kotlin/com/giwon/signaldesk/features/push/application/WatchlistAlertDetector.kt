@@ -29,9 +29,9 @@ class WatchlistAlertDetector {
         val ticker: String,
         val name: String,
         val changeRate: Double,
-        val currentPrice: Int = 0,
-        val alertBelow: Int? = null,
-        val alertAbove: Int? = null,
+        val currentPrice: Double = 0.0,
+        val alertBelow: Double? = null,
+        val alertAbove: Double? = null,
         val volumeAlert: Boolean = false,
         val volumeRatio: Double? = null,
     )
@@ -61,7 +61,7 @@ class WatchlistAlertDetector {
             // 최근 알림 이력 없으면 첫 발송, 있으면 그 강도 + step 이상이어야 재발송.
             val strongEnough = lastRate == null || abs(r.changeRate) >= lastRate + rateStepPct
             if (notSentToday && strongEnough) {
-                candidates += AlertCandidate(r.userId, r.ticker, r.name, r.market, r.changeRate, direction)
+                candidates += AlertCandidate(r.userId, r.ticker, r.name, r.market, r.changeRate, direction, r.currentPrice)
             }
         }
 
@@ -82,7 +82,7 @@ class WatchlistAlertDetector {
         // 거래량 급증
         if (r.volumeAlert && (r.volumeRatio ?: 0.0) >= volumeSpikeThreshold) {
             if (AlertLogEntry(r.userId, r.ticker, AlertDirection.VOLUME_SPIKE, today) !in alreadySent) {
-                candidates += AlertCandidate(r.userId, r.ticker, r.name, r.market, r.changeRate, AlertDirection.VOLUME_SPIKE, volumeRatio = r.volumeRatio)
+                candidates += AlertCandidate(r.userId, r.ticker, r.name, r.market, r.changeRate, AlertDirection.VOLUME_SPIKE, r.currentPrice, volumeRatio = r.volumeRatio)
             }
         }
 

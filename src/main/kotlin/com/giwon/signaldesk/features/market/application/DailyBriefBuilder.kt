@@ -63,11 +63,11 @@ class DailyBriefBuilder(
     ): BriefingContext {
         val holdingPnlLabel: String?
         val holdingPnlRate: Double?
-        if (portfolio.positions.isEmpty()) {
+        if (portfolio.positions.isEmpty() || portfolio.totalProfit == null || portfolio.totalProfitRate == null) {
             holdingPnlLabel = null
             holdingPnlRate = null
         } else {
-            holdingPnlLabel = "${formatSignedAmount(portfolio.totalProfit.toDouble())} (${formatSignedRate(portfolio.totalProfitRate)})"
+            holdingPnlLabel = "${formatSignedAmount(portfolio.totalProfit, portfolio.totalCurrency ?: "KRW")} (${formatSignedRate(portfolio.totalProfitRate)})"
             holdingPnlRate = portfolio.totalProfitRate
         }
 
@@ -213,7 +213,8 @@ class DailyBriefBuilder(
     private fun formatSignedRate(value: Double): String =
         if (value > 0) "+${"%.2f".format(value)}%" else "${"%.2f".format(value)}%"
 
-    private fun formatSignedAmount(value: Double): String {
+    private fun formatSignedAmount(value: Double, currency: String): String {
+        if (currency == "USD") return String.format(java.util.Locale.US, "%+.2f USD", value)
         val rounded = value.toLong()
         val sign = if (rounded >= 0) "+" else "-"
         return "$sign₩${"%,d".format(kotlin.math.abs(rounded))}"

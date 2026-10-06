@@ -115,14 +115,14 @@ class DailySnapshotService(
 
     // ── 3) 포트폴리오 일별 평가액 ───────────────────────────────────────────
     private fun snapshotPortfolios(date: LocalDate): Int {
-        data class Pos(val userId: UUID, val market: String, val ticker: String, val qty: Int, val buyPrice: Double, val storedPrice: Double)
+        data class Pos(val userId: UUID, val market: String, val ticker: String, val qty: Double, val buyPrice: Double, val storedPrice: Double)
         val positions = jdbc.query(
             "select user_id, market, ticker, quantity, buy_price, current_price from signal_desk_portfolio_positions where user_id is not null",
         ) { rs, _ ->
             Pos(
                 userId = UUID.fromString(rs.getString("user_id")),
                 market = rs.getString("market"), ticker = rs.getString("ticker"),
-                qty = rs.getInt("quantity"), buyPrice = rs.getDouble("buy_price"),
+                qty = rs.getDouble("quantity"), buyPrice = rs.getDouble("buy_price"),
                 storedPrice = rs.getDouble("current_price"),
             )
         }

@@ -46,6 +46,11 @@ class WorkspaceController(
         @RequestHeader("Authorization", required = false) auth: String?,
         @Valid @RequestBody request: SaveWatchlistItemRequest,
     ): ApiResponse<WorkspaceWatchItem> {
+        require(request.market in setOf("KR", "US") && request.price.isFinite() && request.price >= 0 && request.changeRate.isFinite()) { "종목과 시세를 확인해 주세요." }
+        if (request.price > 0) com.giwon.signaldesk.features.market.application.PortfolioValuation.validate(request.market, request.price, 1.0)
+        listOfNotNull(request.alertBelow, request.alertAbove).forEach {
+            com.giwon.signaldesk.features.market.application.PortfolioValuation.validate(request.market, it, 1.0)
+        }
         val uid = userId(auth)
         if (planService != null && uid != null) {
             val existing = workspaceStore.loadWatchlist(uid)

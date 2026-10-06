@@ -5,5 +5,5 @@ import org.springframework.stereotype.Service
 /** On-demand and scheduled market commentary share one deterministic evidence assessment. */
 @Service
 class MarketInsightService(private val briefing: EvidenceBriefingService) {
-    fun getTodayInsight(): MarketInsightAnalysis = briefing.current()
+    fun getTodayInsight(market: String = "KR"): MarketInsightAnalysis = briefing.current(market)
 }
