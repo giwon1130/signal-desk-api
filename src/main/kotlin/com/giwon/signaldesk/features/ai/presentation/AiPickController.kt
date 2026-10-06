@@ -20,7 +20,7 @@ class AiPickController(
     @Autowired(required = false) private val authContext: AuthContext? = null,
 ) {
 
-    /** 오늘의 AI 픽. Gemini 미설정/후보 없음이면 data=null. */
+    /** Rule-based review candidates. Works without a Gemini key. */
     @GetMapping("/picks")
     fun picks(): ApiResponse<AiPicksResponse?> =
         ApiResponse(true, aiPickService.getTodayPicks())

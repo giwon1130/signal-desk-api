@@ -18,7 +18,11 @@ class MarketEventService(
 ) {
 
     /** 오늘 ~ +days 까지의 이벤트. 가까운 날짜 순으로 정렬. */
-    fun upcoming(days: Int = 14): List<MarketEvent> {
+    fun upcoming(days: Int = 14, watchedUsTickers: Set<String> = emptySet()): List<MarketEvent> {
+        return upcomingSnapshot(days, watchedUsTickers).events
+    }
+
+    fun upcomingSnapshot(days: Int = 14, watchedUsTickers: Set<String> = emptySet()): MarketEventSnapshot {
         val today = LocalDate.now(ZoneId.of("Asia/Seoul"))
         val until = today.plusDays(days.coerceIn(1, 60).toLong())
 
@@ -27,23 +31,25 @@ class MarketEventService(
             val d = LocalDate.parse(it.date)
             !d.isBefore(today) && !d.isAfter(until)
         }
-        val earnings = fetchBigtechEarnings(today, until)
+        val (earnings, status) = fetchEarnings(until, watchedUsTickers)
 
-        return (holidays + statics + earnings)
-            .sortedWith(compareBy({ it.date }, { it.time ?: "" }, { it.title }))
+        return MarketEventSnapshot((holidays + statics + earnings)
+            .sortedWith(compareBy({ it.date }, { it.time ?: "" }, { it.title })), status)
     }
 
     /**
-     * Finnhub 무료 API로 빅테크 7종(NVDA/MSFT/AAPL/AMZN/TSLA/META/GOOGL)의 실적 발표 일정을 가져온다.
-     * FINNHUB_API_KEY env 가 비어있으면 client 가 빈 리스트 반환 → no-op.
-     * 향후 확장: 사용자별 watchlist/portfolio US 종목으로 동적 확장 가능.
+     * Shared calendar -> major cross-sector universe + this user's US watchlist/portfolio.
+     * Coverage state belongs to this exact response, not another concurrent user's request.
      */
-    private fun fetchBigtechEarnings(from: LocalDate, until: LocalDate): List<MarketEvent> {
-        val tickers = listOf("NVDA", "MSFT", "AAPL", "AMZN", "TSLA", "META", "GOOGL")
-        val fromStr = from.minusDays(1).toString()
+    private fun fetchEarnings(until: LocalDate, watched: Set<String>): Pair<List<MarketEvent>, EarningsCalendarResult> {
+        val tickers = setOf("NVDA", "MSFT", "AAPL", "AMZN", "TSLA", "META", "GOOGL", "AMD", "AVGO", "MU", "TSM",
+            "JPM", "BAC", "GS", "V", "MA", "UNH", "LLY", "JNJ", "XOM", "CVX", "WMT", "COST", "NFLX", "ORCL") + watched
+        val fromStr = LocalDate.now(ZoneId.of("America/New_York")).toString()
         val toStr = until.toString()
-        return tickers.flatMap { ticker ->
-            finnhubClient.fetchEarningsCalendar(fromStr, toStr, ticker)
+        // One shared calendar fetch, never a separate paid-source request per user/ticker.
+        val calendar = finnhubClient.fetchCalendar(fromStr, toStr)
+        val events = calendar.entries.filter { e ->
+            tickers.any { it.replace('.', '-') == e.symbol.replace('.', '-') }
         }.distinctBy { "${it.symbol}-${it.date}" }
             .map { e ->
                 MarketEvent(
@@ -59,13 +65,17 @@ class MarketEventService(
                     },
                     market = "US",
                     category = EventCategory.EARNINGS,
-                    title = "${e.symbol} 실적 발표 (Q${e.quarter})",
-                    description = listOfNotNull("미 동부 날짜 기준 · 발표 시각은 변경될 수 있습니다", e.epsEstimate?.let { "EPS 예상 ${"%.2f".format(it)} USD" }).joinToString(" · "),
+                    title = "${e.symbol} 실적 발표" + if (e.quarter in 1..4) " (Q${e.quarter})" else "",
+                    description = "미 동부 날짜 기준 · 발표 시각은 변경될 수 있습니다. 수치의 통화·회계 기준은 기업 발표 원문을 확인해 주세요.",
+                    earnings = EarningsFigures(e.epsEstimate, e.epsActual, e.revenueEstimate, e.revenueActual),
                     importance = Importance.HIGH,
                     tickers = listOf(e.symbol),
                 )
             }
+        return events to calendar.copy(entries = emptyList())
     }
+
+    fun earningsStatus(): EarningsCalendarResult = finnhubClient.status()
 
     private fun generateHolidays(from: LocalDate, until: LocalDate): List<MarketEvent> {
         val out = mutableListOf<MarketEvent>()
@@ -104,3 +114,5 @@ class MarketEventService(
     }
 
 }
+
+data class MarketEventSnapshot(val events: List<MarketEvent>, val earningsStatus: EarningsCalendarResult)

@@ -49,6 +49,11 @@ class SecEdgarClient(
                 return@runCatching emptyList()
             }
             val builderFactory = DocumentBuilderFactory.newInstance()
+            builderFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            builderFactory.setFeature("http://xml.org/sax/features/external-general-entities", false)
+            builderFactory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            builderFactory.isXIncludeAware = false
+            builderFactory.isExpandEntityReferences = false
             val builder = builderFactory.newDocumentBuilder()
             val doc = builder.parse(ByteArrayInputStream(resp.body()))
             val entries = doc.getElementsByTagName("entry")

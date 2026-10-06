@@ -29,7 +29,7 @@ private fun period(key: String, label: String, candles: List<IndexCandle>, limit
             c.high >= maxOf(c.open, c.close) && c.low <= minOf(c.open, c.close) && c.volume >= 0
     }.sortedBy { it.date }.takeLast(limit).map { c ->
         ChartPoint(LocalDate.parse(c.date, DateTimeFormatter.BASIC_ISO_DATE).format(DateTimeFormatter.ofPattern(pattern)),
-            c.close, c.open, c.high, c.low, c.close, c.volume)
+            c.close, c.open, c.high, c.low, c.close, c.volume, c.date, c.provisional)
     }
     val latest = points.lastOrNull()?.close ?: 0.0
     val previous = points.getOrNull(points.lastIndex - 1)?.close

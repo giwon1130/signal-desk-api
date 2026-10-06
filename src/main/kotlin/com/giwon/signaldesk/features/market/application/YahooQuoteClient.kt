@@ -134,7 +134,7 @@ class YahooQuoteClient(
 
     /**
      * 시즈널리티 백테스트용 장기 일봉 — 배당·분할 조정 종가(adjclose). range 예: "15y".
-     * adjclose 없으면 raw close 폴백. 날짜는 거래소 gmtoffset 반영한 현지 거래일. 실패 시 빈 리스트.
+     * adjclose 없으면 분석에서 제외한다. 날짜는 거래소 시간대의 현지 거래일. 실패 시 빈 리스트.
      */
     // sync=true 는 unless 와 병행 불가(Spring 제약) — 빈 결과(일시 실패) 비캐시가 우선.
     @org.springframework.cache.annotation.Cacheable(
@@ -156,10 +156,9 @@ class YahooQuoteClient(
         val result = runCatching { objectMapper.readTree(resp.body()) }.getOrNull()
             ?.get("chart")?.get("result")?.get(0) ?: return emptyList()
         val timestamps = result["timestamp"] ?: return emptyList()
-        val gmtoffset = result["meta"]?.get("gmtoffset")?.asLong() ?: 0L
+        val zone = runCatching { ZoneId.of(result["meta"]?.get("exchangeTimezoneName")?.asText()) }.getOrNull() ?: return emptyList()
         val indicators = result["indicators"]
         val adj = indicators?.get("adjclose")?.get(0)?.get("adjclose")
-            ?: indicators?.get("quote")?.get(0)?.get("close")
             ?: return emptyList()
         val out = ArrayList<HistoryBar>(timestamps.size())
         for (i in 0 until timestamps.size()) {
@@ -167,8 +166,8 @@ class YahooQuoteClient(
             val node = adj.get(i) ?: continue
             if (node.isNull) continue
             val c = node.asDouble()
-            if (c <= 0.0) continue
-            val date = Instant.ofEpochSecond(ts + gmtoffset).atZone(ZoneOffset.UTC).toLocalDate()
+            if (!c.isFinite() || c <= 0.0) continue
+            val date = Instant.ofEpochSecond(ts).atZone(zone).toLocalDate()
             out.add(HistoryBar(date, c))
         }
         return out

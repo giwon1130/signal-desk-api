@@ -1,70 +1,67 @@
 package com.giwon.signaldesk.features.ai.application
 
-import com.giwon.signaldesk.features.market.application.GoogleNewsRssClient
-import com.giwon.signaldesk.features.market.application.NaverFinanceQuoteClient
-import com.giwon.signaldesk.features.market.application.NaverInvestorRankClient
-import com.giwon.signaldesk.features.market.application.TopMoversService
-import com.giwon.signaldesk.features.media.application.GeminiClient
-import org.slf4j.LoggerFactory
+import com.giwon.signaldesk.features.market.application.*
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
 import java.time.Instant
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.TimeUnit
 
-/**
- * 오늘의 AI 픽 — Gemini 가 단타 관점에서 종목을 추천.
- *
- * 종목 universe:
- *  - KR: TopMovers(kospi/kosdaq gainers/losers) + 외인·기관 순매수 상위
- *  - US: TopMovers(Yahoo most actives/gainers/losers)
- * "오늘 시장이 실제로 주목하는" 풀 안에서만 Gemini 가 고르게 해 환각을 방지한다.
- * App 단에서 사용자 marketPreference 에 따라 KR/US 픽이 필터링됨.
- *
- * 캐시 TTL 30분 (ai-picks). 장중 시세 변동을 어느 정도 따라가되 Gemini 호출 비용은 절감.
- */
+/** Bounded rule-based screening. No LLM selects or ranks securities. */
 @Service
 class AiPickService(
     private val topMoversService: TopMoversService,
     private val investorRankClient: NaverInvestorRankClient,
-    private val newsRssClient: GoogleNewsRssClient,
-    private val geminiClient: GeminiClient,
-    private val pickAssembler: AiPickAssembler,
-    private val quoteClient: NaverFinanceQuoteClient,
+    private val yahooCandles: YahooCandleClient,
+    private val koreanCharts: NaverStockChartClient,
+    private val screener: YahooFinanceScreenerClient,
+    private val sessions: MarketSessionService,
+    @Qualifier("httpFetchExecutor") private val executor: ExecutorService,
 ) {
-    private val log = LoggerFactory.getLogger(javaClass)
+    @Cacheable(cacheNames = ["ai-picks"], sync = true)
+    fun getTodayPicks(): AiPicksResponse = generate(Instant.now())
 
-    @Cacheable(cacheNames = ["ai-picks"], unless = "#result == null")
-    fun getTodayPicks(): AiPicksResponse? {
-        if (!geminiClient.isEnabled()) {
-            log.info("AiPickService skipped — Gemini 미설정")
-            return null
-        }
-
+    internal fun generate(now: Instant): AiPicksResponse {
         val movers = runCatching { topMoversService.fetchTopMovers(10) }.getOrNull()
         val flow = runCatching { investorRankClient.fetchFlowSnapshot(7) }.getOrNull()
-        val headlines = runCatching { newsRssClient.fetchMarketNews() }.getOrNull() ?: emptyList()
-
-        val candidates = enrichMissingPrices(buildCandidates(movers, flow))
-        if (candidates.isEmpty()) {
-            log.warn("AiPickService skipped — 후보 종목 없음")
-            return null
+        val active = runCatching { screener.fetchMostActives(8) }.getOrDefault(emptyList())
+            .map { PickCandidate("US", it.ticker, it.name, it.price, it.changeRate, null) }
+        val candidates = (active + buildCandidates(movers, flow))
+            .filter { if (it.market == "KR") it.ticker.matches(Regex("\\d{6}")) else it.market == "US" && it.ticker.matches(Regex("[A-Z0-9][A-Z0-9.-]{0,14}")) }
+            .distinctBy { "${it.market}:${it.ticker}" }
+            .groupBy { it.market }.toSortedMap().values.flatMap { group ->
+                (if (group.first().market == "KR") group.sortedWith(compareByDescending<PickCandidate> { !it.flowTag.isNullOrBlank() }
+                    .thenBy { kotlin.math.abs(it.changeRate ?: 0.0) }.thenBy { it.ticker }) else group).take(8)
+            }
+        val completedSessions = sessions.upcomingSessions(now.minusSeconds(14 * 86400), 15).sessions
+            .filter { Instant.parse(it.closesAt).isBefore(now.minusSeconds(1800)) }
+        val futures = candidates.map { candidate ->
+            CompletableFuture.supplyAsync<AiPick?>({
+                val expected = completedSessions.filter { it.market == candidate.market }.maxOfOrNull { it.tradingDate }
+                    ?.let(LocalDate::parse) ?: return@supplyAsync null
+                val history = runCatching {
+                    if (candidate.market == "US") yahooCandles.fetch(candidate.ticker.replace('.', '-'), "6mo").map {
+                        PickDailyObservation(LocalDate.parse(it.date, DateTimeFormatter.BASIC_ISO_DATE), it.close, it.volume)
+                    } else koreanCharts.fetchDailyBars(candidate.ticker, 60).map {
+                        PickDailyObservation(LocalDate.parse(it.date, DateTimeFormatter.BASIC_ISO_DATE), it.close.toDouble(), it.volume)
+                    }
+                }.getOrDefault(emptyList())
+                val assessment = RuleBasedPickEngine.assess(candidate, history, expected)
+                AiPick(candidate.market, candidate.ticker, candidate.name,
+                    assessment.reasons.firstOrNull() ?: "분석에 필요한 최근 거래 자료를 기다리고 있습니다.",
+                    null, 0, assessment.blockers.joinToString(" ").ifBlank { "검토 후보이며 매수 권유나 검증된 수익 전략이 아닙니다." },
+                    changeRate = null, flowTag = null, tradePlan = null, assessment = assessment)
+            }, executor).completeOnTimeout(null, 12, TimeUnit.SECONDS).exceptionally { null }
         }
-
-        val analysis = runCatching { geminiClient.summarizeAiPicks(candidates, headlines) }
-            .getOrElse { log.warn("AiPick Gemini call failed", it); null }
-            ?: return null
-
-        val generatedAt = Instant.now()
-        val picks = pickAssembler.assemble(analysis.picks, candidates, generatedAt)
-        if (picks.isEmpty()) {
-            log.warn(
-                "AiPick — 매칭된 픽 0. geminiPicks(ticker/name)={}, candidate ticker 샘플={}",
-                analysis.picks.map { "${it.ticker}/${it.name}" },
-                candidates.take(12).map { it.ticker },
-            )
-            return AiPicksResponse(generatedAt.toString(), "지금은 검토 근거가 충분한 후보가 없어", emptyList())
-        }
-        log.info("AiPicks generated. candidates={}, picks={}", candidates.size, picks.size)
-        return AiPicksResponse(generatedAt = generatedAt.toString(), summary = analysis.summary, picks = picks)
+        val picks = futures.mapNotNull { it.join() }
+            .sortedWith(compareBy<AiPick>({ it.assessment?.decision?.ordinal ?: 9 }, { it.market }, { it.ticker }))
+        return AiPicksResponse(now.toString(),
+            "시장별 최대 8개 후보의 완료 일봉에서 추세·거래대금·거래량·변동성을 점검합니다. 순서는 수익률 순위가 아니며, 실시간 주문 계획은 제공하지 않습니다.",
+            picks)
     }
 
     private fun buildCandidates(
@@ -81,7 +78,7 @@ class AiPickService(
             (krMovers + usMovers).forEach { mv ->
                 if (kotlin.math.abs(mv.changeRate) > 25.0) return@forEach
                 out.putIfAbsent(
-                    mv.ticker,
+                    "${mv.market}:${mv.ticker}",
                     PickCandidate(mv.market, mv.ticker, mv.name, mv.price.toDouble(), mv.changeRate, null),
                 )
             }
@@ -90,11 +87,11 @@ class AiPickService(
         flow?.let { f ->
             fun add(items: List<com.giwon.signaldesk.features.market.application.InvestorRankItem>, tag: String) {
                 items.forEach { it ->
-                    val existing = out[it.ticker]
+                    val existing = out["KR:${it.ticker}"]
                     if (existing == null) {
-                        out[it.ticker] = PickCandidate("KR", it.ticker, it.name, null, null, tag)
+                        out["KR:${it.ticker}"] = PickCandidate("KR", it.ticker, it.name, null, null, tag)
                     } else {
-                        out[it.ticker] = existing.copy(flowTag = listOfNotNull(existing.flowTag, tag).distinct().joinToString(" · "))
+                        out["KR:${it.ticker}"] = existing.copy(flowTag = listOfNotNull(existing.flowTag, tag).distinct().joinToString(" · "))
                     }
                 }
             }
@@ -105,23 +102,4 @@ class AiPickService(
         return out.values.toList()
     }
 
-    /** 수급만으로 들어온 한국 후보도 계획 가격을 만들 수 있도록 짧은 시세를 보강한다. */
-    private fun enrichMissingPrices(candidates: List<PickCandidate>): List<PickCandidate> {
-        val missingKrTickers = candidates
-            .filter { it.market == "KR" && it.price == null }
-            .map { it.ticker }
-        if (missingKrTickers.isEmpty()) return candidates
-
-        val quotes = runCatching { quoteClient.fetchKoreanQuotes(missingKrTickers) }
-            .getOrElse {
-                log.warn("AiPick quote enrichment failed. tickers={}", missingKrTickers, it)
-                emptyMap()
-            }
-        return candidates.map { candidate ->
-            val quote = quotes[candidate.ticker]
-            if (candidate.price == null && quote != null) {
-                candidate.copy(price = quote.exactPrice, changeRate = candidate.changeRate ?: quote.changeRate)
-            } else candidate
-        }
-    }
 }

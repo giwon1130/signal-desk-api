@@ -82,7 +82,8 @@ class DailySnapshotService(
 
     // ── 2) AI 픽 이력 ───────────────────────────────────────────────────────
     private fun snapshotAiPicks(date: LocalDate): Int {
-        val picks = aiPickService.getTodayPicks()?.picks.orEmpty()
+        val picks = aiPickService.getTodayPicks().picks
+            .filter { it.assessment?.decision == com.giwon.signaldesk.features.ai.application.PickDecision.REVIEW }
         if (picks.isEmpty()) return 0
         // 적중률 판정 기준가 — 스냅샷 시점 현재가(센트 보존)를 같이 박제.
         val krTickers = picks.filter { it.market == "KR" }.map { it.ticker }

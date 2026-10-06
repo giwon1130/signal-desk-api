@@ -3,10 +3,10 @@ package com.giwon.signaldesk.features.ai.application
 import java.time.Instant
 
 /**
- * Gemini 가 생성하는 단타 관점 종목 추천.
+ * 규칙 기반 검토 후보. Gemini는 후보의 선정·판정·수익률을 결정하지 않는다.
  *  - reason: 추천 근거 (2~3문장)
  *  - expectedReturnRate: 기대 수익률 % (없으면 null)
- *  - confidence: 0~100 확신도
+ *  - confidence: 구버전 호환 필드(현재 0), 확신도나 상승 확률로 사용 금지
  *  - riskNote: 리스크 한 줄
  */
 data class AiPick(
@@ -35,7 +35,12 @@ data class PickAssessment(
     val reasons: List<String>,
     val blockers: List<String>,
     val rulesVersion: String = "review-v1",
+    val analysisDate: String? = null,
+    val metrics: PickMetrics? = null,
 )
+
+data class PickMetrics(val movingAverage20: Double, val momentum20Percent: Double,
+    val dailyVolatilityPercent: Double, val averageTurnover20: Double, val completedVolumeRatio: Double)
 
 enum class TradePlanRiskLevel { LOW, MEDIUM, HIGH }
 

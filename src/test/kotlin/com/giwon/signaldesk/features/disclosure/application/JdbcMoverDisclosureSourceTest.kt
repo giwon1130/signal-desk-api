@@ -9,7 +9,7 @@ import java.time.Instant
 
 class JdbcMoverDisclosureSourceTest {
     private val repo = mock(DisclosureSeenRepository::class.java)
-    private val source = JdbcMoverDisclosureSource(mock(JdbcTemplate::class.java), repo)
+    private val source = JdbcMoverDisclosureSource(mock(JdbcTemplate::class.java), repo, mock(SecEdgarTickerRegistry::class.java))
     private val target = MoverReasonTarget("KR", "005930", "삼성전자", 5.0)
     private val now = Instant.parse("2026-10-06T02:00:00Z")
     private val filing = Disclosure("20261006000001", "", "삼성전자", "005930", "단일판매 공급계약", "20261006", "")

@@ -19,7 +19,11 @@ data class MarketEvent(
     val dateTimezone: String = "Asia/Seoul",
     val sourceUrl: String? = null,
     val verifiedAt: String? = null,
+    val earnings: EarningsFigures? = null,
 )
+
+/** Provider values; do not infer currency or GAAP comparability from the listing market. */
+data class EarningsFigures(val epsEstimate: Double?, val epsActual: Double?, val revenueEstimate: Double?, val revenueActual: Double?, val currency: String? = null)
 
 enum class EventCategory { FOMC, EARNINGS, POLICY, ECONOMIC_DATA, HOLIDAY, OTHER }
 

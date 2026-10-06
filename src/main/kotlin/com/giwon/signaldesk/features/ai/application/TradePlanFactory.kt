@@ -15,8 +15,9 @@ import java.util.UUID
 @Component
 class TradePlanFactory {
 
-    fun build(candidate: PickCandidate, generatedAt: Instant): TradePlan? {
-        if (PickAssessmentPolicy.assess(candidate).decision != PickDecision.REVIEW) return null
+    fun build(candidate: PickCandidate, generatedAt: Instant, assessment: PickAssessment = PickAssessmentPolicy.assess(candidate)): TradePlan? {
+        if (assessment.decision != PickDecision.REVIEW) return null
+        if (candidate.price == null || !candidate.price.isFinite() || candidate.price <= 0) return null
         val reference = requireNotNull(candidate.price)
         // 변동성 이력 없이 '저위험'이라고 단정하지 않는다. 모델이 생성한 수익률은 가격 산정에 사용하지 않는다.
         val risk = TradePlanRiskLevel.MEDIUM
@@ -46,11 +47,11 @@ class TradePlanFactory {
             maxPositionPercent = maxPositionPercent,
             expiresAt = generatedAt.plus(Duration.ofMinutes(30)),
             guardrails = listOf(
-                "손절 2.5%·목표 5%의 예시 시나리오이며 예상 수익률이 아니야",
+                "손절 2.5%·목표 5%의 예시 시나리오이며 예상 수익률이 아닙니다",
                 "진입 상한을 넘으면 추격 매수하지 않기",
                 "한 종목 비중은 ${maxPositionPercent}% 이내로 제한",
                 "주문 직전 시세 신선도·장 시간·호가 단위·거래 비용을 다시 확인",
-                "과거 변동성과 거래량은 이 검토 규칙에 반영되지 않았어",
+                if (assessment.metrics == null) "과거 변동성과 거래량은 이 검토 규칙에 반영되지 않았습니다" else "완료 일봉 분석이며 실시간 호가와 체결 가능성을 보장하지 않습니다",
                 "손절 기준을 불리한 방향으로 임의 변경하지 않기",
             ),
         )

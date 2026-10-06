@@ -89,4 +89,5 @@ data class IndexCandle(
     val low: Double,
     val close: Double,
     val volume: Long,
+    val provisional: Boolean = false,
 )

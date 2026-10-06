@@ -31,6 +31,7 @@ class HiddenSignalService(
     private val disclosureSeenRepository: DisclosureSeenRepository,
     private val investorRankClient: NaverInvestorRankClient,
     private val topMoversService: TopMoversService,
+    private val secRegistry: com.giwon.signaldesk.features.disclosure.application.SecEdgarTickerRegistry,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -122,16 +123,24 @@ class HiddenSignalService(
     private fun loadRecentUsDisclosures(tickers: Set<String>): List<UsDisclosureHit> {
         if (tickers.isEmpty()) return emptyList()
         val placeholders = tickers.joinToString(",") { "?" }
+        val ciks = tickers.mapNotNull(secRegistry::resolveCik).distinct().ifEmpty { listOf("") }
+        val cikPlaceholders = ciks.joinToString(",") { "?" }
+        val cutoff = Instant.now().minusSeconds(7 * 86400)
         return jdbc.query(
             """
-            select ticker, form_type from signal_desk_us_disclosure_seen
-            where ticker in ($placeholders)
+            select ticker, cik, form_type, filed_at from signal_desk_us_disclosure_seen
+            where (ticker in ($placeholders) or cik in ($cikPlaceholders))
               and seen_at > now() - interval '7 days'
-            order by seen_at desc
+            order by seen_at desc limit 500
             """.trimIndent(),
-            { rs, _ -> UsDisclosureHit(rs.getString("ticker"), rs.getString("form_type")) },
-            *tickers.toTypedArray(),
-        )
+            { rs, _ ->
+                val accepted = runCatching { Instant.parse(rs.getString("filed_at")) }.getOrNull()
+                if (accepted == null || accepted < cutoff) emptyList() else tickers.filter {
+                    it == rs.getString("ticker") || secRegistry.resolveCik(it) == rs.getString("cik")
+                }.map { UsDisclosureHit(it, rs.getString("form_type")) }
+            },
+            *(tickers.toList() + ciks).toTypedArray(),
+        ).flatten()
     }
 
     private data class UsDisclosureHit(val ticker: String, val formType: String)

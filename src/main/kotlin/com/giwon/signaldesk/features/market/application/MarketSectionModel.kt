@@ -24,6 +24,10 @@ data class ChartPeriodSnapshot(
     val label: String,
     val points: List<ChartPoint>,
     val stats: ChartStats,
+    val source: String? = null,
+    val priceBasis: String? = null,
+    val asOf: String? = null,
+    val note: String? = null,
 )
 
 data class ChartPoint(
@@ -34,6 +38,8 @@ data class ChartPoint(
     val low: Double,
     val close: Double,
     val volume: Long,
+    val date: String? = null,
+    val provisional: Boolean = false,
 )
 
 data class ChartStats(

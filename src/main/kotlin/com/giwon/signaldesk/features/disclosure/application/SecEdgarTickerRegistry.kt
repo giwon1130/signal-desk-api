@@ -25,11 +25,12 @@ class SecEdgarTickerRegistry(
     @Value("\${signal-desk.integrations.sec-edgar.enabled:true}") private val enabled: Boolean,
     @Value("\${signal-desk.integrations.sec-edgar.tickers-url:https://www.sec.gov/files/company_tickers.json}") private val tickersUrl: String,
     @Value("\${signal-desk.integrations.sec-edgar.user-agent:signal-desk-personal contact@signaldesk.app}") private val userAgent: String,
+    private val budget: SecRequestBudget,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()
 
-    @Volatile private var cikToTicker: Map<String, String> = emptyMap()
+    @Volatile private var cikToTicker: Map<String, Set<String>> = emptyMap()
     @Volatile private var loadedAt: Instant = Instant.EPOCH
 
     @PostConstruct
@@ -45,6 +46,7 @@ class SecEdgarTickerRegistry(
 
     private fun refresh() {
         if (!enabled) return
+        if (!budget.acquire()) return
         val req = HttpRequest.newBuilder()
             .uri(URI.create(tickersUrl))
             .header("User-Agent", userAgent)
@@ -52,16 +54,17 @@ class SecEdgarTickerRegistry(
             .timeout(Duration.ofSeconds(10))
             .GET().build()
         val resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString())
+        if (resp.statusCode() in setOf(403, 429)) budget.block()
         if (resp.statusCode() !in 200..299) {
             log.warn("SEC ticker registry non-2xx: {}", resp.statusCode())
             return
         }
         val tree = objectMapper.readTree(resp.body())
-        val map = mutableMapOf<String, String>()
+        val map = mutableMapOf<String, MutableSet<String>>()
         tree.fields().forEach { (_, v) ->
             val cik = v["cik_str"]?.asInt()?.toString()?.padStart(10, '0') ?: return@forEach
             val ticker = v["ticker"]?.asText()?.uppercase() ?: return@forEach
-            map[cik] = ticker
+            map.getOrPut(cik) { linkedSetOf() }.add(ticker)
         }
         cikToTicker = map
         loadedAt = Instant.now()
@@ -71,6 +74,11 @@ class SecEdgarTickerRegistry(
     /** CIK(0-pad 가능) → 우선주식 ticker. 매칭 없으면 null. */
     fun resolveTicker(cik: String): String? {
         val padded = cik.trim().padStart(10, '0')
-        return cikToTicker[padded]
+        return cikToTicker[padded]?.sorted()?.firstOrNull()
     }
+
+    fun resolveTickers(cik: String): Set<String> = cikToTicker[cik.padStart(10, '0')].orEmpty()
+    fun resolveCik(ticker: String): String? = cikToTicker.entries.firstOrNull { (_, tickers) ->
+        tickers.any { it.replace('.', '-') == ticker.uppercase().replace('.', '-') }
+    }?.key
 }

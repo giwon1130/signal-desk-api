@@ -12,7 +12,8 @@ import java.time.format.DateTimeFormatter
 /** Reuse collected filings, without claiming the scan was exhaustive or fetching per user. */
 @Component
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
-class JdbcMoverDisclosureSource(private val jdbc: JdbcTemplate, private val dart: DisclosureSeenRepository) : MoverDisclosureSource {
+class JdbcMoverDisclosureSource(private val jdbc: JdbcTemplate, private val dart: DisclosureSeenRepository,
+    private val registry: SecEdgarTickerRegistry) : MoverDisclosureSource {
     override fun find(target: MoverReasonTarget, now: Instant): MoveDisclosureResult = runCatching {
         val items = when (target.market) {
             "KR" -> dart.findRecentByStockCodes(listOf(target.ticker), 20)
@@ -24,7 +25,7 @@ class JdbcMoverDisclosureSource(private val jdbc: JdbcTemplate, private val dart
                 }
             "US" -> jdbc.query(
                 """select accession_no, cik, form_type, filed_at from signal_desk_us_disclosure_seen
-                   where ticker = ? and filed_at is not null order by filed_at desc limit 20""",
+                   where (ticker = ? or cik = ?) and filed_at is not null order by filed_at desc limit 20""",
                 { rs, _ ->
                     val accession = rs.getString("accession_no")
                     val cik = rs.getString("cik")
@@ -33,7 +34,7 @@ class JdbcMoverDisclosureSource(private val jdbc: JdbcTemplate, private val dart
                     else MoveEvidence("DISCLOSURE", "${rs.getString("form_type")} 기업 공시 접수", "SEC EDGAR",
                         "https://www.sec.gov/Archives/edgar/data/${cik.toLong()}/${accession.replace("-", "")}/$accession-index.htm",
                         publishedAt = time.toString(), publishedDate = time.atZone(ZoneId.of("America/New_York")).toLocalDate().toString())
-                }, target.ticker,
+                }, target.ticker, registry.resolveCik(target.ticker),
             ).filterNotNull()
             else -> return MoveDisclosureResult("DISABLED")
         }

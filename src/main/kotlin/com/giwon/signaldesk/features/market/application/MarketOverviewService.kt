@@ -35,6 +35,7 @@ class MarketOverviewService(
     private val preMarketDirectionService: PreMarketDirectionService,
     private val newsSentimentService: NewsSentimentService,
     private val marketEvidenceService: MarketEvidenceService,
+    private val yahooCandleClient: YahooCandleClient,
     // PlanService 는 jdbc 스토어 모드에서만 존재 → 없으면 모두 FREE 취급(야간방향성 잠금).
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private val planService: com.giwon.signaldesk.features.plan.PlanService? = null,
@@ -194,6 +195,8 @@ class MarketOverviewService(
             val usBigtechQuotesFuture = CompletableFuture.supplyAsync({ naverGlobalQuoteClient.fetchUsQuotes(US_BIGTECH_TICKERS) }, coreFetchPool)
             // 미국 거래량 상위 — leadingStocks 동적화용
             val usMostActivesFuture = CompletableFuture.supplyAsync({ yahooFinanceScreenerClient.fetchMostActives(8) }, coreFetchPool)
+            val nasdaqCandlesFuture = CompletableFuture.supplyAsync({ yahooCandleClient.fetch("^IXIC") }, coreFetchPool)
+            val spCandlesFuture = CompletableFuture.supplyAsync({ yahooCandleClient.fetch("^GSPC") }, coreFetchPool)
 
             // 외부 API 장애 시 fallback으로 처리 — join() 예외가 전체 엔드포인트를 crash시키지 않도록
             val koreaMarketBase = runCatching { koreaMarketFuture.joinTimeout() }
@@ -237,10 +240,12 @@ class MarketOverviewService(
                 vixSnapshot = vixSnapshot,
                 marketSessions = marketSessions,
                 koreaMarket = koreaMarket,
-                usMarket = buildUsMarket(vixSnapshot, usIndicesSnapshot, usBigtechQuotes, usMostActives),
+                usMarket = buildUsMarket(vixSnapshot, usIndicesSnapshot, usBigtechQuotes, usMostActives,
+                    runCatching { nasdaqCandlesFuture.joinTimeout() }.getOrDefault(emptyList()),
+                    runCatching { spCandlesFuture.joinTimeout() }.getOrDefault(emptyList())),
                 macroQuotes = macroQuotes,
                 briefing = DailyBriefing(
-                    headline = "오늘은 한국은 반도체, 미국은 빅테크가 중심이고, 과열 추격보다는 눌림 확인 후 진입이 맞습니다.",
+                    headline = "확인된 시장 움직임과 관심 종목의 변화를 살펴보세요.",
                     preMarket = listOf("한국/미국 관심 종목 각각 3개만 우선순위 설정", "KOSPI/KOSDAQ, NASDAQ/S&P 방향과 VIX 같이 확인", "외국인/기관 수급이 붙는 종목만 먼저 본다"),
                     afterMarket = listOf("오늘 AI 추천 종목이 실제로 얼마나 움직였는지 복기", "보유 종목 수익률과 수급 방향이 일치했는지 체크", "내일은 한국/미국 각 2종목만 남기고 나머지는 관심 해제")
                 ),
@@ -249,7 +254,7 @@ class MarketOverviewService(
                     SourceNote("한국 종목 현재가", "Naver Finance Realtime", "https://finance.naver.com"),
                     SourceNote("미국 공포지수", "CBOE VIX", "https://www.cboe.com/tradable_products/vix/"),
                     SourceNote("한국/미국 주요 뉴스", "Google News RSS", "https://news.google.com"),
-                    SourceNote("미국 지수", "FRED", "https://fred.stlouisfed.org"),
+                    SourceNote("미국 지수·차트", "Yahoo Finance (지수 수치 장애 시 FRED)", "https://finance.yahoo.com"),
                     SourceNote("미국 종목 현재가", "Naver 해외주식", "https://m.stock.naver.com"),
                     SourceNote("실험 지표", "PizzINT", "https://www.pizzint.watch/")
                 )
@@ -299,13 +304,15 @@ class MarketOverviewService(
         usIndicesSnapshot: UsIndicesSnapshot?,
         usBigtechQuotes: Map<String, StockQuote>,
         usMostActives: List<YahooQuote>,
+        nasdaqCandles: List<IndexCandle>,
+        spCandles: List<IndexCandle>,
     ): MarketSection {
         val indices = buildList {
             usIndicesSnapshot?.nasdaq?.let {
-                add(IndexMetric("NASDAQ", it.currentValue, it.changeRate, buildIndexChartPeriods(it.currentValue, it.changeRate, it.chart)))
+                add(IndexMetric("NASDAQ", it.currentValue, it.changeRate, usChartPeriods(nasdaqCandles)))
             }
             usIndicesSnapshot?.sp500?.let {
-                add(IndexMetric("S&P 500", it.currentValue, it.changeRate, buildIndexChartPeriods(it.currentValue, it.changeRate, it.chart)))
+                add(IndexMetric("S&P 500", it.currentValue, it.changeRate, usChartPeriods(spCandles)))
             }
         }
         // 빅테크 sentiment 산출용 (정의 안정성)

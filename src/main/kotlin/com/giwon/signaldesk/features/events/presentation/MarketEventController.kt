@@ -10,10 +10,25 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/api/v1/events")
-class MarketEventController(private val service: MarketEventService) {
+class MarketEventController(private val service: MarketEventService,
+    @org.springframework.beans.factory.annotation.Autowired(required = false) private val authContext: com.giwon.signaldesk.features.auth.application.AuthContext? = null,
+    @org.springframework.beans.factory.annotation.Autowired(required = false) private val tickers: com.giwon.signaldesk.features.workspace.application.UserWatchTickerRepository? = null,
+) {
 
     @GetMapping("/upcoming")
     fun upcoming(
         @RequestParam(defaultValue = "14") days: Int,
-    ): ApiResponse<List<MarketEvent>> = ApiResponse(true, service.upcoming(days))
+        @org.springframework.web.bind.annotation.RequestHeader("Authorization", required = false) auth: String? = null,
+    ): MarketEventsResponse {
+        val userId = authContext?.optionalUserId(auth)
+        val watched = if (userId == null) emptySet() else tickers?.tickersForUser(userId, "US").orEmpty()
+        val snapshot = service.upcomingSnapshot(days, watched)
+        return MarketEventsResponse(true, snapshot.events, snapshot.earningsStatus)
+    }
+
+    @GetMapping("/earnings-status")
+    fun earningsStatus() = ApiResponse(true, service.earningsStatus())
 }
+
+data class MarketEventsResponse(val success: Boolean, val data: List<MarketEvent>,
+    val earningsStatus: com.giwon.signaldesk.features.events.application.EarningsCalendarResult)
