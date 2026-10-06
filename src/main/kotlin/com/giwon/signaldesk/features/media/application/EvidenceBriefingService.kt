@@ -1,48 +1,29 @@
 package com.giwon.signaldesk.features.media.application
 
-import com.giwon.signaldesk.features.market.application.*
-import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.ObjectProvider
-import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.cache.annotation.Cacheable
+import com.giwon.signaldesk.features.market.application.MarketEvidenceService
 import org.springframework.stereotype.Service
 import java.time.Instant
-import java.util.concurrent.CompletableFuture
+import java.time.Duration
 
-/** All first-party market commentary uses the same inputs/rules; no prompt independently judges direction. */
+/** Narration belongs to the exact assessed snapshot, not an unrelated long-lived briefing TTL. */
 @Service
 class EvidenceBriefingService(
-    private val yahoo: YahooQuoteClient,
-    private val fred: FredIndexClient,
-    private val news: GoogleNewsRssClient,
-    private val analyzer: MarketEvidenceAnalyzer,
+    private val evidence: MarketEvidenceService,
     private val narrator: EvidenceNarrator,
-    private val archive: ObjectProvider<MarketEvidenceArchive>,
-    @Autowired(required = false) private val nightFeed: KrxNightFuturesFeed? = null,
 ) {
-    private val log = LoggerFactory.getLogger(javaClass)
-
-    @Cacheable(cacheNames = ["market-insight"], key = "'evidence-brief-v2'", sync = true)
-    fun current(): MarketInsightAnalysis {
-        // Do not run parents on the bounded httpFetchExecutor: Yahoo/RSS submit their children there.
-        val quotes = CompletableFuture.supplyAsync { runCatching { yahoo.fetchIndices(YahooQuoteClient.BRIEFING_INDICES) }.getOrDefault(emptyList()) }
-        val macro = CompletableFuture.supplyAsync { runCatching { fred.fetchMacro() }.getOrNull() }
-        val headlines = CompletableFuture.supplyAsync { runCatching { news.fetchMarketNews() }.getOrNull() }
-        val collectedQuotes = quotes.join()
-        val collectedMacro = macro.join()
-        val collectedNews = headlines.join()
-        val asOf = Instant.now()
-        // Archive exactly the bounded input the analyzer sees, so replay cannot lose selected headlines.
-        val boundedNews = collectedNews?.let { analyzer.recentNews(it, asOf) }
-            ?.map { it.copy(title = it.title.take(300), impact = "") }
-        val night = runCatching { nightFeed?.snapshot() }.onFailure {
-            log.warn("Night futures feed unavailable ({})", it.javaClass.simpleName)
-        }.getOrNull()
-        val input = MarketEvidenceInput(asOf, collectedQuotes, collectedMacro, boundedNews, night)
-        val report = analyzer.analyze(input)
-        runCatching { archive.ifAvailable?.save(input, report) }
-            .onFailure { log.warn("Market evidence archive failed; briefing remains available ({})", it.javaClass.simpleName) }
-        log.info("Market evidence rules={} regime={} coverage={} risk={}", report.rulesVersion, report.regime, report.coveragePercent, report.riskLevel)
-        return narrator.narrate(report)
+    private var cached: MarketInsightAnalysis? = null
+    private var lastRewriteAt = Instant.EPOCH
+    @Synchronized fun current(): MarketInsightAnalysis {
+        val report = evidence.current()
+        cached?.takeIf { it.assessment == report }?.let { return it }
+        val facts = narrator.narrativeFacts(report)
+        val previous = cached
+        val result = when {
+            previous?.assessment?.let { narrator.narrativeFacts(it) == facts } == true -> narrator.render(report, previous.summary)
+            Duration.between(lastRewriteAt, Instant.now()) < Duration.ofMinutes(15) ->
+                narrator.render(report, narrator.fallbackSummary(facts))
+            else -> narrator.narrate(report).also { lastRewriteAt = Instant.now() }
+        }
+        return result.also { cached = it }
     }
 }

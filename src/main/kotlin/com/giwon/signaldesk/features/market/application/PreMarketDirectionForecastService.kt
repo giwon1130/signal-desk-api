@@ -58,11 +58,13 @@ class PreMarketDirectionForecastService(
         return PreMarketForecastStats(
             evaluatedCount = rows.size,
             correctCount = correctCount,
-            accuracyPct = rows.takeIf { it.isNotEmpty() }?.let { correctCount * 100 / it.size },
+            accuracyPct = rows.takeIf { it.size >= MIN_DISPLAY_SAMPLES }?.let { correctCount * 100 / it.size },
             windowSize = windowSize.coerceIn(1, 90),
             lastPredictionDate = last?.predictionDate?.toString(),
             lastCorrect = last?.correct,
             lastActualGapRate = last?.actualGapRate,
+            status = if (rows.size >= MIN_DISPLAY_SAMPLES) "EXPLORATORY_ONLY" else "INSUFFICIENT_HISTORY",
+            minimumDisplaySamples = MIN_DISPLAY_SAMPLES,
         )
     }
 
@@ -77,8 +79,9 @@ class PreMarketDirectionForecastService(
             return CaptureResult(false, null, null)
         if (direction.score?.isFinite() == false) return CaptureResult(false, null, null)
         val inputs = objectMapper.writeValueAsString(
-            (listOfNotNull(direction.kospiFutures) + direction.overseas)
-                .map { mapOf("label" to it.label, "changeRate" to it.changeRate, "value" to it.value) },
+            (listOfNotNull(direction.nightFutures) + direction.overseas)
+                .map { mapOf("label" to it.label, "changeRate" to it.changeRate, "value" to it.value,
+                    "observedAt" to it.observedAt, "source" to it.source, "isProxy" to it.isProxy) },
         )
         val saved = jdbc.update(
             """
@@ -143,7 +146,8 @@ class PreMarketDirectionForecastService(
     }
 
     companion object {
-        private const val DEFAULT_STATS_WINDOW = 20
+        private const val DEFAULT_STATS_WINDOW = 60
+        private const val MIN_DISPLAY_SAMPLES = 30
         /** ±0.05% 이내 시초 갭은 체결 오차 수준으로 보고 보합으로 분류한다. */
         private const val GAP_THRESHOLD = 0.05
 

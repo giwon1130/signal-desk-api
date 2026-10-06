@@ -24,8 +24,8 @@ class CompositeRiskAlertService(
 
     fun scanAndNotify() {
         val risk = marketOverviewService.getSummary().compositeRisk
-        if (risk.score < RISK_THRESHOLD) {
-            log.info("CompositeRisk alert skipped — score {} < threshold {}", risk.score, RISK_THRESHOLD)
+        if (risk.riskLevel != "HIGH") {
+            log.info("Market risk alert skipped — risk={}", risk.riskLevel)
             return
         }
 
@@ -39,7 +39,7 @@ class CompositeRiskAlertService(
             return
         }
 
-        val title = "⚠️ 시장 위험도 ${risk.score}/10 — ${risk.level}"
+        val title = "시장 위험 신호가 커졌습니다"
         val body = risk.headline.take(180)
         val messages = targets.flatMap { (_, devices) ->
             devices.map { device ->
@@ -49,7 +49,7 @@ class CompositeRiskAlertService(
                     body = body,
                     data = mapOf(
                         "type" to "COMPOSITE_RISK",
-                        "score" to risk.score,
+                        "riskLevel" to risk.riskLevel,
                         "level" to risk.level,
                     ),
                 )

@@ -58,9 +58,11 @@ class EvidenceBriefingIntegrationTest {
         `when`(fred.fetchMacro()).thenThrow(IllegalStateException("offline"))
         val provider = DefaultListableBeanFactory().getBeanProvider(MarketEvidenceArchive::class.java)
         val narrator = EvidenceNarrator(GeminiClient(ObjectMapper(), "", "", "http://unused", "test"), mapper)
-        val briefing = EvidenceBriefingService(yahoo, fred, news, MarketEvidenceAnalyzer(MarketSessionService()), narrator, provider)
+        val briefing = EvidenceBriefingService(MarketEvidenceService(yahoo, fred, news, MarketEvidenceAnalyzer(MarketSessionService()), provider), narrator)
         val result = briefing.current()
         assertThat(result.assessment?.regime).isEqualTo("INSUFFICIENT_DATA")
+        assertThat(briefing.current().assessment).isEqualTo(result.assessment)
+        verify(yahoo, times(1)).fetchIndices(YahooQuoteClient.BRIEFING_INDICES)
         val repository = object : MediaSummaryRepository {
             var saved: MediaSummary? = null
             override fun findRecent(limit: Int) = emptyList<MediaSummary>()
@@ -142,9 +144,9 @@ class EvidenceBriefingIntegrationTest {
     @Test fun `unconfigured or failing night feed cannot prevent the deterministic briefing`() {
         val provider = DefaultListableBeanFactory().getBeanProvider(MarketEvidenceArchive::class.java)
         val narrator = EvidenceNarrator(GeminiClient(ObjectMapper(), "", "", "http://unused", "test"), mapper)
-        val service = EvidenceBriefingService(mock(YahooQuoteClient::class.java), mock(FredIndexClient::class.java),
-            mock(GoogleNewsRssClient::class.java), MarketEvidenceAnalyzer(MarketSessionService()), narrator, provider,
-            KrxNightFuturesFeed { throw IllegalStateException("test feed failure") })
+        val service = EvidenceBriefingService(MarketEvidenceService(mock(YahooQuoteClient::class.java), mock(FredIndexClient::class.java),
+            mock(GoogleNewsRssClient::class.java), MarketEvidenceAnalyzer(MarketSessionService()), provider,
+            KrxNightFuturesFeed { throw IllegalStateException("test feed failure") }), narrator)
         val result = service.current()
         assertThat(result.assessment?.evidence?.single { it.id == "KR_NIGHT" }?.status).isEqualTo("MISSING")
         assertThat(result.summary).doesNotContain("미연결", "유효 입력", "관측 시각")

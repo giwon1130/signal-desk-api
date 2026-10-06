@@ -151,7 +151,7 @@ class DeepReportService(
                 appendLine("## 시장 환경")
                 appendLine("- 장 상태: ${s.marketStatus}")
                 val risk = if (market == "KR") s.compositeRiskKr else s.compositeRiskUs
-                appendLine("- 합성위험도(${market}): ${risk.score}/10 (${risk.level})")
+                appendLine("- 공통 외부 위험: ${risk.level}. ${risk.headline}")
             }
 
             appendLine()

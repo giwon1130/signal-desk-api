@@ -120,7 +120,9 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
             val available = members.filterKeys { usable(it) != null }
             val coverage = available.values.sum()
             // Fixed member weights; a lone ADR cannot take over the whole semiconductor bucket.
-            val score = available.entries.sumOf { (key, w) -> transform(usable(key)!!.change!! / scale).coerceIn(-1.0, 1.0) * w }
+            val cashConflict = id in setOf("kr_cash", "us_equity") &&
+                available.keys.any { usable(it)!!.change!! > 0 } && available.keys.any { usable(it)!!.change!! < 0 }
+            val score = if (cashConflict) 0.0 else available.entries.sumOf { (key, w) -> transform(usable(key)!!.change!! / scale).coerceIn(-1.0, 1.0) * w }
             val interpretation = when {
                 coverage < 0.5 -> "자료가 부족해 이 영역의 방향을 판단하지 않았습니다."
                 score >= 0.2 -> "주식시장에 우호적인 흐름을 보이고 있습니다."
@@ -245,5 +247,5 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
     private fun fmt(value: Double) = String.format(Locale.US, "%.2f", value)
     private fun signed(value: Double) = String.format(Locale.US, "%+.2f", value)
 
-    companion object { const val RULES_VERSION = "market-evidence-v2" }
+    companion object { const val RULES_VERSION = "market-evidence-v3" }
 }

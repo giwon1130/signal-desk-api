@@ -26,11 +26,8 @@ class RiskWeightPreferenceController(
 ) {
     @GetMapping
     fun get(@RequestHeader("Authorization") auth: String): RiskWeightInfo {
-        val userId = authContext.requireUserId(auth)
-        val pro = planService.isPro(userId)
-        // FREE 는 저장값과 무관하게 BALANCED 로 노출(적용도 BALANCED).
-        val selection = if (pro) service.get(userId) else RiskWeightSelection.BALANCED
-        return RiskWeightInfo.of(selection, customizable = pro)
+        authContext.requireUserId(auth)
+        return RiskWeightInfo.of(RiskWeightSelection.BALANCED, customizable = false)
     }
 
     @PutMapping
@@ -38,12 +35,10 @@ class RiskWeightPreferenceController(
         @RequestHeader("Authorization") auth: String,
         @RequestBody body: RiskWeightUpdateRequest,
     ): RiskWeightInfo {
-        val userId = authContext.requireUserId(auth)
-        require(planService.isPro(userId)) {
-            "시장 분위기 가중치 커스터마이징은 PRO 플랜 전용이에요. PRO 로 업그레이드하면 조정할 수 있어요. 💎"
-        }
-        val saved = service.update(userId, body.preset, body.customWeights)
-        return RiskWeightInfo.of(saved, customizable = true)
+        authContext.requireUserId(auth)
+        throw org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.GONE, "시장 분석은 공통 검증 기준을 사용하며 개인 가중치 설정은 더 이상 적용하지 않습니다."
+        )
     }
 }
 

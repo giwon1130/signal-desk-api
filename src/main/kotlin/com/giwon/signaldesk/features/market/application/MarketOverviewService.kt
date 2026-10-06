@@ -34,6 +34,7 @@ class MarketOverviewService(
     private val enrichmentService: WorkspaceEnrichmentService,
     private val preMarketDirectionService: PreMarketDirectionService,
     private val newsSentimentService: NewsSentimentService,
+    private val marketEvidenceService: MarketEvidenceService,
     // PlanService 는 jdbc 스토어 모드에서만 존재 → 없으면 모두 FREE 취급(야간방향성 잠금).
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private val planService: com.giwon.signaldesk.features.plan.PlanService? = null,
@@ -80,7 +81,10 @@ class MarketOverviewService(
     }
 
     fun getSummary(userId: UUID? = null): MarketSummaryResponse {
+        val evidence = marketEvidenceService.current()
         val core = getCoreSnapshot()
+        val conditions = listOf("KR", "US").map { MarketConditionBuilder(marketSessionService).build(evidence, it) }
+        val validMetrics = MarketConditionBuilder(marketSessionService).metrics(evidence)
         val quotes = enrichmentService.loadKoreanQuotes(userId)
         val snapshot = enrichmentService.buildWorkspaceSnapshot(quotes, userId)
         val annotatedAi = personalContextAnnotator.annotateRecommendations(
@@ -105,16 +109,23 @@ class MarketOverviewService(
             watchAlerts = watchAlerts,
             portfolio = snapshot.portfolio,
             aiRecommendations = aiRecommendations,
-            marketSummary = core.marketSummary,
-            alternativeSignals = alternativeSignals,
+            marketSummary = validMetrics,
+            alternativeSignals = emptyList(),
             tradingDay = tradingDay,
+        )
+        val alignedBriefing = briefing.copy(
+            headline = evidence.headline,
+            narrative = conditions.joinToString(" ") { it.headline + " " + it.summary },
+            preMarket = listOf("개장 전 자료는 한국 거래일 06:30~09:00에 확인할 수 있습니다. 해외 참고지표와 실제 야간선물을 구분해 주세요."),
+            afterMarket = listOf("최근 거래일의 지수 움직임입니다. 다음 거래일 방향으로 해석하지 마세요."),
+            context = briefing.context?.copy(marketMood = conditions.joinToString(" · ") { it.market + " " + it.directionLabel }, keyEvent = null),
         )
         // 야간 방향성 — PRO 전용. 비로그인/FREE 는 잠금(앱에서 블러+업그레이드 유도).
         val pro = userId != null && (planService?.isPro(userId) ?: false)
         val preMarketDirection = if (!preMarketDirectionService.isPredictionWindow()) {
             PreMarketDirection.EMPTY
         } else if (pro) {
-            runCatching { preMarketDirectionService.current() }.getOrDefault(PreMarketDirection.EMPTY)
+            runCatching { preMarketDirectionService.fromReport(evidence) }.getOrDefault(PreMarketDirection.EMPTY)
         } else {
             PreMarketDirection.LOCKED
         }
@@ -122,46 +133,16 @@ class MarketOverviewService(
             runCatching { preMarketDirectionForecastService?.stats() }.getOrNull()
         } else null
         val news = getCachedNews().news
-        // 위험도 가중 — PRO 만 적용(프리셋/커스텀), FREE/비로그인은 BALANCED 고정.
-        val riskSelection = if (pro) riskWeightPreferenceService?.get(userId!!) ?: RiskWeightSelection.BALANCED
-        else RiskWeightSelection.BALANCED
-        val compositeRisk = compositeRiskService.build(
-            alternativeSignals = alternativeSignals,
-            vix = core.vixSnapshot,
-            news = news,
-            watchlist = snapshot.watchlist,
-            portfolio = snapshot.portfolio,
-            koreaMarket = core.koreaMarket,
-            usdKrw = core.macroQuotes?.usdKrw,
-            us10y = core.macroQuotes?.us10y,
-            weights = riskSelection,
-        )
-        val compositeRiskKr = compositeRiskService.buildKr(
-            koreaMarket = core.koreaMarket,
-            news = news,
-            watchlist = snapshot.watchlist,
-            portfolio = snapshot.portfolio,
-            usdKrw = core.macroQuotes?.usdKrw,
-            us10y = core.macroQuotes?.us10y,
-            weights = riskSelection,
-        )
-        val compositeRiskUs = compositeRiskService.buildUs(
-            vix = core.vixSnapshot,
-            alternativeSignals = alternativeSignals,
-            news = news,
-            watchlist = snapshot.watchlist,
-            portfolio = snapshot.portfolio,
-            us10y = core.macroQuotes?.us10y,
-            weights = riskSelection,
-        )
+        // One public assessment; personal weights and experimental signals cannot change market facts.
+        val compositeRisk = compositeRiskService.fromReport(evidence)
         return MarketSummaryResponse(
-            generatedAt = core.generatedAt, marketStatus = core.marketStatus, summary = core.summary,
-            marketSummary = core.marketSummary, alternativeSignals = alternativeSignals,
+            generatedAt = evidence.asOf, marketStatus = core.marketStatus, summary = evidence.headline,
+            marketSummary = validMetrics, alternativeSignals = alternativeSignals,
             compositeRisk = compositeRisk,
-            compositeRiskKr = compositeRiskKr,
-            compositeRiskUs = compositeRiskUs,
+            compositeRiskKr = compositeRisk,
+            compositeRiskUs = compositeRisk,
             watchAlerts = watchAlerts, marketSessions = core.marketSessions,
-            briefing = briefing, preMarketDirection = preMarketDirection,
+            briefing = alignedBriefing, preMarketDirection = preMarketDirection,
             preMarketForecastStats = preMarketForecastStats, sourceNotes = core.sourceNotes,
             workspaceCounts = enrichmentService.buildWorkspaceCounts(userId),
             newsSentiments = listOf(
@@ -169,7 +150,8 @@ class MarketOverviewService(
                 newsSentimentService.build("US", news),
             ),
             tradingDayStatus = tradingDay,
-            riskWeight = RiskWeightInfo.of(riskSelection, customizable = pro),
+            riskWeight = RiskWeightInfo.of(RiskWeightSelection.BALANCED, customizable = false),
+            marketConditions = conditions,
         )
     }
 
@@ -244,12 +226,12 @@ class MarketOverviewService(
                 generatedAt = generatedAt.toString(),
                 marketStatus = marketSessionService.buildMarketStatus(marketSessions),
                 summary = "장 시작 전 점검 → 단타 픽 확인 → 보유 모니터까지, 오늘 하루를 한 화면에서 따라가는 개인 투자 대시보드야.",
-                marketSummary = listOf(
-                    SummaryMetric("Fear Meter", MarketHeatCalculator.fearMeter(vixSnapshot), MarketHeatCalculator.fearMeterState(vixSnapshot), MarketHeatCalculator.fearMeterNote(vixSnapshot)),
-                    SummaryMetric("KR Heat", MarketHeatCalculator.krHeat(koreaMarket), MarketHeatCalculator.krHeatState(koreaMarket), "코스피/코스닥 등락률 기준 당일 강도(50=중립)"),
-                    SummaryMetric("KR Overheat", MarketHeatCalculator.krOverheat(koreaMarket), MarketHeatCalculator.krOverheatState(koreaMarket), MarketHeatCalculator.krOverheatNote(koreaMarket)),
-                    run { val h = MarketHeatCalculator.usHeat(vixSnapshot, usIndicesSnapshot); SummaryMetric("US Heat", h, MarketHeatCalculator.usHeatState(h), "미국 지수와 VIX를 기준으로 계산") },
-                    SummaryMetric("Flow Bias", MarketHeatCalculator.flowBias(koreaMarket), MarketHeatCalculator.flowBiasState(koreaMarket), MarketHeatCalculator.flowBiasDetail(koreaMarket))
+                marketSummary = listOfNotNull(
+                    MarketHeatCalculator.fearMeter(vixSnapshot)?.let { SummaryMetric("Fear Meter", it, MarketHeatCalculator.fearMeterState(vixSnapshot), MarketHeatCalculator.fearMeterNote(vixSnapshot), "SUPPORTIVE") },
+                    MarketHeatCalculator.krHeat(koreaMarket)?.let { SummaryMetric("KR Heat", it, MarketHeatCalculator.krHeatState(koreaMarket), "코스피/코스닥 등락률 기준 당일 강도(50=중립)", "SUPPORTIVE") },
+                    MarketHeatCalculator.krOverheat(koreaMarket)?.let { SummaryMetric("KR Overheat", it, MarketHeatCalculator.krOverheatState(koreaMarket), MarketHeatCalculator.krOverheatNote(koreaMarket)) },
+                    MarketHeatCalculator.usHeat(vixSnapshot, usIndicesSnapshot)?.let { SummaryMetric("US Heat", it, MarketHeatCalculator.usHeatState(it), "미국 지수와 VIX를 기준으로 계산", "SUPPORTIVE") },
+                    MarketHeatCalculator.flowBias(koreaMarket)?.let { SummaryMetric("Flow Bias", it, MarketHeatCalculator.flowBiasState(koreaMarket), MarketHeatCalculator.flowBiasDetail(koreaMarket), "SUPPORTIVE") }
                 ),
                 alternativeSignals = alternativeSignals,
                 vixSnapshot = vixSnapshot,
@@ -347,7 +329,7 @@ class MarketOverviewService(
             )
         }
         val sentiment = buildList {
-            add(SentimentMetric("VIX 기반 공포지수", MarketHeatCalculator.vixState(vixSnapshot), MarketHeatCalculator.vixScore(vixSnapshot), MarketHeatCalculator.vixNote(vixSnapshot)))
+            MarketHeatCalculator.vixScore(vixSnapshot)?.let { add(SentimentMetric("VIX 기반 공포지수", MarketHeatCalculator.vixState(vixSnapshot), it, MarketHeatCalculator.vixNote(vixSnapshot))) }
             bigtechSentiment(bigtechSnapshots)?.let { add(it) }
         }
         return MarketSection(

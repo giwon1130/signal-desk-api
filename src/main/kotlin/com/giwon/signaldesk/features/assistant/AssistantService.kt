@@ -209,7 +209,7 @@ class AssistantService(
             summary?.let { s ->
                 appendLine("## 시장 상태")
                 appendLine("- 장 상태: ${s.marketStatus}")
-                appendLine("- 합성위험도: KR ${s.compositeRiskKr.score}/10(${s.compositeRiskKr.level}) · US ${s.compositeRiskUs.score}/10(${s.compositeRiskUs.level})")
+                appendLine("- 공통 외부 위험: ${s.compositeRisk.level}. ${s.compositeRisk.headline}")
                 s.marketSummary.forEach { m -> appendLine("- ${m.label}: ${m.score.toInt()} (${m.state})") }
             }
 

@@ -73,6 +73,7 @@ data class SummaryMetric(
     val score: Double,
     val state: String,
     val note: String,
+    val polarity: String = "RISK",
 )
 
 data class AlternativeSignal(
@@ -90,12 +91,11 @@ data class AlternativeSignal(
 )
 
 /**
- * 합성 위험도 — PizzINT 종합 / VIX / 뉴스 키워드 빈도를 가중 합산한 1~10 단일 지표.
- * 개별 실험 지표를 따로 노출하는 대신 "오늘 시장이 얼마나 불안정한가"를 한 숫자로 본다.
+ * Deprecated numeric envelope retained for response compatibility. Use marketConditions and riskLevel.
  */
 data class CompositeRiskSignal(
-    val score: Int,            // 1~10 위험도
-    val score100: Int,         // 0~100 내부 정규화 점수 (게이지/디버그용)
+    val score: Int?,           // Deprecated: uncalibrated numeric risk is no longer published.
+    val score100: Int?,
     val level: String,         // 안정 / 관망 / 주의 / 경계 / 고위험
     val headline: String,      // 한 줄 요약
     val components: List<RiskComponent>,
@@ -103,6 +103,8 @@ data class CompositeRiskSignal(
     val methodology: String,   // 모달: 점수 계산 방식
     val asOf: String,          // 생성 시각 (ISO LocalDateTime)
     val personalImpact: String? = null,  // 내 보유/관심 종목 기준 한 줄 해석
+    val riskLevel: String? = null,
+    val rulesVersion: String? = null,
 )
 
 data class RiskComponent(
