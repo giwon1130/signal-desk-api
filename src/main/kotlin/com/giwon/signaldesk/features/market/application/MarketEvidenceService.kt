@@ -23,6 +23,11 @@ class MarketEvidenceService(
     private val log = LoggerFactory.getLogger(javaClass)
     @Volatile private var cached: MarketEvidenceReport? = null
 
+    /** Enrichment must not fan out another market scan from every stock notification. */
+    fun recentSnapshot(): MarketEvidenceReport? = cached?.takeIf {
+        Duration.between(Instant.parse(it.asOf), Instant.now()).seconds in 0..120
+    }
+
     @Synchronized fun current(): MarketEvidenceReport {
         cached?.takeIf { Duration.between(Instant.parse(it.asOf), Instant.now()).seconds in 0..59 }?.let { return it }
         // Parents must not occupy the bounded executor used by the clients' child requests.

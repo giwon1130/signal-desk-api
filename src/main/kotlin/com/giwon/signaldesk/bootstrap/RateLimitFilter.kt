@@ -75,6 +75,8 @@ class RateLimitFilter : OncePerRequestFilter() {
     private fun pickRule(path: String): Rule? = when {
         // OAuth / 로그인 / 회원가입 — 브루트포스 보호
         path.startsWith("/auth/") -> AUTH_RULE
+        // 종목별 뉴스 탐색은 일반 시세보다 비용이 크므로 별도 제한.
+        path == "/api/v1/market/stocks/context" -> STOCK_CONTEXT_RULE
         // 시장 데이터 — 정상 사용자 60 req/min 충분
         path.startsWith("/api/v1/market/") -> MARKET_RULE
         // 백테스트 — 비인증 공개 + 캐시 미스마다 야후 장기 일봉 fetch. 티커 바꿔가며 때리는 봇 방어.
@@ -93,6 +95,7 @@ class RateLimitFilter : OncePerRequestFilter() {
     companion object {
         private val AUTH_RULE = Rule(name = "auth", capacity = 5, refillPerMinute = 5)
         private val MARKET_RULE = Rule(name = "market", capacity = 60, refillPerMinute = 60)
+        private val STOCK_CONTEXT_RULE = Rule(name = "stock-context", capacity = 10, refillPerMinute = 10)
         private val BACKTEST_RULE = Rule(name = "backtest", capacity = 20, refillPerMinute = 20)
         private val ASSISTANT_RULE = Rule(name = "assistant", capacity = 8, refillPerMinute = 8)
     }

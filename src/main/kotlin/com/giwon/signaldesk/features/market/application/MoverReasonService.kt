@@ -3,11 +3,14 @@ package com.giwon.signaldesk.features.market.application
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
+import org.springframework.beans.factory.annotation.Autowired
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
 /** 가격 변동과 관련 보도를 구분한다. 뉴스 유무와 관계없이 원인을 추측해 생성하지 않는다. */
@@ -17,18 +20,26 @@ class MoverReasonService(
     private val newsRssClient: GoogleNewsRssClient,
     private val marketSessionService: MarketSessionService,
     private val clock: Clock = Clock.systemUTC(),
+    @Autowired(required = false) private val disclosureSource: MoverDisclosureSource? = null,
+    @Autowired(required = false) private val naverNews: NaverNewsSearchClient? = null,
+    @Autowired(required = false) private val marketEvidence: MarketEvidenceService? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     @Volatile private var cache: Cached? = null
     private val refreshing = AtomicBoolean(false)
     private data class Cached(val at: Instant, val list: List<MoverReason>)
+    private data class Collected(val at: Instant, val news: List<MarketNews>, val checks: List<MoveSourceCheck>, val disclosures: MoveDisclosureResult)
+    private val perStock = ConcurrentHashMap<String, Collected>()
 
     fun reasons(): List<MoverReason> {
         val cached = cache
         if (cached != null && Duration.between(cached.at, clock.instant()) < Duration.ofMinutes(TTL_MINUTES)) return cached.list
-        if (cached == null) return runCatching { compute() }.getOrElse {
-            log.warn("mover context compute failed", it)
-            emptyList()
+        if (cached == null) {
+            if (!refreshing.compareAndSet(false, true)) return emptyList()
+            try { return runCatching { compute() }.getOrElse {
+                log.warn("mover context compute failed", it)
+                emptyList()
+            } } finally { refreshing.set(false) }
         }
         if (refreshing.compareAndSet(false, true)) CompletableFuture.runAsync {
             try {
@@ -50,11 +61,11 @@ class MoverReasonService(
     private fun compute(): List<MoverReason> {
         val picks = selectPicks(topMoversService.fetchTopMovers(5))
         val targets = picks.map { MoverReasonTarget(it.market, it.ticker, it.name, it.changeRate) }
-        val pool = runCatching { newsRssClient.fetchMarketNews().orEmpty() }.getOrDefault(emptyList())
-        val contexts = contextsFor(targets, pool)
+        val contexts = contextsForTickers(targets)
         val result = picks.map { p ->
             MoverReason(p.market, p.ticker, p.name, if (p.changeRate >= 0) "UP" else "DOWN", p.changeRate,
-                contexts[p.market to p.ticker] ?: MoverNewsEvidence.UNKNOWN_CAUSE)
+                contexts[p.market to p.ticker]?.summary ?: StockMoveContextBuilder.UNAVAILABLE,
+                contexts[p.market to p.ticker])
         }
         cache = Cached(clock.instant(), result)
         return result
@@ -62,19 +73,45 @@ class MoverReasonService(
 
     /** 키에 시장을 포함해 같은 티커를 가진 다른 시장의 보도가 섞이지 않게 한다. */
     fun reasonsForTickers(targets: List<MoverReasonTarget>): Map<Pair<String, String>, String> =
-        contextsFor(targets.distinctBy { it.market to it.ticker }.take(MAX_REASON_TARGETS), emptyList())
+        contextsForTickers(targets).mapValues { it.value.summary }
 
-    private fun contextsFor(targets: List<MoverReasonTarget>, pool: List<MarketNews>): Map<Pair<String, String>, String> =
-        targets.map { target ->
+    fun contextsForTickers(targets: List<MoverReasonTarget>): Map<Pair<String, String>, StockMoveContext> =
+        targets.distinctBy { it.market to it.ticker }.take(MAX_REASON_TARGETS).map { target ->
             CompletableFuture.supplyAsync {
-                val fromPool = MoverNewsEvidence.latest(target, pool, clock.instant())
-                val item = fromPool ?: runCatching {
-                    val query = if (target.market == "US") "${target.name} stock when:1d" else "${target.name} 주가 when:1d"
-                    MoverNewsEvidence.latest(target, newsRssClient.fetchByQuery(target.market, query), clock.instant())
-                }.getOrNull()
-                (target.market to target.ticker) to MoverNewsEvidence.describe(item)
+                val collected = collect(target)
+                (target.market to target.ticker) to StockMoveContextBuilder.build(target, clock.instant(), collected.disclosures,
+                    collected.news, collected.checks, runCatching { marketEvidence?.recentSnapshot() }.getOrNull())
+            }.orTimeout(20, TimeUnit.SECONDS).exceptionally {
+                (target.market to target.ticker) to StockMoveContext(clock.instant().toString(), "UNAVAILABLE", StockMoveContextBuilder.UNAVAILABLE,
+                    sourceChecks = listOf(MoveSourceCheck("종목 자료", "UNAVAILABLE")))
             }
         }.associate { it.join() }
+
+    private fun collect(target: MoverReasonTarget): Collected {
+        val now = clock.instant()
+        // Bound both memory and upstream work. Per-key compute also coalesces concurrent users.
+        if (perStock.size >= 512) perStock.entries.minByOrNull { it.value.at }?.let { perStock.remove(it.key, it.value) }
+        val key = "${target.market}:${target.ticker}:${target.name}"
+        return perStock.compute(key) { _, old ->
+            val ttl = if (old?.checks?.any { it.status == "SUCCESS" } == true) 300 else 60
+            if (old != null && Duration.between(old.at, now).seconds in 0 until ttl.toLong()) old
+            else {
+                val queryName = target.name.replace(Regex("[\"\\r\\n]"), " ").trim().take(100)
+                val queries = listOf("$queryName when:4d", "$queryName ${if (target.market == "US") "stock" else "주가"} when:4d")
+                val results = queries.map { query -> runCatching { newsRssClient.searchWithStatus(target.market, query) }
+                    .getOrNull() ?: NewsSearchResult("UNAVAILABLE") }
+                val naver = runCatching { naverNews?.search(target) }.getOrNull() ?: NewsSearchResult("DISABLED")
+                val filings = runCatching { disclosureSource?.find(target, now) }.getOrElse { MoveDisclosureResult("UNAVAILABLE") }
+                    ?: MoveDisclosureResult("DISABLED")
+                val at = clock.instant()
+                if (results.any { it.status == "UNAVAILABLE" } || filings.status == "UNAVAILABLE")
+                    log.debug("Stock context sources partially unavailable market={} ticker={}", target.market, target.ticker)
+                Collected(at, (results.flatMap { it.items } + naver.items),
+                    results.mapIndexed { i, r -> MoveSourceCheck("Google News ${i + 1}", r.status, at.toString()) } +
+                        if (target.market == "KR") listOf(MoveSourceCheck("네이버 뉴스", naver.status, at.toString())) else emptyList(), filings.copy(checkedAt = at.toString()))
+            }
+        }!!
+    }
 
     private fun selectPicks(movers: TopMoversResponse): List<TopMover> = buildList {
         addAll((movers.kospi.gainers + movers.kosdaq.gainers).sortedByDescending { it.changeRate }.take(TOP_N))
@@ -85,7 +122,7 @@ class MoverReasonService(
         .distinctBy { it.market to it.ticker }
 
     companion object {
-        private const val TTL_MINUTES = 15L
+        private const val TTL_MINUTES = 5L
         private const val TOP_N = 3
         private const val MIN_MOVE_PCT = 3.0
         private const val MAX_REASON_TARGETS = 12
@@ -100,6 +137,7 @@ data class MoverReason(
     val direction: String,
     val changeRate: Double,
     val reason: String,
+    val context: StockMoveContext? = null,
 )
 
 data class MoverReasonTarget(val market: String, val ticker: String, val name: String, val changeRate: Double)

@@ -12,12 +12,12 @@ class MoverNewsEvidenceTest {
 
     @Test fun `no news never invents a cause`() {
         assertThat(MoverNewsEvidence.describe(MoverNewsEvidence.latest(target, emptyList(), now)))
-            .isEqualTo("주가 변동의 원인은 확인되지 않았습니다.")
+            .isEqualTo(StockMoveContextBuilder.NO_CATALYST)
     }
 
     @Test fun `reject stale future undated unrelated and unattributed search results`() {
         val rejected = listOf(
-            article.copy(publishedAt = now.minusSeconds(86401).toString()),
+            article.copy(publishedAt = now.minusSeconds(4 * 86400 + 1).toString()),
             article.copy(publishedAt = now.plusSeconds(1).toString()),
             article.copy(publishedAt = null),
             article.copy(publishedAt = "invalid"),
@@ -36,7 +36,7 @@ class MoverNewsEvidenceTest {
 
     @Test fun `cite a recent matched headline without treating it as price causation`() {
         val result = MoverNewsEvidence.describe(MoverNewsEvidence.latest(target, listOf(article), now))
-        assertThat(result).startsWith(MoverNewsEvidence.UNKNOWN_CAUSE)
+        assertThat(result).doesNotContain("원인은 확인되지")
             .contains("관련 보도(테스트뉴스)", "「삼성전자, 신규 공급 계약 공시」")
             .doesNotContain("때문", "영향으로", "모멘텀", "추정")
         assertThat(MoverNewsEvidence.latest(target, listOf(article.copy(title = "삼성전자가 신규 계약을 공시했습니다")), now)).isNotNull()
@@ -46,8 +46,22 @@ class MoverNewsEvidenceTest {
         val denial = article.copy(title = "삼성전자, 인수 계약 보도 사실 아냐 - 테스트뉴스")
         assertThat(MoverNewsEvidence.describe(MoverNewsEvidence.latest(target, listOf(denial), now)))
             .contains("인수 계약 보도 사실 아냐」")
-        val longDenial = article.copy(title = "삼성전자 주가 " + "매우 긴 보도 내용 ".repeat(15) + "사실 아냐")
+        val longDenial = article.copy(title = "삼성전자 주가 " + "매우 긴 보도 내용 ".repeat(30) + "사실 아냐")
         assertThat(MoverNewsEvidence.latest(target, listOf(longDenial), now)).isNull()
+    }
+
+    @Test fun `weekend reports event headlines and corporate suffix aliases are retained`() {
+        val friday = article.copy(publishedAt = now.minusSeconds(3 * 86400).toString())
+        val priceOnly = article.copy(title = "삼성전자 주가 5퍼센트 상승", url = "https://example.com/2", publishedAt = now.toString())
+        assertThat(MoverNewsEvidence.latest(target, listOf(priceOnly, friday), now)).isEqualTo(friday)
+        val us = MoverReasonTarget("US", "AAPL", "Apple Inc.", 5.0)
+        val earnings = article.copy(market = "US", title = "Apple earnings released")
+        assertThat(MoverNewsEvidence.latest(us, listOf(earnings), now)).isEqualTo(earnings)
+    }
+
+    @Test fun `denial remains visible ahead of an earlier deal headline`() {
+        val denial = article.copy(title = "삼성전자, 인수 계약 보도 사실 아냐", url = "https://example.com/denial", publishedAt = now.toString())
+        assertThat(MoverNewsEvidence.relevant(target, listOf(article, denial), now).first()).isEqualTo(denial)
     }
 
     @Test fun `short English ticker needs explicit stock identification`() {

@@ -67,6 +67,12 @@ signal-desk:
     google-news:
       enabled: true
       base-url: https://news.google.com/rss/search
+    naver-news:
+      # Optional official news search; no paid subscription or credential creation is automatic.
+      enabled: ${NAVER_NEWS_ENABLED:false}
+      client-id: ${NAVER_NEWS_CLIENT_ID:}
+      client-secret: ${NAVER_NEWS_CLIENT_SECRET:}
+      base-url: https://openapi.naver.com/v1/search/news.json
     gemini:
       # Google AI Studio 에서 발급. 비어있으면 미디어 요약 기능 비활성.
       api-key: ${GEMINI_API_KEY:}

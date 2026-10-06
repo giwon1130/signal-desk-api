@@ -69,12 +69,16 @@ class GoogleNewsRssClient(
      * 거의 없어 매칭이 0건이 되므로, 종목명을 쿼리로 직접 검색한다. 실패하면 빈 리스트.
      */
     fun fetchByQuery(market: String, query: String): List<MarketNews> {
-        if (!enabled || query.isBlank()) return emptyList()
+        return searchWithStatus(market, query).items
+    }
+
+    fun searchWithStatus(market: String, query: String): NewsSearchResult {
+        if (!enabled || query.isBlank()) return NewsSearchResult("DISABLED")
         // US 종목은 en-US 로케일이 마이크로캡 사유 헤드라인을 훨씬 잘 잡는다(ko는 시세 페이지만 반환).
         // 최신성/종목 일치 검증을 통과한 제목만 원문 관련 보도로 인용한다.
         val locale = if (market == "US") LOCALE_EN else LOCALE_KO
-        return runCatching { fetchRss(market = market, query = query, impact = "$query 관련 뉴스", locale = locale) }
-            .getOrElse { emptyList() }
+        return runCatching { NewsSearchResult("SUCCESS", fetchRss(market = market, query = query, impact = "관련 보도", locale = locale)) }
+            .getOrElse { NewsSearchResult("UNAVAILABLE") }
     }
 
     private fun fetchRss(
@@ -93,9 +97,15 @@ class GoogleNewsRssClient(
             .build()
 
         val response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray())
+        check(response.statusCode() in 200..299) { "RSS HTTP ${response.statusCode()}" }
+        check(response.body().size <= 2_000_000) { "RSS response too large" }
         val builderFactory = DocumentBuilderFactory.newInstance()
+        builderFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        builderFactory.setFeature("http://xml.org/sax/features/external-general-entities", false)
+        builderFactory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
         val builder = builderFactory.newDocumentBuilder()
         val document = builder.parse(ByteArrayInputStream(response.body()))
+        check(document.documentElement.tagName == "rss") { "Not an RSS feed" }
         val nodes = document.getElementsByTagName("item")
 
         val limit = minOf(nodes.length, perQueryLimit)

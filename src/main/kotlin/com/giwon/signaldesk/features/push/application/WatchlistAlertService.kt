@@ -108,7 +108,7 @@ class WatchlistAlertService(
         val candidates = detector.detect(refreshed, alreadySent, today, recentMaxRate)
         if (candidates.isEmpty()) return
 
-        // 급등락은 원인 미확인을 명시하고, 검증된 최신 관련 보도가 있을 때만 함께 전달한다.
+        // 공시·관련 보도를 조회하되 가격 변동의 확정 원인으로 표현하지 않는다.
         val moveTargets = candidates
             .filter { it.direction == AlertDirection.UP || it.direction == AlertDirection.DOWN }
             .distinctBy { it.market to it.ticker }
@@ -128,7 +128,7 @@ class WatchlistAlertService(
         candidates.forEach { c ->
             runCatching {
                 val reason = if (c.direction in setOf(AlertDirection.UP, AlertDirection.DOWN))
-                    reasonByTicker[c.market to c.ticker] ?: com.giwon.signaldesk.features.market.application.MoverNewsEvidence.UNKNOWN_CAUSE
+                    reasonByTicker[c.market to c.ticker] ?: com.giwon.signaldesk.features.market.application.StockMoveContextBuilder.UNAVAILABLE
                 else null
                 pushRepository.recordAlert(c.userId, c.market, c.ticker, c.name, c.direction, today, c.changeRate, reason)
                 // 목표가/손절 도달 알림은 1회 발송 후 자동 해제 — 재설정 전까진 재알림 X.
@@ -144,16 +144,21 @@ class WatchlistAlertService(
 
     internal fun buildMessage(token: String, c: AlertCandidate, reason: String? = null): ExpoPushClient.Message {
         val priceStr = krwFmt.format(c.currentPrice)
+        val price = if (c.market == "US") "\$$priceStr" else "${priceStr}원"
         val why = reason?.takeIf { it.isNotBlank() }
-            ?: com.giwon.signaldesk.features.market.application.MoverNewsEvidence.UNKNOWN_CAUSE
+        // A failed lookup is not a cause. Keep the push useful with the observed price alone.
+        val contextBody = if (why == null || why == com.giwon.signaldesk.features.market.application.StockMoveContextBuilder.UNAVAILABLE)
+            "$price · 가격 변동이 커졌습니다. 최신 공시와 뉴스를 함께 확인해 주세요."
+        else if (why.length <= 110) "$price · $why"
+        else "$price · 관련 공시·보도를 찾았습니다. 내용을 잘라 전달하지 않도록 종목 상세에서 안내합니다."
         val (title, body) = when (c.direction) {
             AlertDirection.UP -> {
                 val signed = String.format("%+.2f%%", c.changeRate)
-                "🚀 ${c.name} $signed" to "${priceStr}원 · $why"
+                "🚀 ${c.name} $signed" to contextBody
             }
             AlertDirection.DOWN -> {
                 val signed = String.format("%+.2f%%", c.changeRate)
-                "⚠️ ${c.name} $signed" to "${priceStr}원 · $why"
+                "⚠️ ${c.name} $signed" to contextBody
             }
             AlertDirection.PRICE_BELOW -> {
                 val threshStr = krwFmt.format(c.thresholdPrice)
