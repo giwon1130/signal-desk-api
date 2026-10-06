@@ -7,9 +7,10 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
-/** 일별 스냅샷 수동 트리거 — 운영자 전용 (스케줄 16:40 KST 와 동일 로직, 멱등). */
+/** 운영자 전용. 시장별 캡처 시간/거래일 검증을 수동 실행에도 동일 적용한다. */
 @RestController
 @RequestMapping("/api/v1/snapshots")
 class SnapshotController(
@@ -18,9 +19,11 @@ class SnapshotController(
     @Autowired(required = false) private val service: DailySnapshotService? = null,
 ) {
     @PostMapping("/run")
-    fun run(@RequestHeader("Authorization", required = false) auth: String?): ApiResponse<DailySnapshotService.Result?> {
+    fun run(@RequestHeader("Authorization", required = false) auth: String?,
+        @RequestParam(defaultValue = "KR") market: String = "KR"): ApiResponse<DailySnapshotService.Result?> {
         adminGuard.requireAdmin(authContext.requireUserId(auth))
+        require(market in setOf("KR", "US")) { "market must be KR or US" }
         val svc = service ?: return ApiResponse(false, null)
-        return ApiResponse(true, svc.runDailySnapshot())
+        return ApiResponse(true, svc.runDailySnapshot(market))
     }
 }

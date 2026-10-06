@@ -188,6 +188,20 @@ CORS:
 - 앱/웹 배포 도메인을 추가하려면 `SIGNAL_DESK_CORS_ALLOWED_ORIGINS`에 쉼표 구분으로 넣는다.
 - 예: `SIGNAL_DESK_CORS_ALLOWED_ORIGINS=https://app.example.com,https://staging.example.com`
 
+## 시장별 마감 기록 (V50)
+
+- 한국: 16:40 KST에 당일 거래일을 기록하고 17:40에 누락 자료를 재시도합니다.
+- 미국: 현지 다음 날 00:40 ET에 직전 거래일을 기록하고 01:40에 재시도합니다. 일봉의 당일 미확정 표시가 해제된 뒤 수집하며, 금요일 기록을 위해 토요일에도 실행합니다. DST는 `America/New_York` 기준입니다.
+- 거래소 휴장·조기 마감은 `MarketSessionService` 캘린더를 따릅니다. 한국 캘린더 미검증 연도와 특별 개장시간 미확인일은 저장하지 않습니다. 미국 거래시간 근거: [NYSE 공식 캘린더](https://www.nyse.com/trade/hours-calendars).
+- 지수는 `signal_desk_market_close_snapshot`에 `(market, trading_date)`로 저장합니다. 거래일이 맞는 제공자 종가와 출처를 보존하고, 이전 시세·미확정 일봉·없는 값을 채우지 않습니다. 기존 `daily_market_snapshot`의 혼합 날짜 자료는 그대로 보존하되 새 기록에는 사용하지 않습니다.
+- 추천 이력은 REVIEW 후보만 저장합니다. 분석일·생성 시각·규칙 버전·판정 지표를 함께 기록하며, `reference_close`는 분석 참고 종가입니다. 새 기록의 `price_at_pick`은 null이고 실제 진입가/수익률 백테스트에 사용하면 안 됩니다.
+- 포트폴리오는 **수집 당시 보유 수량**을 해당 거래일 종가로 평가합니다. `holdings_observed_at`과 `session_closes_at`은 서로 다르며, 마감 당시 보유 수량을 복원한 거래 원장이 아닙니다. 한 종목이라도 종가가 없으면 그 사용자·시장 평가액 전체를 건너뜁니다. KRW/USD는 분리하고 소수 수량은 decimal로 계산합니다.
+- 기존 이력은 `LEGACY_UNVERIFIED`로 남습니다. 확인된 새 행은 재실행해도 덮어쓰지 않으며, 운영 DB의 과거 날짜를 임의로 보정하지 않습니다. 실패 로그에는 시장·거래일·건수·사유만 기록합니다.
+- 종가 조회는 실행당 종목별 한 번, 최대 64종목/60초의 새 조회 예산을 적용합니다(진행 중 단일 요청의 타임아웃은 별도). 한도 초과도 미확인 가격으로 처리하고 다음 정시 재시도에서 보충합니다.
+- 수동 실행은 관리자 전용 `POST /api/v1/snapshots/run?market=KR|US`입니다(기본 KR). 자동 실행과 같은 시간 검증을 적용합니다. 미국은 현지 자정~09:00 이전, 한국은 검증된 마감 1시간 이후 당일에만 가능하며 임의 과거일 백필은 지원하지 않습니다.
+
+검증: `./gradlew test --tests '*snapshot*'`. 실제 PostgreSQL 검증은 임시 로컬 DB를 준비한 뒤 `SIGNAL_DESK_SNAPSHOT_TEST_JDBC_URL=jdbc:postgresql://127.0.0.1:55432/snapshot_test ./gradlew test --tests '*SnapshotPostgresIntegrationTest' --rerun-tasks`로 실행합니다. 테스트 전용 postgres 암호는 기본 `snapshot-test-only`이며 필요 시 `SIGNAL_DESK_SNAPSHOT_TEST_PASSWORD`로 지정합니다. 운영 URL은 거부하고 임의 이름의 테스트 스키마만 생성·제거하며, V1~V49→V50의 기존 이력 보존·실제 서비스 INSERT·중복·소수점 평가액을 검증합니다. 환경변수가 없으면 이 통합 테스트는 생략됩니다. 운영 엔드포인트 수동 실행은 쓰기 작업이므로 상태 점검 목적으로 호출하지 않습니다.
+
 ## 다음 확장
 1. 미국 개별 종목 실데이터 범위 확대
 2. 종목 전체 검색/페이징

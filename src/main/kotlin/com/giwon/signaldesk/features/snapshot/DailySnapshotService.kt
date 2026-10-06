@@ -1,165 +1,139 @@
 package com.giwon.signaldesk.features.snapshot
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.giwon.signaldesk.common.KST
 import com.giwon.signaldesk.features.ai.application.AiPickService
-import com.giwon.signaldesk.features.market.application.MarketOverviewService
-import com.giwon.signaldesk.features.market.application.NaverFinanceQuoteClient
-import com.giwon.signaldesk.features.market.application.NaverGlobalQuoteClient
+import com.giwon.signaldesk.features.ai.application.PickDecision
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
-import java.time.LocalDate
+import java.math.BigDecimal
+import java.sql.Date
+import java.sql.Timestamp
+import java.time.Clock
+import java.time.Instant
 import java.util.UUID
 
-/**
- * 일별 데이터 적재 — 휘발되던 시장/AI/포트폴리오 상태를 하루 1회 박제.
- * 지금 화면에 쓰진 않지만, 적중률 리포트·자산 추이·지표 백테스트의 원천 데이터가 된다.
- * 모든 쓰기는 (날짜) 기준 upsert — 재실행해도 그날 데이터를 덮을 뿐 중복이 없다(멱등).
- */
+/** Market-local closing reference archive, not execution prices or a reconstructible trading ledger. */
 @Service
 @ConditionalOnProperty(prefix = "signal-desk.store", name = ["mode"], havingValue = "jdbc")
 class DailySnapshotService(
     private val jdbc: JdbcTemplate,
     private val objectMapper: ObjectMapper,
-    private val marketOverviewService: MarketOverviewService,
     private val aiPickService: AiPickService,
-    private val krQuotes: NaverFinanceQuoteClient,
-    private val usQuotes: NaverGlobalQuoteClient,
+    private val policy: SnapshotSessionPolicy,
+    private val prices: SnapshotClosePrices,
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-
+    // Existing admin endpoint response shape is unchanged; counts mean newly inserted rows.
     data class Result(val marketSaved: Boolean, val aiPicksSaved: Int, val portfolioRows: Int)
 
-    fun runDailySnapshot(): Result {
-        val today = LocalDate.now(KST)
-        val market = runCatching { snapshotMarket(today) }
-            .onFailure { log.warn("daily market snapshot failed", it) }.getOrDefault(false)
-        val picks = runCatching { snapshotAiPicks(today) }
-            .onFailure { log.warn("daily ai-pick snapshot failed", it) }.getOrDefault(0)
-        val portfolio = runCatching { snapshotPortfolios(today) }
-            .onFailure { log.warn("daily portfolio snapshot failed", it) }.getOrDefault(0)
-        log.info("daily snapshot — date={} market={} aiPicks={} portfolioRows={}", today, market, picks, portfolio)
-        return Result(market, picks, portfolio)
+    fun runDailySnapshot(market: String = "KR"): Result {
+        val now = clock.instant()
+        val session = policy.target(market, now) ?: run {
+            log.info("snapshot skipped market={} reason=OUTSIDE_CAPTURE_WINDOW_OR_UNVERIFIED_CALENDAR", market)
+            return Result(false, 0, 0)
+        }
+        // Bound each external symbol to one attempt per run, including failures.
+        val quotes = mutableMapOf<String, SnapshotClose?>()
+        val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(60)
+        fun close(ticker: String): SnapshotClose? {
+            if (quotes.containsKey(ticker)) return quotes[ticker]
+            if (quotes.size >= 64 || System.nanoTime() >= deadline) return null
+            return prices.stock(ticker, session).also { quotes[ticker] = it }
+        }
+        val saved = runCatching { snapshotMarket(session, now) }
+            .onFailure { log.warn("snapshot market failed market={} type={}", market, it.javaClass.simpleName) }.getOrDefault(false)
+        val picks = runCatching { snapshotAiPicks(session, ::close) }
+            .onFailure { log.warn("snapshot picks failed market={} type={}", market, it.javaClass.simpleName) }.getOrDefault(0)
+        val portfolios = runCatching { snapshotPortfolios(session, ::close) }
+            .onFailure { log.warn("snapshot portfolios failed market={} type={}", market, it.javaClass.simpleName) }.getOrDefault(0)
+        log.info("snapshot complete market={} tradingDate={} marketSaved={} aiPicks={} portfolioRows={}", market, session.date, saved, picks, portfolios)
+        return Result(saved, picks, portfolios)
     }
 
-    // ── 1) 시장 스냅샷 ──────────────────────────────────────────────────────
-    private fun snapshotMarket(date: LocalDate): Boolean {
-        val summary = marketOverviewService.getSummary()
-        val sections = marketOverviewService.getMarketSections()
-        val idx = (sections.koreaMarket.indices + sections.usMarket.indices).associateBy { it.label.uppercase() }
-        fun v(label: String) = idx[label]?.value
-        fun c(label: String) = idx[label]?.changeRate
-
-        val metricsJson = objectMapper.writeValueAsString(
-            mapOf(
-                "marketSummary" to summary.marketSummary.map { mapOf("label" to it.label, "score" to it.score, "state" to it.state) },
-                "riskKr" to mapOf("score" to summary.compositeRiskKr.score, "score100" to summary.compositeRiskKr.score100, "level" to summary.compositeRiskKr.level),
-                "riskUs" to mapOf("score" to summary.compositeRiskUs.score, "score100" to summary.compositeRiskUs.score100, "level" to summary.compositeRiskUs.level),
-            )
-        )
-        jdbc.update(
-            """
-            insert into signal_desk_daily_market_snapshot
-                (snapshot_date, kospi, kospi_change, kosdaq, kosdaq_change, nasdaq, nasdaq_change, sp500, sp500_change, risk_score_kr, risk_score_us, metrics)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
-            on conflict (snapshot_date) do update set
-                kospi = excluded.kospi, kospi_change = excluded.kospi_change,
-                kosdaq = excluded.kosdaq, kosdaq_change = excluded.kosdaq_change,
-                nasdaq = excluded.nasdaq, nasdaq_change = excluded.nasdaq_change,
-                sp500 = excluded.sp500, sp500_change = excluded.sp500_change,
-                risk_score_kr = excluded.risk_score_kr, risk_score_us = excluded.risk_score_us,
-                metrics = excluded.metrics, created_at = now()
-            """.trimIndent(),
-            java.sql.Date.valueOf(date),
-            v("KOSPI"), c("KOSPI"), v("KOSDAQ"), c("KOSDAQ"),
-            v("NASDAQ"), c("NASDAQ"), v("S&P 500"), c("S&P 500"),
-            summary.compositeRiskKr.score, summary.compositeRiskUs.score, metricsJson,
-        )
-        return true
+    private fun snapshotMarket(session: SnapshotSession, now: Instant): Boolean {
+        val indices = prices.indices(session)
+        if (indices.size != 2) {
+            log.info("snapshot market skipped market={} tradingDate={} reason=MISSING_DATED_CLOSE available={}/2", session.market, session.date, indices.size)
+            return false
+        }
+        return jdbc.update("""
+            insert into signal_desk_market_close_snapshot (market, trading_date, session_closes_at, captured_at, indices)
+            values (?, ?, ?, ?, ?::jsonb) on conflict (market, trading_date) do nothing
+        """.trimIndent(), session.market, Date.valueOf(session.date), Timestamp.from(session.closesAt), Timestamp.from(now),
+            objectMapper.writeValueAsString(indices)) > 0
     }
 
-    // ── 2) AI 픽 이력 ───────────────────────────────────────────────────────
-    private fun snapshotAiPicks(date: LocalDate): Int {
-        val picks = aiPickService.getTodayPicks().picks
-            .filter { it.assessment?.decision == com.giwon.signaldesk.features.ai.application.PickDecision.REVIEW }
-        if (picks.isEmpty()) return 0
-        // 적중률 판정 기준가 — 스냅샷 시점 현재가(센트 보존)를 같이 박제.
-        val krTickers = picks.filter { it.market == "KR" }.map { it.ticker }
-        val usTickers = picks.filter { it.market == "US" }.map { it.ticker }
-        val krPrice = if (krTickers.isNotEmpty()) runCatching { krQuotes.fetchKoreanQuotes(krTickers) }.getOrDefault(emptyMap()) else emptyMap()
-        val usPrice = if (usTickers.isNotEmpty()) runCatching { usQuotes.fetchUsQuotes(usTickers) }.getOrDefault(emptyMap()) else emptyMap()
-
+    private fun snapshotAiPicks(session: SnapshotSession, close: (String) -> SnapshotClose?): Int {
+        val response = aiPickService.getTodayPicks()
+        val now = clock.instant()
+        val generated = runCatching { Instant.parse(response.generatedAt) }.getOrNull() ?: return 0
+        if (generated < session.closesAt || generated > now || generated < now.minusSeconds(3600)) return 0
         var saved = 0
-        for (p in picks) {
-            val quote = (if (p.market == "KR") krPrice else usPrice)[p.ticker]
-            jdbc.update(
-                """
+        for (p in response.picks.filter { it.market == session.market && it.assessment?.decision == PickDecision.REVIEW &&
+            it.assessment.analysisDate == session.date.toString() }) {
+            val quote = close(p.ticker) ?: continue
+            saved += jdbc.update("""
                 insert into signal_desk_ai_pick_history
-                    (id, pick_date, market, ticker, name, reason, confidence, expected_return_rate, price_at_pick, change_rate_at_pick)
-                values (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                on conflict (pick_date, market, ticker) do update set
-                    name = excluded.name, reason = excluded.reason, confidence = excluded.confidence,
-                    expected_return_rate = excluded.expected_return_rate,
-                    price_at_pick = coalesce(excluded.price_at_pick, signal_desk_ai_pick_history.price_at_pick),
-                    change_rate_at_pick = excluded.change_rate_at_pick
-                """.trimIndent(),
-                UUID.randomUUID().toString(), java.sql.Date.valueOf(date),
-                p.market, p.ticker, p.name, p.reason, p.confidence, p.expectedReturnRate,
-                quote?.exactPrice?.takeIf { it > 0 }, p.changeRate,
-            )
-            saved++
+                    (id, pick_date, market, ticker, name, reason, confidence, expected_return_rate, price_at_pick,
+                     analysis_date, generated_at, rules_version, reference_close, price_basis, currency, source, assessment)
+                values (?::uuid, ?, ?, ?, ?, ?, 0, null, null, ?, ?, ?, ?, 'SESSION_CLOSE_REFERENCE_ONLY', ?, ?, ?::jsonb)
+                on conflict (pick_date, market, ticker) do nothing
+            """.trimIndent(), UUID.randomUUID().toString(), Date.valueOf(session.date), p.market, p.ticker, p.name, p.reason,
+                Date.valueOf(session.date), Timestamp.from(generated), p.assessment!!.rulesVersion, quote.price, session.currency, quote.source,
+                objectMapper.writeValueAsString(p.assessment))
         }
         return saved
     }
 
-    // ── 3) 포트폴리오 일별 평가액 ───────────────────────────────────────────
-    private fun snapshotPortfolios(date: LocalDate): Int {
-        data class Pos(val userId: UUID, val market: String, val ticker: String, val qty: Double, val buyPrice: Double, val storedPrice: Double)
-        val positions = jdbc.query(
-            "select user_id, market, ticker, quantity, buy_price, current_price from signal_desk_portfolio_positions where user_id is not null",
-        ) { rs, _ ->
-            Pos(
-                userId = UUID.fromString(rs.getString("user_id")),
-                market = rs.getString("market"), ticker = rs.getString("ticker"),
-                qty = rs.getDouble("quantity"), buyPrice = rs.getDouble("buy_price"),
-                storedPrice = rs.getDouble("current_price"),
-            )
-        }
-        if (positions.isEmpty()) return 0
-
-        // 시장별 일괄 시세 — 미보유 유저가 봐도 안 갱신되는 stored current_price 대신 라이브 가격 우선.
-        val krTickers = positions.filter { it.market == "KR" }.map { it.ticker }.distinct()
-        val usTickers = positions.filter { it.market == "US" }.map { it.ticker }.distinct()
-        val krPrice = if (krTickers.isNotEmpty()) runCatching { krQuotes.fetchKoreanQuotes(krTickers) }.getOrDefault(emptyMap()) else emptyMap()
-        val usPrice = if (usTickers.isNotEmpty()) runCatching { usQuotes.fetchUsQuotes(usTickers) }.getOrDefault(emptyMap()) else emptyMap()
-
-        var rows = 0
-        positions.groupBy { it.userId to it.market }.forEach { (key, group) ->
-            val (userId, market) = key
-            var evaluation = 0.0
-            var cost = 0.0
-            for (p in group) {
-                val live = (if (p.market == "KR") krPrice else usPrice)[p.ticker]?.exactPrice?.takeIf { it > 0 }
-                evaluation += (live ?: p.storedPrice) * p.qty
-                cost += p.buyPrice * p.qty
-            }
-            jdbc.update(
-                """
+    private fun snapshotPortfolios(session: SnapshotSession, close: (String) -> SnapshotClose?): Int {
+        val now = clock.instant()
+        val positions = jdbc.query("""
+            select p.user_id, p.ticker, p.quantity, p.buy_price from signal_desk_portfolio_positions p
+            where p.user_id is not null and p.market = ?
+              and not exists (select 1 from signal_desk_daily_portfolio_snapshot s
+                  where s.user_id = p.user_id and s.market = p.market and s.snapshot_date = ?)
+            order by p.user_id, p.ticker
+        """.trimIndent(), { rs, _ -> SnapshotPosition(UUID.fromString(rs.getString("user_id")), rs.getString("ticker"),
+            rs.getBigDecimal("quantity"), rs.getBigDecimal("buy_price")) }, session.market, Date.valueOf(session.date))
+        var saved = 0
+        var skipped = 0
+        positions.groupBy { it.userId }.forEach { (userId, group) ->
+            val valuation = valueSnapshotPositions(group, close)
+            if (valuation == null) { skipped++; return@forEach }
+            // Holdings observed now, not reconstructed at session close. Capture that distinction explicitly.
+            saved += jdbc.update("""
                 insert into signal_desk_daily_portfolio_snapshot
-                    (user_id, snapshot_date, market, evaluation_amount, cost_amount, profit_amount, position_count)
-                values (?::uuid, ?, ?, ?, ?, ?, ?)
-                on conflict (user_id, snapshot_date, market) do update set
-                    evaluation_amount = excluded.evaluation_amount, cost_amount = excluded.cost_amount,
-                    profit_amount = excluded.profit_amount, position_count = excluded.position_count,
-                    created_at = now()
-                """.trimIndent(),
-                userId.toString(), java.sql.Date.valueOf(date), market,
-                evaluation, cost, evaluation - cost, group.size,
-            )
-            rows++
+                    (user_id, snapshot_date, market, evaluation_amount, cost_amount, profit_amount, position_count,
+                     currency, price_basis, session_closes_at, holdings_observed_at, price_sources)
+                values (?::uuid, ?, ?, ?, ?, ?, ?, ?, 'CAPTURED_HOLDINGS_AT_SESSION_CLOSE_PRICES', ?, ?, ?::jsonb)
+                on conflict (user_id, snapshot_date, market) do nothing
+            """.trimIndent(), userId.toString(), Date.valueOf(session.date), session.market, valuation.evaluation, valuation.cost,
+                valuation.evaluation - valuation.cost, group.size, session.currency, Timestamp.from(session.closesAt), Timestamp.from(now),
+                objectMapper.writeValueAsString(valuation.sources))
         }
-        return rows
+        if (skipped > 0) log.info("snapshot portfolios skipped market={} tradingDate={} groups={} reason=INCOMPLETE_OR_INVALID_PRICES", session.market, session.date, skipped)
+        return saved
     }
+}
+
+internal data class SnapshotPosition(val userId: UUID, val ticker: String, val quantity: BigDecimal?, val buyPrice: BigDecimal?)
+internal data class SnapshotValuation(val evaluation: BigDecimal, val cost: BigDecimal, val sources: Set<String>)
+
+internal fun valueSnapshotPositions(positions: List<SnapshotPosition>, close: (String) -> SnapshotClose?): SnapshotValuation? {
+    if (positions.isEmpty()) return null
+    var evaluation = BigDecimal.ZERO
+    var cost = BigDecimal.ZERO
+    val sources = mutableSetOf<String>()
+    for (p in positions) {
+        val quantity = p.quantity?.takeIf { it > BigDecimal.ZERO } ?: return null
+        val buy = p.buyPrice?.takeIf { it > BigDecimal.ZERO } ?: return null
+        val quote = close(p.ticker)?.takeIf { it.price > BigDecimal.ZERO } ?: return null
+        evaluation += quote.price * quantity
+        cost += buy * quantity
+        sources += quote.source
+    }
+    return SnapshotValuation(evaluation, cost, sources)
 }
