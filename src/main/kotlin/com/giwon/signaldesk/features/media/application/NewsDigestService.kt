@@ -33,6 +33,7 @@ class NewsDigestService(
 
     /** market: "KR" or "US" */
     fun runDigest(market: String, force: Boolean = false): MediaSummary? {
+        require(market in setOf("KR", "US"))
         val today = LocalDate.now(clock)
         val videoId = "news-${today.format(dateFmt)}-$market"
         if (!force && repository.findByVideoId(videoId) != null) {
@@ -52,7 +53,7 @@ class NewsDigestService(
         }
 
         val headlines = marketNews.map { Triple(it.source, it.title, it.url) }
-        val analysis = briefing.current()
+        val analysis = briefing.current(market)
 
         val marketKo = if (market == "KR") "한국 시장" else "미국 시장"
         val title = "${today.format(DateTimeFormatter.ofPattern("M월 d일"))} $marketKo 마감 종합 (${marketNews.map { it.source }.distinct().size}개 매체)"
@@ -65,7 +66,7 @@ class NewsDigestService(
             videoUrl = "",
             publishedAt = Instant.now(),
             transcriptLength = headlines.sumOf { it.second.length },
-            summary = "최근 24시간 뉴스 제목을 모았어. 사건의 확정이나 주가 변동의 원인으로 단정한 내용은 아니야.\n\n" +
+            summary = "최근 24시간의 관련 보도를 모았습니다. 뉴스 제목은 보도 내용이며, 주가 변동의 원인으로 확인된 것은 아닙니다.\n\n" +
                 marketNews.take(8).joinToString("\n") { "[${it.source}] ${it.title} — ${it.url}" },
             flowAnalysis = analysis.summary + "\n\n" + analysis.keyPoints.joinToString("\n"),
             keyTickers = emptyList(),

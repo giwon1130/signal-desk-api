@@ -34,6 +34,8 @@ data class MarketEvidenceReport(
     val headline: String, val conclusion: String,
     val factors: List<EvidenceFactor>, val evidence: List<MetricEvidence>,
     val warnings: List<String>, val newsEvidence: List<MarketNews>,
+    val marketObservation: MarketObservation? = null,
+    val openingReference: MarketObservation? = null,
 )
 
 /**
@@ -72,7 +74,9 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
             val detail = if (status == "OBSERVED") {
                 "$label ${fmt(q!!.value)}${if (id == "KRW=X") "원" else ""}, 이전 거래일 대비 ${signed(q.changeRate)}% · 관측 ${q.observedAt}"
             } else "$label: ${qualityLabel(status)} — 방향 판단에서 제외했습니다. 관측 ${q?.observedAt ?: "시각 미확인"}"
-            return MetricEvidence(id, label, q?.source, "https://finance.yahoo.com/quote/${java.net.URLEncoder.encode(id, java.nio.charset.StandardCharsets.UTF_8)}/",
+            val sourceUrl = if (q?.source?.startsWith("NAVER:") == true) "https://m.stock.naver.com/domestic/index/${q.source.substringAfter(':')}/total"
+                else "https://finance.yahoo.com/quote/${java.net.URLEncoder.encode(id, java.nio.charset.StandardCharsets.UTF_8)}/"
+            return MetricEvidence(id, label, q?.source, sourceUrl,
                 q?.observedAt, q?.observationDate, status, q?.value?.takeIf { it.isFinite() },
                 q?.changeRate?.takeIf { it.isFinite() }, "PERCENT_CHANGE", detail).also { evidence[id] = it }
         }
@@ -210,12 +214,18 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
             if (news.any { isDeescalation(it.title) } && escalation.isNotEmpty()) add("긴장 완화와 휴전 보도도 함께 있어 전쟁 악화로 단정하지 않았습니다.")
             if (risk == "UNKNOWN") add("일부 위험 자료가 부족해 위험 수준을 확정하지 않았습니다.")
         }
+        val observationBuilder = MarketObservationBuilder(sessions)
+        val observation = observationBuilder.build(evidence.values.toList(), now, input.market)
+        val opening = if (!isUs && observation.phase == "PREOPEN") observationBuilder.build(evidence.values.toList(), now, "US") else null
+        val primary = opening ?: observation
+        val observedHeadline = (if (opening != null) "개장 전 점검 · " else "") + primary.headline
         return MarketEvidenceReport(rulesVersion = if (isUs) US_RULES_VERSION else RULES_VERSION,
             asOf = now.toString(), horizon = if (isUs) "CURRENT_CONDITIONS_US" else "CURRENT_CONDITIONS_KR_WITH_GLOBAL_CONTEXT",
             regime = regime, riskLevel = risk, coveragePercent = (coverage * 100).roundToInt(),
-            balanceScore = (balance * 100).takeIf { regime != "INSUFFICIENT_DATA" }, headline = headline,
-            conclusion = "$headline. 수집 대상 중 ${(coverage * 100).roundToInt()}%를 분석에 반영했으며, 누락된 지표의 비중은 다른 지표에 더하지 않았습니다.",
+            balanceScore = (balance * 100).takeIf { regime != "INSUFFICIENT_DATA" }, headline = observedHeadline,
+            conclusion = primary.summary + " 참고 여건: $headline. 참고 지표는 실제 지수 등락이나 다음 거래일 전망과 구분합니다.",
             factors = factors, evidence = evidence.values.filter { !isUs || it.id in factors.flatMap { factor -> factor.evidenceIds } + listOf("^VIX", "CL=F") }, warnings = warnings, newsEvidence = escalation.take(8))
+            .copy(marketObservation = observation, openingReference = opening)
     }
 
     internal fun expectedSession(now: Instant, market: String): LocalDate {
@@ -261,5 +271,5 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
     private fun fmt(value: Double) = String.format(Locale.US, "%.2f", value)
     private fun signed(value: Double) = String.format(Locale.US, "%+.2f", value)
 
-    companion object { const val RULES_VERSION = "market-evidence-v3"; const val US_RULES_VERSION = "market-evidence-us-v1" }
+    companion object { const val RULES_VERSION = "market-evidence-v4"; const val US_RULES_VERSION = "market-evidence-us-v2" }
 }

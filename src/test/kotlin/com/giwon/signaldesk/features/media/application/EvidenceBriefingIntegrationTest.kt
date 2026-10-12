@@ -54,7 +54,7 @@ class EvidenceBriefingIntegrationTest {
         val yahoo = mock(YahooQuoteClient::class.java)
         val fred = mock(FredIndexClient::class.java)
         val news = mock(GoogleNewsRssClient::class.java)
-        `when`(yahoo.fetchIndices(YahooQuoteClient.BRIEFING_INDICES)).thenThrow(IllegalStateException("offline"))
+        `when`(yahoo.fetchLiveIndices(YahooQuoteClient.BRIEFING_INDICES)).thenThrow(IllegalStateException("offline"))
         `when`(fred.fetchMacro()).thenThrow(IllegalStateException("offline"))
         val provider = DefaultListableBeanFactory().getBeanProvider(MarketEvidenceArchive::class.java)
         val narrator = EvidenceNarrator(GeminiClient(ObjectMapper(), "", "", "http://unused", "test"), mapper)
@@ -62,7 +62,7 @@ class EvidenceBriefingIntegrationTest {
         val result = briefing.current()
         assertThat(result.assessment?.regime).isEqualTo("INSUFFICIENT_DATA")
         assertThat(briefing.current().assessment).isEqualTo(result.assessment)
-        verify(yahoo, times(1)).fetchIndices(YahooQuoteClient.BRIEFING_INDICES)
+        verify(yahoo, times(1)).fetchLiveIndices(YahooQuoteClient.BRIEFING_INDICES)
         val repository = object : MediaSummaryRepository {
             var saved: MediaSummary? = null
             override fun findRecent(limit: Int) = emptyList<MediaSummary>()
@@ -92,6 +92,7 @@ class EvidenceBriefingIntegrationTest {
     @Test fun `brief push is short action oriented and omits internal scoring language`() {
         val pipeline = BriefPipeline(mock(EvidenceBriefingService::class.java), mock(MediaSummaryRepository::class.java), mock(ExpoPushClient::class.java))
         val pressured = report.copy(
+            marketObservation = null, openingReference = null,
             regime = "PRESSURED",
             factors = listOf(EvidenceFactor(
                 id = "semiconductors", label = "반도체 동행 지표", weight = .2, score = -.8,
@@ -111,6 +112,7 @@ class EvidenceBriefingIntegrationTest {
     @Test fun `morning push uses the same action style and keeps disclosure context`() {
         val pipeline = BriefPipeline(mock(EvidenceBriefingService::class.java), mock(MediaSummaryRepository::class.java), mock(ExpoPushClient::class.java))
         val supportive = report.copy(
+            marketObservation = null, openingReference = null,
             regime = "SUPPORTIVE",
             factors = listOf(EvidenceFactor(
                 id = "kr_night", label = "코스피200 야간선물", weight = .2, score = .8,

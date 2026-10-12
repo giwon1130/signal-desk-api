@@ -83,8 +83,10 @@ class MarketOverviewService(
 
     fun getSummary(userId: UUID? = null): MarketSummaryResponse {
         val evidence = marketEvidenceService.current()
+        val usEvidence = marketEvidenceService.current("US")
         val core = getCoreSnapshot()
-        val conditions = listOf("KR", "US").map { MarketConditionBuilder(marketSessionService).build(evidence, it) }
+        val conditions = listOf(MarketConditionBuilder(marketSessionService).build(evidence, "KR"),
+            MarketConditionBuilder(marketSessionService).build(usEvidence, "US"))
         val validMetrics = MarketConditionBuilder(marketSessionService).metrics(evidence)
         val quotes = enrichmentService.loadMarketQuotes(userId)
         val snapshot = enrichmentService.buildWorkspaceSnapshot(quotes, userId)
@@ -141,7 +143,7 @@ class MarketOverviewService(
             marketSummary = validMetrics, alternativeSignals = alternativeSignals,
             compositeRisk = compositeRisk,
             compositeRiskKr = compositeRisk,
-            compositeRiskUs = compositeRisk,
+            compositeRiskUs = compositeRiskService.fromReport(usEvidence),
             watchAlerts = watchAlerts, marketSessions = core.marketSessions,
             briefing = alignedBriefing, preMarketDirection = preMarketDirection,
             preMarketForecastStats = preMarketForecastStats, sourceNotes = core.sourceNotes,

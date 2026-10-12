@@ -14,7 +14,7 @@ class PreMarketDirectionService(
     private val evidence: MarketEvidenceService,
     private val marketSessionService: MarketSessionService,
 ) {
-    val rulesVersion = "premarket-evidence-v3"
+    val rulesVersion = "premarket-evidence-v4"
     fun current(): PreMarketDirection = if (isPredictionWindow()) fromReport(evidence.current()) else PreMarketDirection.EMPTY
 
     fun fromReport(report: MarketEvidenceReport, now: ZonedDateTime = ZonedDateTime.now(KST)): PreMarketDirection {
@@ -31,7 +31,8 @@ class PreMarketDirectionService(
         val status = when {
             signal.coverage < MIN_COVERAGE -> "INSUFFICIENT"
             report.riskLevel != "NORMAL" -> "RISK_CAUTION"
-            signal.bias == null -> "CONFLICTING"
+            signal.conflicting -> "CONFLICTING"
+            signal.bias == null -> "NO_CLEAR_BIAS"
             else -> "REFERENCE"
         }
         val bias = signal.bias.takeIf { status == "REFERENCE" }
@@ -39,10 +40,12 @@ class PreMarketDirectionService(
             locked = false, kospiFutures = null, overseas = overseas, nightFutures = night,
             bias = bias?.name, biasLabel = when {
                 status == "INSUFFICIENT" -> "방향을 판단할 자료가 부족합니다"
+                status == "RISK_CAUTION" && report.riskLevel == "UNKNOWN" -> "위험 판단에 필요한 자료를 확인 중입니다"
                 status == "RISK_CAUTION" -> "위험 요인 확인이 먼저입니다"
                 bias == Bias.RISING -> "해외 참고지표는 우호적입니다"
                 bias == Bias.FALLING -> "해외 참고지표는 부담을 나타냅니다"
-                else -> "해외 참고지표가 엇갈리고 있습니다"
+                status == "CONFLICTING" -> "해외 참고지표의 방향이 서로 다릅니다"
+                else -> "해외 참고지표의 방향성이 뚜렷하지 않습니다"
             },
             summary = "밤사이 확인된 시장 여건입니다. 오늘 시초가나 장중 상승·하락을 확정하는 전망이 아닙니다.",
             sessionActive = false, asOf = report.asOf,
@@ -73,7 +76,7 @@ class PreMarketDirectionService(
             score <= -20 -> Bias.FALLING
             else -> null
         }
-        return DirectionSignal(bias, score, coverage.coerceIn(0.0, 1.0))
+        return DirectionSignal(bias, score, coverage.coerceIn(0.0, 1.0), positive >= .2 && negative >= .2)
     }
 
     internal fun isPredictionWindow(now: ZonedDateTime = ZonedDateTime.now(KST)): Boolean {
@@ -83,7 +86,7 @@ class PreMarketDirectionService(
     }
 
     enum class Bias { RISING, NEUTRAL, FALLING }
-    internal data class DirectionSignal(val bias: Bias?, val score: Double, val coverage: Double)
+    internal data class DirectionSignal(val bias: Bias?, val score: Double, val coverage: Double, val conflicting: Boolean = false)
     companion object {
         private val OVERNIGHT_BUCKETS = setOf("us_equity", "us_futures", "kr_proxy", "semiconductors", "fx", "kr_night")
         private const val TOTAL_WEIGHT = .75 // Fixed full model weight, NEVER divide by available weight.

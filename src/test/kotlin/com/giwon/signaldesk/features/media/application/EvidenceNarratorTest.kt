@@ -62,7 +62,7 @@ class EvidenceNarratorTest {
     }
 
     @Test fun `high volatility alone does not invent geopolitical news`() {
-        val facts = narrator.narrativeFacts(report.copy(regime = "RISK_CAUTION", riskLevel = "HIGH", newsEvidence = emptyList()))
+        val facts = narrator.narrativeFacts(report.copy(regime = "RISK_CAUTION", riskLevel = "HIGH", newsEvidence = emptyList(), marketObservation = null, openingReference = null))
         assertThat(narrator.fallbackSummary(facts)).contains("위험 지표").doesNotContain("뉴스", "전쟁")
     }
 }

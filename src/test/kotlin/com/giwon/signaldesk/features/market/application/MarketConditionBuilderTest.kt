@@ -19,7 +19,7 @@ class MarketConditionBuilderTest {
         val r = report(-1.2, 2.49)
         val view = builder.build(r, "KR")
         assertThat(view.direction).isEqualTo("MIXED")
-        assertThat(view.headline).contains("엇갈리고 있습니다")
+        assertThat(view.headline).contains("엇갈린 흐름")
         assertThat(view.riskLevel).isEqualTo("UNKNOWN")
         assertThat(view.dataStatus).isEqualTo("PARTIAL")
         assertThat(r.factors.single { it.id == "kr_cash" }.score).isZero()
@@ -42,10 +42,10 @@ class MarketConditionBuilderTest {
         assertThat(view.riskLevel).isEqualTo("HIGH")
         assertThat(view.watchPoints.first()).contains("위험 신호")
     }
-    @Test fun `after hours data is not presented as next opening forecast or final closing price`() {
+    @Test fun `post close observation carries the trading date and never becomes a next opening forecast`() {
         val view = builder.build(report(1.0, 1.0, "2026-10-06T07:00:00Z"), "KR")
         assertThat(view.horizon).isEqualTo("LATEST_OBSERVATION")
-        assertThat(view.summary).contains("관측된 자료", "다음 개장 방향을 뜻하지 않습니다").doesNotContain("마감한")
+        assertThat(view.summary).contains("2026-10-06", "다음 거래일 방향을 뜻하지 않습니다")
     }
     @Test fun `stale timestamps are excluded from both summary and evidence factors`() {
         val view = builder.build(report(1.0, 1.0).copy(evidence = report(1.0, 1.0).evidence.map { it.copy(status = "STALE") }), "KR")

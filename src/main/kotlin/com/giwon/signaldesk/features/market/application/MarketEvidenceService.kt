@@ -19,6 +19,7 @@ class MarketEvidenceService(
     private val analyzer: MarketEvidenceAnalyzer,
     private val archive: ObjectProvider<MarketEvidenceArchive>,
     @Autowired(required = false) private val nightFeed: KrxNightFuturesFeed? = null,
+    @Autowired(required = false) private val koreanIndices: NaverIndexQuoteClient? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     @Volatile private var cached: MarketEvidenceReport? = null
@@ -34,11 +35,18 @@ class MarketEvidenceService(
         val selected = if (market == "US") cachedUs else cached
         selected?.takeIf { Duration.between(Instant.parse(it.asOf), Instant.now()).seconds in 0..59 }?.let { return it }
         // Parents must not occupy the bounded executor used by the clients' child requests.
-        val quotes = CompletableFuture.supplyAsync { runCatching { yahoo.fetchIndices(YahooQuoteClient.BRIEFING_INDICES) }.getOrDefault(emptyList()) }.orTimeout(12, TimeUnit.SECONDS)
+        val quotes = CompletableFuture.supplyAsync { runCatching { yahoo.fetchLiveIndices(YahooQuoteClient.BRIEFING_INDICES) }.getOrDefault(emptyList()) }.orTimeout(12, TimeUnit.SECONDS)
+        val localQuotes = CompletableFuture.supplyAsync {
+            val decoder = KoreanIndexEvidence(MarketSessionService())
+            listOf("KOSPI", "KOSDAQ").mapNotNull { code ->
+                runCatching { koreanIndices?.fetchQuote(code)?.let { decoder.convert(it, Instant.now()) } }.getOrNull()
+            }
+        }.orTimeout(12, TimeUnit.SECONDS)
         val macro = CompletableFuture.supplyAsync { runCatching { fred.fetchMacro() }.getOrNull() }.orTimeout(12, TimeUnit.SECONDS)
         val headlines = CompletableFuture.supplyAsync { runCatching { news.fetchMarketNews() }.getOrNull() }.orTimeout(12, TimeUnit.SECONDS)
         val nightResult = CompletableFuture.supplyAsync { nightFeed?.snapshot() }.orTimeout(12, TimeUnit.SECONDS)
-        val collectedQuotes = runCatching { quotes.get(12, TimeUnit.SECONDS) }.getOrDefault(emptyList())
+        val collectedQuotes = runCatching { quotes.get(12, TimeUnit.SECONDS) }.getOrDefault(emptyList()) +
+            runCatching { localQuotes.get(12, TimeUnit.SECONDS) }.getOrDefault(emptyList())
         val collectedMacro = runCatching { macro.get(12, TimeUnit.SECONDS) }.getOrNull()
         val collectedNews = runCatching { headlines.get(12, TimeUnit.SECONDS) }.getOrNull()
         val night = runCatching { nightResult.get(12, TimeUnit.SECONDS) }.onFailure {

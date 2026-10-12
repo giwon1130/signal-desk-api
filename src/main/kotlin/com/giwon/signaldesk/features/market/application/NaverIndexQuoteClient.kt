@@ -53,14 +53,16 @@ class NaverIndexQuoteClient(
             val price = parseNumber(node["closePrice"]?.asText()) ?: return null
             // fluctuationsRatio·compareToPreviousClosePrice 는 부호 없는 절대값 → 방향으로 부호를 붙인다.
             val sign = directionSign(node["compareToPreviousPrice"])
-            val ratioAbs = node["fluctuationsRatio"]?.asDouble() ?: 0.0
-            val changeAbs = parseNumber(node["compareToPreviousClosePrice"]?.asText()) ?: 0.0
+            val ratioAbs = parseNumber(node["fluctuationsRatio"]?.asText()) ?: return null
+            val changeAbs = parseNumber(node["compareToPreviousClosePrice"]?.asText()) ?: return null
+            if (!price.isFinite() || price <= 0 || !ratioAbs.isFinite() || !changeAbs.isFinite() ||
+                (sign == 0.0 && (ratioAbs != 0.0 || changeAbs != 0.0))) return null
             IndexQuote(
                 code = code,
                 name = node["stockName"]?.asText() ?: code,
                 price = price,
-                changeAmount = changeAbs * sign,
-                changeRate = ratioAbs * sign,
+                changeAmount = kotlin.math.abs(changeAbs) * sign,
+                changeRate = kotlin.math.abs(ratioAbs) * sign,
                 marketStatus = node["marketStatus"]?.asText() ?: "",
                 tradedAt = node["localTradedAt"]?.asText() ?: "",
             )

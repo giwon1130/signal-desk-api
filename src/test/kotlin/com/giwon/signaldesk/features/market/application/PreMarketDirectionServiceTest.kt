@@ -53,4 +53,10 @@ class PreMarketDirectionServiceTest {
             assertThat(service.isPredictionWindow(ZonedDateTime.parse(date + "T08:30:00+09:00[Asia/Seoul]"))).isFalse()
         }
     }
+    @Test fun `quiet reference factors are not mislabeled as conflicting`() {
+        val result = service.fromReport(report(.05), now.atZone(ZoneId.of("Asia/Seoul")))
+        assertThat(result.status).isEqualTo("NO_CLEAR_BIAS")
+        assertThat(result.biasLabel).contains("뚜렷하지 않습니다").doesNotContain("엇갈")
+        assertThat(result.bias).isNull()
+    }
 }

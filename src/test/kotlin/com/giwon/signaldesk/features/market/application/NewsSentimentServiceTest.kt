@@ -14,12 +14,13 @@ class NewsSentimentServiceTest {
 
     // apiKey="" → GeminiClient.isEnabled()=false → NewsToneClassifier 가 키워드 폴백으로 동작.
     private val disabledGemini = GeminiClient(ObjectMapper(), apiKey = "", fallbackKeysRaw = "", baseUrl = "", model = "")
-    private val service = NewsSentimentService(NewsToneClassifier(disabledGemini, ObjectMapper()))
+    private val now = java.time.Instant.parse("2026-10-12T07:00:00Z")
+    private val service = NewsSentimentService(NewsToneClassifier(), java.time.Clock.fixed(now, java.time.ZoneOffset.UTC))
 
     private fun news(
         market: String = "KR",
         title: String,
-        publishedAt: String? = null,
+        publishedAt: String? = now.minusSeconds(600).toString(),
     ) = MarketNews(
         market = market,
         title = title,
@@ -76,21 +77,19 @@ class NewsSentimentServiceTest {
         // Phase 5 에서 추가된 publishedAt 필드 — RSS pubDate → ISO-8601 변환
         // NewsSentimentService 가 그 값을 highlights 에 잃지 않고 전달하는지 검증.
         // (오늘 필터가 생겼으므로 '오늘' 발행분으로 만들어 필터를 통과시킨다.)
-        val iso = isoOn(java.time.LocalDate.now(kst))
+        val iso = isoOn(now.atZone(kst).toLocalDate())
         val result = service.build("KR", listOf(
             news(title = "코스피 급등", publishedAt = iso),
             news(title = "단순 뉴스", publishedAt = null),
         ))
         val highlightWithTime = result.highlights.first { it.title == "코스피 급등" }
-        val highlightWithoutTime = result.highlights.first { it.title == "단순 뉴스" }
         assertEquals(iso, highlightWithTime.publishedAt)
-        assertNotNull(highlightWithoutTime)
-        assertEquals(null, highlightWithoutTime.publishedAt)
+        assertTrue(result.highlights.none { it.title == "단순 뉴스" })
     }
 
     @Test
-    fun `어제 발행 뉴스는 오늘 필터에서 제외되고 오늘+날짜없음은 유지`() {
-        val today = java.time.LocalDate.now(kst)
+    fun `old and undated news cannot enter the 24 hour sample`() {
+        val today = now.atZone(kst).toLocalDate()
         val result = service.build("KR", listOf(
             news(title = "오늘 뉴스 급등", publishedAt = isoOn(today)),
             news(title = "어제 뉴스 급락", publishedAt = isoOn(today.minusDays(1))),
@@ -98,7 +97,7 @@ class NewsSentimentServiceTest {
         ))
         val titles = result.highlights.map { it.title }
         assertTrue(titles.contains("오늘 뉴스 급등"), "오늘 뉴스 누락")
-        assertTrue(titles.contains("날짜없는 뉴스"), "날짜없는 뉴스 누락(과필터)")
+        assertTrue(!titles.contains("날짜없는 뉴스"))
         assertTrue(!titles.contains("어제 뉴스 급락"), "어제 뉴스가 노출됨")
     }
 
@@ -128,9 +127,25 @@ class NewsSentimentServiceTest {
     @Test
     fun `뉴스 0건이면 중립 score 50 + 분석 가능 뉴스 없어 rationale`() {
         val result = service.build("KR", emptyList())
-        assertEquals("중립", result.label)
+        assertEquals("자료 없음", result.label)
         assertEquals(50, result.score)
         assertEquals(0, result.highlights.size)
         assertTrue(result.rationale.contains("없"), "rationale=${result.rationale}")
+    }
+
+    @Test fun `US articles across Korean midnight remain in the dated sample but future and duplicates do not`() {
+        val item = news("US", "US stocks plunge", now.minusSeconds(20 * 3600).toString())
+        val result = service.build("US", listOf(item, item.copy(url = item.url + "?dup=1"),
+            news("US", "gains", now.plusSeconds(1).toString()), news("US", "gains", "invalid")))
+        assertEquals(1, result.negativeCount)
+        assertEquals(1, result.highlights.size)
+        assertTrue(result.rationale.contains("표현 분류"))
+        assertTrue(!result.rationale.contains("방어 모드"))
+    }
+
+    @Test fun `neutral wording never forecasts a mixed or differentiated session`() {
+        val result = service.build("KR", listOf(news(title = "기업 공시")))
+        assertTrue(result.rationale.contains("시장") && result.rationale.contains("뜻은 아닙니다"))
+        assertTrue(!result.rationale.contains("예상"))
     }
 }

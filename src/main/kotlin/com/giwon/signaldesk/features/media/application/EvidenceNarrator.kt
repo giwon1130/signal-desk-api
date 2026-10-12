@@ -3,6 +3,7 @@ package com.giwon.signaldesk.features.media.application
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.giwon.signaldesk.features.market.application.EvidenceFactor
 import com.giwon.signaldesk.features.market.application.MarketEvidenceReport
+import com.giwon.signaldesk.features.market.application.primaryObservation
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import kotlin.math.abs
@@ -48,6 +49,25 @@ class EvidenceNarrator(private val gemini: GeminiClient, private val mapper: Obj
     }
 
     internal fun narrativeFacts(report: MarketEvidenceReport): List<NarrativeFact> {
+        val observation = report.primaryObservation()
+        if (observation != null && observation.direction != "UNKNOWN") {
+            val facts = mutableListOf(NarrativeFact("observed_${observation.market}", "primary", observation.summary))
+            // Do not turn a separate, cross-market weighted score into the observed local result.
+            val background = report.factors.filter { it.id !in setOf("kr_cash", "us_equity") &&
+                it.score?.let { score -> abs(score) >= .2 } == true }
+                .sortedByDescending { abs(it.score!! * it.weight) }.firstOrNull()
+            background?.let { facts += NarrativeFact("reference_${it.id}", "reference", "참고로 " + factorSentence(it)) }
+            riskSentence(report.riskLevel)?.let { facts += NarrativeFact("risk_${report.riskLevel.lowercase()}", "risk", it) }
+            if (report.openingReference != null) facts += NarrativeFact("preopen_scope", "guidance",
+                "국내장 개장 전 참고 자료이며, 오늘 국내 증시의 상승·하락을 예고하는 것은 아닙니다.")
+            else if (report.regime == "INSUFFICIENT_DATA") facts += NarrativeFact("reference_shortage", "guidance",
+                "지수 움직임은 확인했지만, 배경을 종합적으로 설명할 참고 자료는 부족합니다.")
+            return facts.take(4)
+        }
+        if (observation != null) return listOf(
+            NarrativeFact("data_shortage", "primary", "시황을 판단하기에 최신 자료가 충분하지 않습니다."),
+            NarrativeFact("wait_for_data", "guidance", "주요 지수 자료를 확인할 필요가 있습니다. 일부 해외 지표만으로 해당 시장의 방향을 단정하지 않습니다."),
+        )
         if (report.regime == "INSUFFICIENT_DATA") {
             return listOf(
                 NarrativeFact("data_shortage", "primary", "시황을 판단하기에 최신 자료가 충분하지 않습니다."),
@@ -123,9 +143,13 @@ class EvidenceNarrator(private val gemini: GeminiClient, private val mapper: Obj
                 factor.evidenceIds.mapNotNull { evidence[it] }.joinToString(" / ") { it.detail }
         } + report.evidence.filter { it.id in setOf("^VIX", "CL=F") }.map { it.detail } + report.warnings
         return MarketInsightAnalysis(
-            headline = friendlyHeadline(report.regime),
+            headline = if (report.primaryObservation() != null) report.headline else friendlyHeadline(report.regime),
             summary = summary,
-            sentiment = when (report.regime) {
+            sentiment = report.primaryObservation()?.let { when (it.direction) {
+                "UP" -> MediaSentiment.BULLISH
+                "DOWN" -> MediaSentiment.BEARISH
+                else -> MediaSentiment.NEUTRAL
+            } } ?: when (report.regime) {
                 "SUPPORTIVE" -> MediaSentiment.BULLISH
                 "PRESSURED", "RISK_CAUTION" -> MediaSentiment.BEARISH
                 else -> MediaSentiment.NEUTRAL
@@ -169,10 +193,10 @@ class EvidenceNarrator(private val gemini: GeminiClient, private val mapper: Obj
     }
 
     private fun riskSentence(riskLevel: String): String? = when (riskLevel) {
-        "HIGH" -> "확인된 위험 지표에서 강한 경고 신호가 나타나 주의가 필요합니다."
-        "ELEVATED" -> "확인된 위험 지표에서 주의가 필요한 신호가 나타나고 있습니다."
+        "HIGH" -> "외부 위험 지표에서 강한 경고 신호가 나타나 주의가 필요합니다."
+        "ELEVATED" -> "외부 위험 지표에서 주의가 필요한 신호가 나타나고 있습니다."
         "UNKNOWN" -> "위험 판단에 필요한 일부 자료가 부족해 안정적인 구간이라고 단정하기 어렵습니다."
-        "NORMAL" -> "현재 확인된 변동성과 위험 지표는 과도한 불안 국면을 가리키고 있지 않습니다."
+        "NORMAL" -> null // Absence of an external alarm does not imply a calm local market.
         else -> null
     }
 

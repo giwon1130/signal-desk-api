@@ -97,4 +97,18 @@ class NaverIndexQuoteClientTest {
     fun `미등록 코드는 404 라 null`() {
         assertThat(client.fetchQuote("UNKNOWN")).isNull()
     }
+
+    @Test fun `provider signed negatives are not inverted into gains`() {
+        responses["KOSPI"] = basicJson("6,384.24", "-241.69", -3.65, "하락", "FALLING", "CLOSE")
+        val q = client.fetchQuote("KOSPI")!!
+        assertThat(q.changeRate).isEqualTo(-3.65)
+        assertThat(q.changeAmount).isEqualTo(-241.69)
+    }
+
+    @Test fun `missing changes and unknown direction cannot silently become flat`() {
+        responses["KOSPI"] = basicJson("100", "1", 1.0, "", "UNKNOWN", "OPEN")
+        assertThat(client.fetchQuote("KOSPI")).isNull()
+        responses["KOSPI"] = """{"closePrice":"100","marketStatus":"OPEN"}"""
+        assertThat(client.fetchQuote("KOSPI")).isNull()
+    }
 }

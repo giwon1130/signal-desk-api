@@ -2,6 +2,7 @@ package com.giwon.signaldesk.features.media.application
 
 import com.giwon.signaldesk.features.push.application.ExpoPushClient
 import com.giwon.signaldesk.features.push.application.PushDevice
+import com.giwon.signaldesk.features.market.application.primaryObservation
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
@@ -97,7 +98,15 @@ class BriefPipeline(
         leadingContext: String? = null,
     ): Pair<String, String> {
         val assessment = analysis.assessment
-        if (assessment == null || assessment.regime == "INSUFFICIENT_DATA") {
+        val observation = assessment?.primaryObservation()
+        if (observation != null && observation.direction != "UNKNOWN") {
+            val context = if (assessment.openingReference != null) "국내 개장 전 참고 자료입니다. 개장 방향을 뜻하지 않습니다."
+                else if (observation.direction == "DOWN") "보유종목의 변동 폭과 대응 기준을 점검해 주세요."
+                else "지수와 개별 종목의 흐름은 다를 수 있습니다."
+            // Index result comes first; optional personal context cannot truncate the market fact.
+            return analysis.headline to listOfNotNull(observation.summary, context, leadingContext).joinToString(" ").take(180)
+        }
+        if (assessment == null || observation != null || assessment.regime == "INSUFFICIENT_DATA") {
             // 근거 구조가 없는 오래된/외부 분석의 자유 문장을 푸시 원인으로 재사용하지 않는다.
             return fallbackTitle to listOfNotNull(leadingContext, "시황을 판단할 최신 근거가 충분하지 않습니다. 자료가 확인되면 안내하겠습니다.")
                 .joinToString(" ").take(180)
