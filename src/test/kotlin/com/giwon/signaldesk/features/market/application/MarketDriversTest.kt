@@ -88,4 +88,13 @@ class MarketDriversTest {
         assertThat(canonicalNewsUrl("https://example.com/news?id=1&utm_source=google")).isEqualTo("https://example.com/news?id=1")
         assertThat(canonicalNewsUrl("https://example.com/news?id=2")).isNotEqualTo(canonicalNewsUrl("https://example.com/news?id=1"))
     }
+
+    @Test fun `same date futures and extended hours headlines do not explain the cash close`() {
+        val us = observation.copy(market = "US", tradingDate = "2026-10-12")
+        for (title in listOf("나스닥 선물, 반도체 매도세 속 하락", "Nasdaq futures fall as Treasury yields rise",
+            "미국 증시 시간외 하락, 반도체 급락", "미국 증시 개장 전 하락, 반도체 약세")) {
+            val item = news(title, at = "2026-10-13T00:25:00Z", market = "US")
+            assertThat(MarketDriverBuilder.build(us, listOf(item), now)).describedAs(title).isEmpty()
+        }
+    }
 }

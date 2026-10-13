@@ -30,6 +30,8 @@ internal object MarketDriverBuilder {
     private val usMarket = pattern("S&P\\s*500|나스닥|뉴욕\\s*증시|미국\\s*증시|미\\s*증시|월가|Nasdaq|Wall Street|US stocks|U\\.S\\. stocks")
     private val excluded = pattern("정정|부인|사실\\s*(아니|아냐)|루머|전망|예상|내일|내년|다음\\s*주|지난\\s*(주|달|해)|작년|어제|회고|가능성|할까|될까|\\?|\\b(forecast|outlook|rumor|denies|tomorrow|next week|last week|yesterday)\\b")
     private val contradiction = pattern("에도|불구|아닌|아니다|아냐|없다|해소|완화|반전|낙폭\\s*축소|despite|not driven|not due|eases|easing")
+    // A same-date futures / extended-hours report can describe the next session, not this cash close.
+    private val differentSession = pattern("선물|야간|시간외|시간\\s*외|프리마켓|애프터마켓|장전|개장\\s*전|\\bfutures\\b|after.hours|pre.market|extended.hours")
     private val rules = listOf(
         Rule("foreign_sell", "외국인 매도", "DOWN", pattern("외국인|외인"), pattern("(?:외국인|외인).{0,18}(순매도|매도|팔자|이탈|짐\\s*싸)"),
             "당일 보도에서는 외국인 매도세가 증시 약세의 배경으로 부각됐습니다.", "외국인 매도세가 이어지는지와 대형주의 낙폭을 함께 살펴볼 필요가 있습니다.", pattern("기관|개인|매수|사자")),
@@ -67,7 +69,7 @@ internal object MarketDriverBuilder {
             } }.getOrDefault(false) }
             .map { it to MoverNewsEvidence.headline(it) }
             .filter { (_, title) -> title.length in 8..220 && marketDirectionMatches(title, marketPattern, observation.direction) &&
-                !excluded.containsMatchIn(title) && !contradiction.containsMatchIn(title) }
+                !excluded.containsMatchIn(title) && !contradiction.containsMatchIn(title) && !differentSession.containsMatchIn(title) }
             .distinctBy { canonicalNewsUrl(it.first.url) }
             .distinctBy { it.second.lowercase(Locale.ROOT).replace(Regex("[^\\p{L}\\p{N}]"), "") }
             .sortedByDescending { it.first.publishedAt }.toList()
