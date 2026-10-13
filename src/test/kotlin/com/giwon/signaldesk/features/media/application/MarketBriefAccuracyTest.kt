@@ -43,6 +43,27 @@ class MarketBriefAccuracyTest {
         assertThat(result.sentiment).isEqualTo(MediaSentiment.BEARISH)
     }
 
+    @Test fun `October 13 single index crash is explicit and reported background reaches summary details and push`() {
+        val input = MarketEvidenceInput(Instant.parse("2026-10-13T06:40:00Z"),
+            listOf(quote("^KS11", -5.46, "2026-10-13T06:39:00Z", previous = "2026-10-12"),
+                quote("^KQ11", -1.43, "2026-10-13T06:39:00Z", previous = "2026-10-12")), null,
+            listOf(MarketNews("KR", "코스피 외국인 매도에 급락", "TEST", "https://example.com/news", "", "2026-10-13T06:20:00Z")))
+        val result = narrator.narrate(analyzer.analyze(input))
+        assertThat(result.headline).contains("코스피 5.46% 급락", "코스닥 1.43% 하락 마감")
+        assertThat(result.summary).contains("-5.46%", "보도에서는 외국인 매도", "살펴볼 필요").doesNotContain("다음 거래일 방향")
+        assertThat(result.keyPoints.joinToString()).contains("https://example.com/news", "기사 제목", "원인", "확정하지")
+        val push = pipeline.briefPushContent(result, "마감")
+        assertThat(push.second).contains("-5.46%", "보도에서 짚은 배경: 외국인 매도")
+        assertThat(push.second.length).isLessThanOrEqualTo(180)
+    }
+
+    @Test fun `standout rally and opposite index crash retain each index direction`() {
+        assertThat(report(4.2, 1.0).headline).contains("코스피 4.20% 급등", "코스닥 1.00% 상승")
+        val mixed = report(-5.0, .5)
+        assertThat(mixed.headline).contains("코스피 5.00% 급락", "코스닥 0.50% 상승")
+        assertThat(mixed.marketObservation?.direction).isEqualTo("MIXED")
+    }
+
     @Test fun `sharp rally cannot become bearish because of external risk`() {
         val result = narrator.narrate(report(3.0, 4.0).copy(regime = "RISK_CAUTION", riskLevel = "HIGH"))
         assertThat(result.headline).contains("큰 폭으로 상승")

@@ -66,9 +66,9 @@ class NewsDigestService(
             videoUrl = "",
             publishedAt = Instant.now(),
             transcriptLength = headlines.sumOf { it.second.length },
-            summary = "최근 24시간의 관련 보도를 모았습니다. 뉴스 제목은 보도 내용이며, 주가 변동의 원인으로 확인된 것은 아닙니다.\n\n" +
+            summary = analysis.headline + "\n\n" + analysis.summary,
+            flowAnalysis = analysis.keyPoints.joinToString("\n") + "\n\n최근 관련 보도 · 원인으로 확정된 목록은 아닙니다\n" +
                 marketNews.take(8).joinToString("\n") { "[${it.source}] ${it.title} — ${it.url}" },
-            flowAnalysis = analysis.summary + "\n\n" + analysis.keyPoints.joinToString("\n"),
             keyTickers = emptyList(),
             sentiment = analysis.sentiment,
             hasTranscript = true,

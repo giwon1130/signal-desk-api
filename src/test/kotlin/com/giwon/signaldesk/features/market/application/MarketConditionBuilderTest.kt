@@ -45,7 +45,7 @@ class MarketConditionBuilderTest {
     @Test fun `post close observation carries the trading date and never becomes a next opening forecast`() {
         val view = builder.build(report(1.0, 1.0, "2026-10-06T07:00:00Z"), "KR")
         assertThat(view.horizon).isEqualTo("LATEST_OBSERVATION")
-        assertThat(view.summary).contains("2026-10-06", "다음 거래일 방향을 뜻하지 않습니다")
+        assertThat(view.summary).contains("2026-10-06", "마감했습니다")
     }
     @Test fun `stale timestamps are excluded from both summary and evidence factors`() {
         val view = builder.build(report(1.0, 1.0).copy(evidence = report(1.0, 1.0).evidence.map { it.copy(status = "STALE") }), "KR")

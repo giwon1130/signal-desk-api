@@ -104,7 +104,8 @@ class BriefPipeline(
                 else if (observation.direction == "DOWN") "보유종목의 변동 폭과 대응 기준을 점검해 주세요."
                 else "지수와 개별 종목의 흐름은 다를 수 있습니다."
             // Index result comes first; optional personal context cannot truncate the market fact.
-            return analysis.headline to listOfNotNull(observation.summary, context, leadingContext).joinToString(" ").take(180)
+            val background = assessment.drivers.firstOrNull()?.let { "보도에서 짚은 배경: ${it.label}." }
+            return analysis.headline to listOfNotNull(observation.summary, background, context, leadingContext).joinToString(" ").take(180)
         }
         if (assessment == null || observation != null || assessment.regime == "INSUFFICIENT_DATA") {
             // 근거 구조가 없는 오래된/외부 분석의 자유 문장을 푸시 원인으로 재사용하지 않는다.

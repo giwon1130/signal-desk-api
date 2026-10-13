@@ -52,6 +52,18 @@ class EvidenceNarrator(private val gemini: GeminiClient, private val mapper: Obj
         val observation = report.primaryObservation()
         if (observation != null && observation.direction != "UNKNOWN") {
             val facts = mutableListOf(NarrativeFact("observed_${observation.market}", "primary", observation.summary))
+            if (report.drivers.isNotEmpty()) {
+                report.drivers.take(2).forEach { driver ->
+                    facts += NarrativeFact("reported_${driver.id}", "reported", driver.summary)
+                }
+                if (report.openingReference != null) facts += NarrativeFact("preopen_scope", "guidance",
+                    "이전 미국 거래일의 배경이며, 오늘 국내장 방향을 예고하는 것은 아닙니다.")
+                else facts += NarrativeFact("watch_${report.drivers.first().id}", "guidance", report.drivers.first().watchPoint)
+                riskSentence(report.riskLevel)?.takeIf { report.riskLevel in setOf("HIGH", "ELEVATED") }?.let {
+                    facts += NarrativeFact("risk_${report.riskLevel.lowercase()}", "risk", it)
+                }
+                return facts
+            }
             // Do not turn a separate, cross-market weighted score into the observed local result.
             val background = report.factors.filter { it.id !in setOf("kr_cash", "us_equity") &&
                 it.score?.let { score -> abs(score) >= .2 } == true }
@@ -138,7 +150,12 @@ class EvidenceNarrator(private val gemini: GeminiClient, private val mapper: Obj
 
     internal fun render(report: MarketEvidenceReport, summary: String): MarketInsightAnalysis {
         val evidence = report.evidence.associateBy { it.id }
-        val points = report.factors.map { factor ->
+        val driverPoints = report.drivers.flatMap { driver ->
+            listOf("보도에서 짚은 배경 · ${driver.label}: ${driver.summary}") + driver.sources.map { source ->
+                "관련 보도 · ${source.source} · ${source.publishedAt}: ${source.title} — ${source.url}"
+            }
+        } + if (report.drivers.isNotEmpty()) listOf("당일 기사 제목에 명시된 배경을 정리했습니다. 기사 원문 전체를 분석하거나 수급 규모·지수 기여도를 검증한 것은 아니며, 주가 변동의 원인으로 확정하지 않습니다.") else emptyList()
+        val points = driverPoints + report.factors.map { factor ->
             "${factor.label}: ${factor.interpretation} " +
                 factor.evidenceIds.mapNotNull { evidence[it] }.joinToString(" / ") { it.detail }
         } + report.evidence.filter { it.id in setOf("^VIX", "CL=F") }.map { it.detail } + report.warnings

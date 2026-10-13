@@ -159,7 +159,7 @@ class GoogleNewsRssClient(
         private val KR_QUERIES = listOf(
             "코스피",
             "코스닥",
-            "한국 증시",
+            "코스피 (외국인 OR 기관 OR 반도체 OR 금리) when:1d",
             "반도체 SK하이닉스 삼성전자 when:1d",
             "전쟁 공습 휴전 원유 when:1d",
         )
@@ -167,7 +167,7 @@ class GoogleNewsRssClient(
             "S&P 500",
             "NASDAQ",
             "Treasury yields inflation when:1d",
-            "US stock market",
+            "US stock market (earnings OR yields OR inflation) when:1d",
             "war ceasefire oil sanctions when:1d",
         )
     }

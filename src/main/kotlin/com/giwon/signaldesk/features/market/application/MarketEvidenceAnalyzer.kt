@@ -36,6 +36,7 @@ data class MarketEvidenceReport(
     val warnings: List<String>, val newsEvidence: List<MarketNews>,
     val marketObservation: MarketObservation? = null,
     val openingReference: MarketObservation? = null,
+    val drivers: List<MarketDriver> = emptyList(),
 )
 
 /**
@@ -225,7 +226,8 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
             balanceScore = (balance * 100).takeIf { regime != "INSUFFICIENT_DATA" }, headline = observedHeadline,
             conclusion = primary.summary + " 참고 여건: $headline. 참고 지표는 실제 지수 등락이나 다음 거래일 전망과 구분합니다.",
             factors = factors, evidence = evidence.values.filter { !isUs || it.id in factors.flatMap { factor -> factor.evidenceIds } + listOf("^VIX", "CL=F") }, warnings = warnings, newsEvidence = escalation.take(8))
-            .copy(marketObservation = observation, openingReference = opening)
+            .copy(marketObservation = observation, openingReference = opening,
+                drivers = MarketDriverBuilder.build(primary, news, now))
     }
 
     internal fun expectedSession(now: Instant, market: String): LocalDate {
@@ -251,8 +253,8 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
 
     internal fun recentNews(news: List<MarketNews>, now: Instant): List<MarketNews> = news
         .filter { n -> parseInstant(n.publishedAt)?.let { it <= now && it >= now.minus(Duration.ofHours(24)) } == true }
-        .filter { it.source.isNotBlank() && it.source != "Google News" && it.url.startsWith("https://") }
-        .distinctBy { it.url.substringBefore('?') }
+        .filter { it.source.isNotBlank() && it.source != "Google News" && safeNewsUrl(it.url) }
+        .distinctBy { canonicalNewsUrl(it.url) }
         .distinctBy { it.title.substringBeforeLast(" - ").lowercase(Locale.ROOT).replace(Regex("[^\\p{L}\\p{N}]"), "") }
         .sortedByDescending { it.publishedAt }.take(80)
 
@@ -271,5 +273,5 @@ class MarketEvidenceAnalyzer(private val sessions: MarketSessionService) {
     private fun fmt(value: Double) = String.format(Locale.US, "%.2f", value)
     private fun signed(value: Double) = String.format(Locale.US, "%+.2f", value)
 
-    companion object { const val RULES_VERSION = "market-evidence-v4"; const val US_RULES_VERSION = "market-evidence-us-v2" }
+    companion object { const val RULES_VERSION = "market-evidence-v5"; const val US_RULES_VERSION = "market-evidence-us-v3" }
 }

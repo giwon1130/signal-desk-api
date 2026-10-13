@@ -25,7 +25,7 @@ class NewsDigestMarketTest {
         val result = service.runDigest("US")!!
         verify(briefing).current("US")
         verify(briefing, never()).current("KR")
-        assertThat(result.summary).contains("모았습니다", "원인으로 확인된 것은 아닙니다").doesNotContain("모았어", "아니야")
-        assertThat(result.flowAnalysis).startsWith("미국 지수 결과입니다")
+        assertThat(result.summary).isEqualTo("미국 마감\n\n미국 지수 결과입니다.")
+        assertThat(result.flowAnalysis).contains("원인으로 확정된 목록은 아닙니다", "https://example.com/news")
     }
 }

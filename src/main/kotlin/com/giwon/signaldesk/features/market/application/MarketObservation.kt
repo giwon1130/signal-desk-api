@@ -60,9 +60,11 @@ class MarketObservationBuilder(private val sessions: MarketSessionService) {
             else -> "FLAT"
         }
         val sharp = changes.all { abs(it) >= 2.0 }
+        // One index can crash while the other falls moderately. Never hide that in a generic label.
+        val standout = cash.maxBy { abs(it.change!!) }.takeIf { abs(it.change!!) >= 3.0 && (!sharp || direction == "MIXED") }
         val label = when (direction) {
-            "UP" -> if (sharp) "큰 폭 상승" else "상승 흐름"
-            "DOWN" -> if (sharp) "큰 폭 하락" else "하락 흐름"
+            "UP" -> if (sharp) "큰 폭 상승" else if (standout != null) "${standout.label} 급등" else "상승 흐름"
+            "DOWN" -> if (sharp) "큰 폭 하락" else if (standout != null) "${standout.label} 급락" else "하락 흐름"
             "MIXED" -> "지수별 혼조"
             else -> "보합권"
         }
@@ -72,7 +74,14 @@ class MarketObservationBuilder(private val sessions: MarketSessionService) {
             "MIXED" -> "지수별로 엇갈린 흐름"
             else -> "보합권 흐름"
         }
+        val specificMovement = standout?.let { cash.joinToString(" · ") { index ->
+            val change = index.change!!
+            val verb = when { change <= -3 -> "급락"; change >= 3 -> "급등"; change < 0 -> "하락"; change > 0 -> "상승"; else -> "보합" }
+            "${index.label} ${String.format(Locale.ROOT, "%.2f%%", abs(change))} $verb"
+        } }
         val headline = when {
+            specificMovement != null && regular -> "$specificMovement 중입니다"
+            specificMovement != null && closed -> "$specificMovement 마감했습니다"
             regular -> if (direction in setOf("UP", "DOWN")) "$name 증시는 ${movement}하고 있습니다" else "$name 증시는 ${movement}을 보이고 있습니다"
             closed -> if (direction in setOf("UP", "DOWN")) "$name 증시는 $movement 마감했습니다" else "$name 증시는 ${movement}으로 마감했습니다"
             else -> "$name 증시는 ${label}입니다 · 종가 확인 중"
@@ -81,7 +90,7 @@ class MarketObservationBuilder(private val sessions: MarketSessionService) {
         val timing = observed.atZone(zone).format(java.time.format.DateTimeFormatter.ofPattern("MM/dd HH:mm"))
         val timeZone = if (market == "KR") "한국시간" else "뉴욕시간"
         val summary = when (status) {
-            "CLOSED" -> "$expected 거래일에 ${numbers}로 마감했습니다. 다음 거래일 방향을 뜻하지 않습니다."
+            "CLOSED" -> "$expected 거래일에 ${numbers}로 마감했습니다."
             "INTRADAY" -> "$timing $timeZone 기준 ${numbers}입니다. 지연 시세가 포함될 수 있으며 최종 마감 결과는 아닙니다."
             else -> "$timing ${timeZone}까지 확인된 값은 ${numbers}입니다. 최종 종가는 아직 확인되지 않았습니다."
         }
