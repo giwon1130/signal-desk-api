@@ -21,7 +21,8 @@ data class MarketDriver(
 /** Pure, replayable rules. Never fetch article bodies, infer flow amounts, or ask an LLM for causes. */
 internal object MarketDriverBuilder {
     private data class Rule(val id: String, val label: String, val direction: String,
-                            val topic: Regex, val detail: Regex, val summary: String, val watch: String)
+                            val topic: Regex, val detail: Regex, val summary: String, val watch: String,
+                            val conflicts: Regex? = null)
     private fun pattern(value: String) = Regex(value, RegexOption.IGNORE_CASE)
     private val down = pattern("하락|급락|약세|폭락|검은|붕괴|밀려|미끌|\\b(fall|falls|fell|drop|drops|slump|slumps|selloff|sell-off|lower|slide|slides|losses)\\b")
     private val up = pattern("상승|급등|강세|반등|\\b(rise|rises|rose|rally|rallies|gain|gains|higher|surge|surges)\\b")
@@ -31,21 +32,21 @@ internal object MarketDriverBuilder {
     private val contradiction = pattern("에도|불구|아닌|아니다|아냐|없다|해소|완화|반전|낙폭\\s*축소|despite|not driven|not due|eases|easing")
     private val rules = listOf(
         Rule("foreign_sell", "외국인 매도", "DOWN", pattern("외국인|외인"), pattern("(?:외국인|외인).{0,18}(순매도|매도|팔자|이탈|짐\\s*싸)"),
-            "당일 보도에서는 외국인 매도세가 증시 약세의 배경으로 부각됐습니다.", "외국인 매도세가 이어지는지와 대형주의 낙폭을 함께 살펴볼 필요가 있습니다."),
+            "당일 보도에서는 외국인 매도세가 증시 약세의 배경으로 부각됐습니다.", "외국인 매도세가 이어지는지와 대형주의 낙폭을 함께 살펴볼 필요가 있습니다.", pattern("기관|개인|매수|사자")),
         Rule("foreign_buy", "외국인 매수", "UP", pattern("외국인|외인"), pattern("(?:외국인|외인).{0,18}(순매수|매수|사자)"),
-            "당일 보도에서는 외국인 매수세가 증시 강세의 배경으로 부각됐습니다.", "외국인 매수세가 이어지는지와 상승 종목이 넓어지는지 확인할 필요가 있습니다."),
+            "당일 보도에서는 외국인 매수세가 증시 강세의 배경으로 부각됐습니다.", "외국인 매수세가 이어지는지와 상승 종목이 넓어지는지 확인할 필요가 있습니다.", pattern("기관|개인|매도|팔자")),
         Rule("institution_sell", "기관 매도", "DOWN", pattern("기관"), pattern("기관.{0,12}(순매도|매도|팔자)"),
-            "당일 보도에서는 기관의 매도세가 시장 부담으로 거론됐습니다.", "기관 수급과 주요 업종의 움직임을 함께 확인할 필요가 있습니다."),
+            "당일 보도에서는 기관의 매도세가 시장 부담으로 거론됐습니다.", "기관 수급과 주요 업종의 움직임을 함께 확인할 필요가 있습니다.", pattern("외국인|외인|개인|매수|사자")),
         Rule("institution_buy", "기관 매수", "UP", pattern("기관"), pattern("기관.{0,12}(순매수|매수|사자)"),
-            "당일 보도에서는 기관의 매수세가 시장을 뒷받침한 배경으로 거론됐습니다.", "기관 수급과 주요 업종의 움직임을 함께 확인할 필요가 있습니다."),
+            "당일 보도에서는 기관의 매수세가 시장을 뒷받침한 배경으로 거론됐습니다.", "기관 수급과 주요 업종의 움직임을 함께 확인할 필요가 있습니다.", pattern("외국인|외인|개인|매도|팔자")),
         Rule("semiconductor_weak", "반도체 약세", "DOWN", pattern("반도체|삼성전자|하이닉스|삼전|닉스|semiconductor|chip stocks|chipmakers"),
             pattern("(?:반도체|삼성전자|하이닉스|삼전|닉스|semiconductor|chip stocks|chipmakers).{0,16}(급락|하락|약세|매도|불안|fall|drop|slump|slide|selloff|losses)"),
-            "반도체주 약세도 당일 증시 보도에서 주요 부담으로 다뤄졌습니다.", "반도체 대형주의 낙폭과 업종 전반으로 약세가 번지는지 확인할 필요가 있습니다."),
+            "반도체주 약세도 당일 증시 보도에서 주요 부담으로 다뤄졌습니다.", "반도체 대형주의 낙폭과 업종 전반으로 약세가 번지는지 확인할 필요가 있습니다.", pattern("${krMarket.pattern}|${usMarket.pattern}|${up.pattern}")),
         Rule("semiconductor_strong", "반도체 강세", "UP", pattern("반도체|삼성전자|하이닉스|semiconductor|chip stocks|chipmakers"),
             pattern("(?:반도체|삼성전자|하이닉스|semiconductor|chip stocks|chipmakers).{0,16}(강세|상승|급등|rally|gain|surge)"),
-            "반도체주 강세가 당일 증시 보도에서 주요 배경으로 다뤄졌습니다.", "반도체 업종의 강세가 이어지는지와 다른 업종으로 확산되는지 확인할 필요가 있습니다."),
-        Rule("ai_concern", "AI 투자 우려", "DOWN", pattern("AI|인공지능"), pattern("(?:AI|인공지능).{0,20}(거품|수익성\\s*우려|수요\\s*우려|투자\\s*우려|bubble|concern|fears)"),
-            "당일 보도에서는 AI 투자와 수요에 대한 우려도 시장 부담으로 거론됐습니다.", "AI 관련 기업의 실적과 투자 계획에 실제 변화가 있는지 확인할 필요가 있습니다."),
+            "반도체주 강세가 당일 증시 보도에서 주요 배경으로 다뤄졌습니다.", "반도체 업종의 강세가 이어지는지와 다른 업종으로 확산되는지 확인할 필요가 있습니다.", pattern("${krMarket.pattern}|${usMarket.pattern}|${down.pattern}")),
+        Rule("ai_concern", "AI 관련 우려", "DOWN", pattern("AI|인공지능"), pattern("(?:AI|인공지능).{0,20}(거품|수익성\\s*우려|수요\\s*우려|투자\\s*우려|bubble|concern|fears)"),
+            "당일 보도에서는 AI 관련 우려도 시장 부담으로 거론됐습니다.", "AI 관련 기업의 실적과 투자 계획에 실제 변화가 있는지 확인할 필요가 있습니다."),
         Rule("rates_rise", "금리 상승 부담", "DOWN", pattern("금리|국채|yield|rates"), pattern("(?:금리|국채|yield|rates).{0,12}(상승|급등|오르|rise|rising|jump|higher|surge)"),
             "당일 보도에서는 금리 상승 부담이 증시 약세의 배경으로 거론됐습니다.", "국채금리의 추가 움직임과 성장주의 반응을 함께 확인할 필요가 있습니다."),
         Rule("earnings_weak", "기업 실적 우려", "DOWN", pattern("실적|가이던스|earnings|guidance"), pattern("실적\\s*(부진|실망|우려)|가이던스\\s*(하향|실망)|earnings miss|weak guidance|profit warning"),
@@ -73,7 +74,9 @@ internal object MarketDriverBuilder {
         val usedArticles = mutableSetOf<String>()
         return rules.filter { it.direction == observation.direction }.mapNotNull { rule ->
             val sources = candidates.filter { (item, title) -> canonicalNewsUrl(item.url) !in usedArticles &&
-                rule.topic.containsMatchIn(title) && rule.detail.containsMatchIn(title) }
+                rule.topic.containsMatchIn(title) && rule.detail.findAll(title).any { match ->
+                    rule.conflicts?.containsMatchIn(match.value) != true
+                } }
                 .distinctBy { it.first.source.lowercase(Locale.ROOT) }.take(2)
             if (sources.isEmpty()) null else {
                 usedArticles += sources.map { canonicalNewsUrl(it.first.url) }

@@ -60,6 +60,15 @@ class MarketDriversTest {
         assertThat(result.single().summary).doesNotContain("교차", "확인됐")
     }
 
+    @Test fun `opposing investor flows and sector moves never borrow each others direction`() {
+        assertThat(MarketDriverBuilder.build(observation, listOf(news("코스피 하락, 외국인 매수 기관 매도")), now).map { it.id })
+            .containsExactly("institution_sell")
+        assertThat(MarketDriverBuilder.build(observation, listOf(news("코스피 하락, 기관 매수 외국인 매도")), now).map { it.id })
+            .containsExactly("foreign_sell")
+        assertThat(MarketDriverBuilder.build(observation, listOf(news("반도체 상승 코스피 하락")), now)).isEmpty()
+        assertThat(MarketDriverBuilder.build(observation.copy(direction = "UP"), listOf(news("반도체 하락 코스피 상승")), now)).isEmpty()
+    }
+
     @Test fun `observed rally uses buying rather than selling and mixed sessions do not force one explanation`() {
         assertThat(MarketDriverBuilder.build(observation.copy(direction = "UP"),
             listOf(news("코스피 외국인 순매수에 상승")), now).single().id).isEqualTo("foreign_buy")
