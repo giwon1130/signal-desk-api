@@ -1,7 +1,6 @@
 package com.giwon.signaldesk.features.market.application
 
 import org.slf4j.LoggerFactory
-import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.beans.factory.annotation.Autowired
 import java.time.Clock
@@ -18,7 +17,6 @@ import kotlin.math.abs
 class MoverReasonService(
     private val topMoversService: TopMoversService,
     private val newsRssClient: GoogleNewsRssClient,
-    private val marketSessionService: MarketSessionService,
     private val clock: Clock = Clock.systemUTC(),
     @Autowired(required = false) private val disclosureSource: MoverDisclosureSource? = null,
     @Autowired(required = false) private val naverNews: NaverNewsSearchClient? = null,
@@ -50,12 +48,6 @@ class MoverReasonService(
         }
         // 캐시가 만료되면 옛 기사/등락 방향을 현재 원인으로 재사용하지 않는다.
         return emptyList()
-    }
-
-    @Scheduled(fixedDelay = 15 * 60 * 1000L, initialDelay = 45 * 1000L)
-    fun warm() {
-        if (marketSessionService.buildMarketSessions().none { it.market in setOf("KR", "US") && it.phase == "REGULAR" }) return
-        runCatching { reasons() }.onFailure { log.debug("mover context warm skipped", it) }
     }
 
     private fun compute(): List<MoverReason> {

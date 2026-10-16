@@ -1,6 +1,7 @@
 package com.giwon.signaldesk.bootstrap
 
 import com.github.benmanes.caffeine.cache.Caffeine
+import com.github.benmanes.caffeine.cache.Scheduler
 import org.springframework.cache.CacheManager
 import org.springframework.cache.annotation.EnableCaching
 import org.springframework.cache.caffeine.CaffeineCacheManager
@@ -37,8 +38,14 @@ class CacheConfig {
         // 시즈널리티 백테스트 — 장기 히스토리 기반이라 거의 안 변함. 일 단위 캐시.
         manager.registerCustomCache("seasonality", build(Duration.ofHours(24), 500))
         // 야후 장기 일봉(15y≈3800봉) — 가설 빌더가 클릭마다 풀 fetch 하던 것 방지.
-        // 엔트리가 커서(수백 KB) 개수 상한을 작게 — 60개 ≈ 섹터 ETF 18종 + 개별 종목 여유분.
-        manager.registerCustomCache("yahoo-history", build(Duration.ofHours(6), 60))
+        // 종목 개수 대신 총 일봉 개수로 제한: 3년/20년 응답의 메모리 차이를 반영한다.
+        // 브리프용 실시간/거시 캐시와 독립이며 원본 조회·분석 기간은 줄이지 않는다.
+        manager.registerCustomCache("yahoo-history", Caffeine.newBuilder()
+            .scheduler(Scheduler.systemScheduler())
+            .expireAfterWrite(Duration.ofHours(6))
+            .maximumWeight(60_000)
+            .weigher { _: Any, value: Any -> (value as? List<*>)?.size?.coerceAtLeast(1) ?: 1 }
+            .build<Any, Any>())
         // 리그 리더보드 — 참가자 전원 시세 라이브 조회라 무겁다. 폴링(10s)·다중 시청자가
         // 공유하도록 12s 캐시. 거래 직후 최대 12s 반영 지연은 게임 특성상 수용.
         manager.registerCustomCache("league-leaderboard", build(Duration.ofSeconds(12), 100))
@@ -47,6 +54,8 @@ class CacheConfig {
 
     private fun build(ttl: Duration, max: Long) =
         Caffeine.newBuilder()
+            // 요청이 없어도 만료 객체는 비운다. 새 데이터를 수집하거나 미리 계산하지 않는다.
+            .scheduler(Scheduler.systemScheduler())
             .expireAfterWrite(ttl)
             .maximumSize(max)
             .build<Any, Any>()

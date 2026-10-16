@@ -19,5 +19,10 @@ ENTRYPOINT ["java", \
   "-Xms128m", \
   "-Xmx768m", \
   "-XX:+UseG1GC", \
+  "-XX:G1PeriodicGCInterval=60000", \
+  "-XX:+G1PeriodicGCInvokesConcurrent", \
+  "-XX:G1PeriodicGCSystemLoadThreshold=0", \
+  "-XX:MinHeapFreeRatio=10", \
+  "-XX:MaxHeapFreeRatio=30", \
   "-XX:+ExitOnOutOfMemoryError", \
   "-jar", "app.jar"]

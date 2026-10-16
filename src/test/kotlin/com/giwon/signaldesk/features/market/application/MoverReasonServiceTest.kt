@@ -11,7 +11,7 @@ class MoverReasonServiceTest {
     private val news = mock(GoogleNewsRssClient::class.java)
     private val now = Instant.parse("2026-09-21T01:00:00Z")
     private val service = MoverReasonService(mock(TopMoversService::class.java), news,
-        mock(MarketSessionService::class.java), Clock.fixed(now, ZoneOffset.UTC))
+        Clock.fixed(now, ZoneOffset.UTC))
     private val target = MoverReasonTarget("KR", "005930", "삼성전자", -6.0)
 
     @Test fun `news outage is distinct from no matching evidence`() {
@@ -43,7 +43,7 @@ class MoverReasonServiceTest {
     @Test fun `collected filings are reused even during news outage`() {
         `when`(news.searchWithStatus(anyString(), anyString())).thenReturn(NewsSearchResult("UNAVAILABLE"))
         val filing = MoveEvidence("DISCLOSURE", "단일판매 공급계약 체결", "DART", "https://dart.fss.or.kr/test", publishedDate = "2026-09-21")
-        val svc = MoverReasonService(mock(TopMoversService::class.java), news, mock(MarketSessionService::class.java),
+        val svc = MoverReasonService(mock(TopMoversService::class.java), news,
             Clock.fixed(now, ZoneOffset.UTC), MoverDisclosureSource { _, _ -> MoveDisclosureResult("COLLECTED_ONLY", listOf(filing)) })
         val result = svc.contextsForTickers(listOf(target)).values.single()
         assertThat(result.status).isEqualTo("EVIDENCE_FOUND")
@@ -65,7 +65,7 @@ class MoverReasonServiceTest {
             override fun withZone(zone: java.time.ZoneId) = this
             override fun instant() = time
         }
-        val svc = MoverReasonService(mock(TopMoversService::class.java), news, mock(MarketSessionService::class.java), clock)
+        val svc = MoverReasonService(mock(TopMoversService::class.java), news, clock)
         `when`(news.searchWithStatus(anyString(), anyString())).thenReturn(NewsSearchResult("UNAVAILABLE"))
         svc.contextsForTickers(listOf(target))
         time = now.plusSeconds(59)
