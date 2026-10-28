@@ -1,6 +1,12 @@
 # signal-desk-api
 
-`SignalDesk` 백엔드(Kotlin + Spring Boot).
+> **서비스 종료 — 2026년 10월 24일**
+>
+> Signal Desk API와 Railway PostgreSQL 실행을 중지했고, GitHub 소스 자동 배포 연결도 해제했습니다. 시황·시세 API, 브리프 생성·서버 알림 등 온라인 기능을 제공하지 않습니다. DB 볼륨과 소스는 보존했습니다.
+>
+> 이 저장소는 개발 기록 보관용입니다. 아래 API·기능·배포 설명은 운영 당시 구현을 설명하며 현재 제공 중인 서비스를 의미하지 않습니다. 사용자 재개 요청 없이 API·DB를 기동하거나 소스 연결을 복원하지 않습니다. [운영 종료 기록](docs/운영/배포.md)을 먼저 확인하세요.
+
+`SignalDesk`의 Kotlin/Spring Boot 백엔드 소스입니다. [서비스 종료 안내](https://giwon1130.github.io/signal-desk-app/) · [앱 소스](https://github.com/giwon1130/signal-desk-app)
 
 ## 📚 문서
 
@@ -13,7 +19,7 @@
 
 자동화 에이전트(Claude 등) 용 노트는 [`AGENTS.md`](AGENTS.md).
 
-## 현재 범위
+## 종료 전 구현 범위
 - 한국 시장: `KRX` 지수/수급/차트, `DART OpenAPI` 공시 5분 폴링
 - 미국 시장: `Yahoo Finance` 지수(어젯밤 종가, 1순위) → `FRED` 폴백 + `FRED` 매크로(금리·CPI 등) + `CBOE VIX`
 - **합성 위험도(`compositeRisk`)** — PizzINT(0.3) + VIX(0.5) + 뉴스 키워드(0.2) 가중으로 1~10 산출. score≥8 시 08:32 KST 푸시 알림 (V15 마이그레이션 `composite_risk_enabled` 토글)
@@ -122,7 +128,9 @@
 - V15 마이그레이션: `composite_risk_enabled` 디바이스 단위 토글
 - 기존 alternative signals(PizzINT 3종)은 단독 카드 폐기, 합성 위험도로 통합
 
-## 실행
+## 로컬 개발 기록
+
+아래 명령은 보관된 코드의 개발 참고입니다. 운영 API·DB를 재개하는 절차가 아니며 과거 운영 인증정보를 사용하지 않습니다.
 ```bash
 ./gradlew bootRun
 ```

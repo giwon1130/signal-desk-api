@@ -1,5 +1,11 @@
 # Context
 
+## Current status — service ended 2026-10-24
+
+- User stopped Signal Desk API/Postgres and removed the API GitHub source connection; DB volume/data and source remain preserved. App Store distribution was also stopped. Do not restart/redeploy/reconnect without a user request to resume.
+- 2026-10-28 user requested reflecting closure on GitHub. README/About/docs mark closure; removed the API keep-alive schedule. App repository publishes only a static closure notice and existing privacy page, no Expo/API/iOS deployment. Read-only Railway check before this documentation push confirmed API/Postgres have zero active deployments and no sourceRepo.
+- The memory optimization/deployment notes below are historical, not evidence that production is currently running.
+
 ## endpoints
 - `GET /api/v1/market/summary`
 - `GET /api/v1/market/sections`
